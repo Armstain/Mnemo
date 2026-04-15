@@ -1,5 +1,5 @@
-const tintColorLight = '#8B9E7E'; // Sage green
-const tintColorDark = '#A3B896';  // Lighter sage for dark mode
+const tintColorLight = '#8B9E7E';
+const tintColorDark = '#A3B896';
 
 export default {
   light: {
