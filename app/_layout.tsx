@@ -2,13 +2,17 @@ import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native
 import { Lora_700Bold } from '@expo-google-fonts/lora';
 import { Inter_400Regular, Inter_500Medium, Inter_600SemiBold } from '@expo-google-fonts/inter';
 import { useFonts } from 'expo-font';
-import { Stack } from 'expo-router';
+import { router, Stack } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
+import * as SecureStore from 'expo-secure-store';
 import { useEffect } from 'react';
+import { Platform } from 'react-native';
 import 'react-native-reanimated';
 import "../global.css";
 
 import { useColorScheme } from '@/components/useColorScheme';
+import { PendingProcessor } from '@/components/PendingProcessor';
+import { ONBOARDING_KEY } from '@/app/onboarding';
 
 export {
   // Catch any errors thrown by the Layout component.
@@ -79,10 +83,28 @@ export default function RootLayout() {
 function RootLayoutNav() {
   const colorScheme = useColorScheme();
 
+  // Redirect to onboarding on first launch.
+  useEffect(() => {
+    (async () => {
+      try {
+        const done =
+          Platform.OS === 'web'
+            ? localStorage.getItem(ONBOARDING_KEY)
+            : await SecureStore.getItemAsync(ONBOARDING_KEY);
+        if (done !== 'true') {
+          router.replace('/onboarding');
+        }
+      } catch {
+        // Fail open — show main app if storage unavailable.
+      }
+    })();
+  }, []);
+
   return (
     <ThemeProvider value={colorScheme === 'dark' ? ZenDarkTheme : ZenLightTheme}>
       <Stack>
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+        <Stack.Screen name="onboarding" options={{ headerShown: false }} />
         <Stack.Screen
           name="modal"
           options={{
@@ -91,6 +113,7 @@ function RootLayoutNav() {
           }}
         />
       </Stack>
+      <PendingProcessor />
     </ThemeProvider>
   );
 }

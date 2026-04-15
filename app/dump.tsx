@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, SafeAreaView, ActivityIndicator, ScrollView, Alert } from 'react-native';
+import { View, Text, SafeAreaView, ActivityIndicator, Alert } from 'react-native';
 import { Mic, X, Check } from 'lucide-react-native';
 import { router } from 'expo-router';
 import { MotiView, AnimatePresence } from 'moti';
@@ -10,7 +10,7 @@ import {
   setAudioModeAsync, 
   useAudioRecorderState 
 } from 'expo-audio';
-import * as FileSystem from 'expo-file-system';
+import { File, Directory, Paths } from 'expo-file-system';
 import { useContextStore } from '@/hooks/use-context-store';
 import { processAudioDump } from '@/lib/gemini';
 import { ZenButton } from '@/components/ZenButton';
@@ -51,50 +51,74 @@ export default function DumpScreen() {
         }
       }
 
-      console.log('Starting recording..');
       await audioRecorder.prepareToRecordAsync();
       audioRecorder.record();
-      console.log('Recording started');
     } catch (err) {
       console.error('Failed to start recording', err);
-      Alert.alert('Recording Error', 'Could not start the microphone.');
+      Alert.alert(
+        'Microphone error',
+        'Could not start recording. Check that the app has microphone permission in Settings.',
+      );
     }
   }
 
   async function stopAndSave() {
-    console.log('Stopping recording..');
     setIsProcessing(true);
     try {
       await audioRecorder.stop();
-      const uri = audioRecorder.uri;
-      console.log('Recording stopped and stored at', uri);
+      const tempUri = audioRecorder.uri;
 
-      if (!uri) throw new Error('No recording URI found');
+      if (!tempUri) throw new Error('No recording URI');
 
-      // Read audio file as base64
-      const base64 = await FileSystem.readAsStringAsync(uri, {
-        encoding: FileSystem.EncodingType.Base64,
-      });
-      
-      const processed = await processAudioDump(base64, 'audio/m4a');
-      
-      const newCtx = addContext({
-        title: processed.title,
-        notes: processed.notes,
-        links: processed.links,
-        summary: processed.summary
-      });
-      
-      router.replace(`/(tabs)/context?id=${newCtx.id}` as any);
+      // Copy recording to a permanent location so the file survives recorder cleanup.
+      const recordingsDir = new Directory(Paths.document, 'recordings');
+      try {
+        recordingsDir.create({ intermediates: true, idempotent: true });
+      } catch {
+        // Directory already exists — safe to continue.
+      }
+      const permanentFile = new File(recordingsDir, `recording-${Date.now()}.m4a`);
+      new File(tempUri).copy(permanentFile);
+      const permanentUri = permanentFile.uri;
+
+      try {
+        const base64 = await permanentFile.base64();
+        const processed = await processAudioDump(base64, 'audio/m4a');
+        // Recording processed successfully — clean up the local copy.
+        try { permanentFile.delete(); } catch { /* already deleted — safe to ignore */ }
+        const newCtx = addContext({
+          title: processed.title,
+          notes: processed.notes,
+          links: processed.links,
+          summary: processed.summary,
+        });
+        router.replace(`/(tabs)/context?id=${newCtx.id}` as any);
+      } catch (aiError) {
+        // AI unavailable (offline or rate-limited) — save the recording for
+        // deferred processing instead of losing the user's note.
+        const timestamp = new Date().toLocaleTimeString([], {
+          hour: '2-digit',
+          minute: '2-digit',
+        });
+        const newCtx = addContext({
+          title: `Voice note · ${timestamp}`,
+          notes: 'Your recording is saved. It will be transcribed automatically when you\'re back online.',
+          links: [],
+          pending: true,
+          pendingAudioUri: permanentUri,
+        });
+        router.replace(`/(tabs)/context?id=${newCtx.id}` as any);
+      }
     } catch (e) {
-      console.error(e);
-      Alert.alert('Processing Error', 'Failed to analyze your recording. Saving raw entry.');
-      const newCtx = addContext({
-        title: "Voice capture",
-        notes: "Failed to process audio, but the recording was captured.",
-        links: [],
-      });
-      router.replace(`/(tabs)/context?id=${newCtx.id}` as any);
+      console.error('stopAndSave error', e);
+      Alert.alert(
+        'Could not save recording',
+        'The recording could not be saved. Would you like to type your note instead?',
+        [
+          { text: 'Type instead', onPress: () => router.replace('/manual' as any) },
+          { text: 'Dismiss', style: 'cancel' },
+        ],
+      );
     } finally {
       setIsProcessing(false);
     }
@@ -175,16 +199,22 @@ export default function DumpScreen() {
               {isRecording ? "Listening..." : "Ready to listen"}
             </Text>
             <Text className="font-sans text-sm text-fg-muted text-center mt-2">
-              {isRecording ? "Speak your thoughts freely" : (!hasPermission ? "Microphone permission required" : "Tap to start capturing")}
+              {isRecording
+                ? "Speak your thoughts freely"
+                : !hasPermission
+                ? "Microphone permission required"
+                : "Tap to start capturing"}
             </Text>
           </MotiView>
         </View>
 
         {/* Visual feedback Area */}
         <View className="h-36 rounded-[16px] bg-surface border border-border/50 p-5 mb-8 shadow-soft-sm items-center justify-center">
-           <Text className="font-serif text-sm text-fg-muted italic text-center">
-             {isRecording ? "Recording your voice..." : "Capture audio directly for AI processing"}
-           </Text>
+          <Text className="font-serif text-sm text-fg-muted italic text-center">
+            {isRecording
+              ? "Recording your voice..."
+              : "Capture audio directly for AI processing"}
+          </Text>
         </View>
 
         {/* Actions */}
@@ -213,7 +243,7 @@ export default function DumpScreen() {
                 <ZenButton
                   onPress={stopAndSave}
                   disabled={isProcessing}
-                  title={isProcessing ? "Analyzing..." : "Save"}
+                  title={isProcessing ? "Saving..." : "Save"}
                   variant="primary"
                   size="md"
                   className="flex-[2]"

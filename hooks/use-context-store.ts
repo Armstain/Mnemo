@@ -13,6 +13,12 @@ export interface ContextDump {
     nextSteps: string[];
     resources: { name: string; url: string }[];
   };
+  /** True when AI structuring is queued for later (e.g. recorded offline). */
+  pending?: boolean;
+  /** Raw text to be structured by AI when connectivity returns. */
+  pendingRawText?: string;
+  /** Permanent local URI of an audio file to be transcribed when connectivity returns. */
+  pendingAudioUri?: string;
 }
 
 const STORAGE_KEY = 'mnemo-work-contexts';

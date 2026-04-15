@@ -28,12 +28,19 @@ export default function ManualEntryScreen() {
       });
       router.replace(`/(tabs)/context?id=${newCtx.id}` as any);
     } catch (e) {
-      console.error(e);
-      // Fallback: If AI fails, save as-is
+      // AI unavailable — save the raw text as a pending note so the user
+      // never loses what they typed.
+      const firstLine = text.trim().split('\n')[0];
+      const title =
+        firstLine.length > 45
+          ? firstLine.substring(0, 45) + '…'
+          : firstLine || 'Quick note';
       const newCtx = addContext({
-        title: "Quick note",
-        notes: text,
+        title,
+        notes: text.trim(),
         links: [],
+        pending: true,
+        pendingRawText: text.trim(),
       });
       router.replace(`/(tabs)/context?id=${newCtx.id}` as any);
     } finally {

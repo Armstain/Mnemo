@@ -1,7 +1,8 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState } from 'react';
 import { View, Text, Pressable, ScrollView, SafeAreaView, TextInput } from 'react-native';
 import { Search, ChevronRight, Trash2 } from 'lucide-react-native';
 import { useContextStore } from '@/hooks/use-context-store';
+import { bm25Search } from '@/lib/bm25';
 import { formatDistanceToNow } from 'date-fns';
 import { router } from 'expo-router';
 import { MotiView } from 'moti';
@@ -12,10 +13,7 @@ export default function ArchiveScreen() {
 
   if (!isLoaded) return null;
 
-  const filteredContexts = contexts.filter(c =>
-    c.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    c.notes.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  const filteredContexts = bm25Search(searchQuery, contexts);
 
   return (
     <View className="flex-1 bg-bg px-6">
@@ -106,9 +104,25 @@ export default function ArchiveScreen() {
 
                       <View className="mt-4 pt-4 border-t border-border/40 flex-row justify-between items-center">
                         <View className="flex-row items-center gap-2">
-                          <View className={`px-2.5 py-1 rounded-full ${ctx.summary ? 'bg-accent/15' : 'bg-surface-warm'}`}>
-                            <Text className={`font-sans-medium text-[10px] ${ctx.summary ? 'text-accent' : 'text-fg-muted'}`}>
-                              {ctx.summary ? 'Analyzed' : 'Pending'}
+                          <View
+                            className={`px-2.5 py-1 rounded-full ${
+                              ctx.summary
+                                ? 'bg-accent/15'
+                                : ctx.pending
+                                ? 'bg-accent-warm/15'
+                                : 'bg-surface-warm'
+                            }`}
+                          >
+                            <Text
+                              className={`font-sans-medium text-[10px] ${
+                                ctx.summary
+                                  ? 'text-accent'
+                                  : ctx.pending
+                                  ? 'text-accent-warm'
+                                  : 'text-fg-muted'
+                              }`}
+                            >
+                              {ctx.summary ? 'Analyzed' : ctx.pending ? 'Queued' : 'Draft'}
                             </Text>
                           </View>
                         </View>
