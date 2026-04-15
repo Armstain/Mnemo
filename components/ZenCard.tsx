@@ -11,6 +11,7 @@ interface ZenCardProps {
   className?: string;
   animated?: boolean;
   delay?: number;
+  compact?: boolean;
 }
 
 export const ZenCard = ({
@@ -22,6 +23,7 @@ export const ZenCard = ({
   className = '',
   animated = true,
   delay = 0,
+  compact = false,
 }: ZenCardProps) => {
   const getVariantStyles = () => {
     switch (variant) {
@@ -38,18 +40,24 @@ export const ZenCard = ({
   const CardContent = (
     <View
       className={`
-        rounded-[16px] p-6 shadow-soft border border-border/50
+        rounded-[18px] shadow-soft border border-border/40
+        ${compact ? 'p-4' : 'p-6'}
         ${getVariantStyles()}
         ${className}
       `}
     >
       {label && (
-        <Text className="font-sans-medium text-xs text-fg-muted mb-3 tracking-wide">
+        <Text className="font-sans-medium text-[10px] text-fg-muted mb-1.5 tracking-wider uppercase">
           {label}
         </Text>
       )}
       {title && (
-        <Text className="text-xl font-serif text-fg mb-3 leading-tight">
+        <Text 
+          className={`
+            font-serif text-fg leading-tight mb-1
+            ${compact ? 'text-lg' : 'text-xl'}
+          `}
+        >
           {title}
         </Text>
       )}
@@ -73,12 +81,12 @@ export const ZenCard = ({
     return (
       <Pressable
         onPress={onPress}
-        className="active:opacity-80 active:scale-[0.99] mb-4"
+        className="active:opacity-80 active:scale-[0.98] mb-3"
       >
         {wrappedContent}
       </Pressable>
     );
   }
 
-  return <View className="mb-4">{wrappedContent}</View>;
+  return <View className="mb-3">{wrappedContent}</View>;
 };

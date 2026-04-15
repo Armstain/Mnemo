@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, SafeAreaView, ActivityIndicator, Alert } from 'react-native';
+import { View, Text, ActivityIndicator, Alert } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { Mic, X, Check } from 'lucide-react-native';
 import { router } from 'expo-router';
 import { MotiView, AnimatePresence } from 'moti';

@@ -1,5 +1,6 @@
 import { StatusBar } from 'expo-status-bar';
-import { Platform, View, Text, ScrollView, SafeAreaView } from 'react-native';
+import { Platform, View, Text, ScrollView } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { MotiView } from 'moti';
 import { Info, Key, Mic, Shield } from 'lucide-react-native';
 import Constants from 'expo-constants';

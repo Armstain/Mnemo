@@ -5,12 +5,12 @@
   /* Colors — Zen / Cognitive Calm */
   --color-bg: #F5F0EB;           /* Warm sand */
   --color-fg: #3D3A36;           /* Warm charcoal */
-  --color-fg-muted: #9E9890;     /* Muted text */
-  --color-accent: #8B9E7E;       /* Sage green */
-  --color-accent-warm: #C4856A;  /* Muted terracotta */
+  --color-fg-muted: #6D6963;     /* Darkened for better contrast on warm bg */
+  --color-accent: #7A8F6A;       /* Deeper sage green */
+  --color-accent-warm: #B2765A;  /* Balanced terracotta */
   --color-surface: #FFFFFF;      /* Card white */
   --color-surface-warm: #EDE8E2; /* Elevated surface */
-  --color-border: #DDD6CD;       /* Soft border */
+  --color-border: #E2DDD6;       /* Thinner, softer border */
   --color-error: #C17A6A;        /* Warm error */
 
   /* Typography */
@@ -26,9 +26,9 @@
   --radius-full: 9999px;
 
   /* Shadows — Soft & Diffused */
-  --shadow-soft: 0 4px 24px rgba(61, 58, 54, 0.06);
-  --shadow-soft-sm: 0 2px 12px rgba(61, 58, 54, 0.04);
-  --shadow-soft-lg: 0 8px 40px rgba(61, 58, 54, 0.08);
+  --shadow-soft: 0 8px 30px rgba(61, 58, 54, 0.04);
+  --shadow-soft-sm: 0 4px 16px rgba(61, 58, 54, 0.03);
+  --shadow-soft-lg: 0 12px 48px rgba(61, 58, 54, 0.06);
 
   /* Spacing */
   --tracking-normal: 0em;

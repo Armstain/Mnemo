@@ -107,11 +107,12 @@ export const ZenButton = ({
       disabled={disabled}
       className={`
         flex-row items-center justify-center
-        rounded-[16px]
+        flex-row items-center justify-center
+        rounded-lg
         ${getVariantStyles()}
         ${getSizeStyles()}
         ${fullWidth ? 'w-full' : ''}
-        ${disabled ? 'opacity-40' : 'active:opacity-80 active:scale-[0.98]'}
+        ${disabled ? 'opacity-40' : 'active:opacity-90 active:scale-[0.97]'}
         ${className}
       `}
     >

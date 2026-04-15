@@ -1,28 +1,30 @@
-import React from 'react';
 import { Tabs } from 'expo-router';
-import { Home, Archive } from 'lucide-react-native';
+import { Archive, Home } from 'lucide-react-native';
+import React from 'react';
 
 export default function TabLayout() {
   return (
     <Tabs
       screenOptions={{
-        tabBarActiveTintColor: '#8B9E7E',
+        tabBarActiveTintColor: '#3D3A36',
         tabBarInactiveTintColor: '#9E9890',
         headerShown: false,
         tabBarStyle: {
           backgroundColor: '#F5F0EB',
-          borderTopWidth: 0.5,
-          borderTopColor: '#DDD6CD',
-          height: 88,
-          paddingBottom: 32,
+          borderTopWidth: 1,
+          borderTopColor: '#E2DDD6',
+          height: 72,
+          paddingBottom: 16,
           paddingTop: 12,
           elevation: 0,
           shadowOpacity: 0,
         },
         tabBarLabelStyle: {
-          fontFamily: 'Inter_500Medium',
-          fontSize: 11,
-          letterSpacing: 0.3,
+          fontFamily: 'Inter_600SemiBold',
+          fontSize: 10,
+          letterSpacing: 0.5,
+          marginTop: 4,
+          textTransform: 'uppercase',
         },
       }}>
       <Tabs.Screen
