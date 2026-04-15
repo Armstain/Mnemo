@@ -1,11 +1,7 @@
-import { GoogleGenAI, Type, Modality } from '@google/genai';
+import { GoogleGenAI, Modality, Type } from '@google/genai';
 
 // Environment variable required: EXPO_PUBLIC_GEMINI_API_KEY
-const GEMINI_API_KEY = process.env.EXPO_PUBLIC_GEMINI_API_KEY || ""; 
-
-if (!GEMINI_API_KEY) {
-  console.warn("⚠️ EXPO_PUBLIC_GEMINI_API_KEY is not defined. Ensure it is set in your .env file and restart the server with 'npx expo start --clear'.");
-}
+const GEMINI_API_KEY = process.env.EXPO_PUBLIC_GEMINI_API_KEY || "";
 
 const ai = new GoogleGenAI({ apiKey: GEMINI_API_KEY });
 
