@@ -8,7 +8,10 @@ import { processVoiceDump } from '@/lib/gemini';
 import { ZenButton } from '@/components/ZenButton';
 import { MotiView } from 'moti';
 
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+
 export default function ManualEntryScreen() {
+  const insets = useSafeAreaInsets();
   const { addContext } = useContextStore();
   const [text, setText] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
@@ -29,13 +32,9 @@ export default function ManualEntryScreen() {
       });
       router.replace(`/(tabs)/context?id=${newCtx.id}` as any);
     } catch (e) {
-      // AI unavailable — save the raw text as a pending note so the user
-      // never loses what they typed.
+      // AI unavailable — save the raw text as a pending note
       const firstLine = text.trim().split('\n')[0];
-      const title =
-        firstLine.length > 45
-          ? firstLine.substring(0, 45) + '…'
-          : firstLine || 'Quick note';
+      const title = firstLine.length > 45 ? firstLine.substring(0, 45) + '…' : firstLine || 'Quick note';
       const newCtx = addContext({
         title,
         notes: text.trim(),
@@ -51,13 +50,14 @@ export default function ManualEntryScreen() {
 
   return (
     <View className="flex-1 bg-bg px-6">
-      <SafeAreaView className="flex-1">
+      <View className="flex-1">
         {/* Header */}
         <MotiView
           from={{ opacity: 0, translateY: 12 }}
           animate={{ opacity: 1, translateY: 0 }}
           transition={{ type: 'timing', duration: 500 }}
-          className="mt-8 mb-8"
+          className="mb-8"
+          style={{ marginTop: Math.max(insets.top, 16) }}
         >
           <Text className="font-sans text-xs text-fg-muted mb-2 tracking-wide">
             Capture your thoughts
@@ -133,7 +133,7 @@ export default function ManualEntryScreen() {
             icon={<X size={18} color="#3D3A36" />}
           />
         </MotiView>
-      </SafeAreaView>
+      </View>
     </View>
   );
 }

@@ -16,8 +16,12 @@ import { useContextStore } from '@/hooks/use-context-store';
 import { processAudioDump } from '@/lib/gemini';
 import { ZenButton } from '@/components/ZenButton';
 
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+
 export default function DumpScreen() {
+  const insets = useSafeAreaInsets();
   const { addContext } = useContextStore();
+
   const [isProcessing, setIsProcessing] = useState(false);
   const [hasPermission, setHasPermission] = useState<boolean | null>(null);
 
@@ -135,13 +139,14 @@ export default function DumpScreen() {
 
   return (
     <View className="flex-1 bg-bg px-6">
-      <SafeAreaView className="flex-1">
+      <View className="flex-1">
         {/* Header */}
         <MotiView
           from={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           transition={{ type: 'timing', duration: 400 }}
-          className="flex-row justify-between items-center mt-6 mb-8"
+          className="flex-row justify-between items-center mb-8"
+          style={{ marginTop: Math.max(insets.top, 16) }}
         >
           <Text className="font-sans-medium text-sm text-fg-muted">
             {isRecording ? "Listening..." : "Voice capture"}
@@ -255,7 +260,7 @@ export default function DumpScreen() {
             )}
           </AnimatePresence>
         </View>
-      </SafeAreaView>
+      </View>
     </View>
   );
 }

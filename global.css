@@ -1,17 +1,41 @@
 @import "tailwindcss";
 @import "uniwind";
 
+:root {
+  --bg: #F5F0EB;
+  --fg: #3D3A36;
+  --fg-muted: #6D6963;
+  --accent: #7A8F6A;
+  --accent-warm: #B2765A;
+  --surface: #FFFFFF;
+  --surface-warm: #EDE8E2;
+  --border: #E2DDD6;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #2A2826;
+    --fg: #E8E4DF;
+    --fg-muted: #A8A49F;
+    --accent: #A3B896;
+    --accent-warm: #D48E74;
+    --surface: #3E3B38;
+    --surface-warm: #33302D;
+    --border: #3E3B38;
+  }
+}
+
 @theme {
   /* Colors — Zen / Cognitive Calm */
-  --color-bg: #F5F0EB;           /* Warm sand */
-  --color-fg: #3D3A36;           /* Warm charcoal */
-  --color-fg-muted: #6D6963;     /* Darkened for better contrast on warm bg */
-  --color-accent: #7A8F6A;       /* Deeper sage green */
-  --color-accent-warm: #B2765A;  /* Balanced terracotta */
-  --color-surface: #FFFFFF;      /* Card white */
-  --color-surface-warm: #EDE8E2; /* Elevated surface */
-  --color-border: #E2DDD6;       /* Thinner, softer border */
-  --color-error: #C17A6A;        /* Warm error */
+  --color-bg: var(--bg);
+  --color-fg: var(--fg);
+  --color-fg-muted: var(--fg-muted);
+  --color-accent: var(--accent);
+  --color-accent-warm: var(--accent-warm);
+  --color-surface: var(--surface);
+  --color-surface-warm: var(--surface-warm);
+  --color-border: var(--border);
+  --color-error: #C17A6A;
 
   /* Typography */
   --font-serif: "Lora_700Bold";

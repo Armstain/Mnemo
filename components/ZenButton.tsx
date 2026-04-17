@@ -107,7 +107,6 @@ export const ZenButton = ({
       disabled={disabled}
       className={`
         flex-row items-center justify-center
-        flex-row items-center justify-center
         rounded-lg
         ${getVariantStyles()}
         ${getSizeStyles()}
@@ -115,6 +114,7 @@ export const ZenButton = ({
         ${disabled ? 'opacity-40' : 'active:opacity-90 active:scale-[0.97]'}
         ${className}
       `}
+      style={variant === 'primary' ? { backgroundColor: '#7A8F6A' } : variant === 'danger' ? { backgroundColor: '#C17A6A' } : {}}
     >
       {icon && <View className="mr-3">{icon}</View>}
       <Text

@@ -4,15 +4,16 @@ import { ZenCard } from '@/components/ZenCard';
 import { useContextStore } from '@/hooks/use-context-store';
 import { formatCompactDistance } from '@/utils/time';
 import { router } from 'expo-router';
-import { ChevronRight, Mic, Plus, Zap } from 'lucide-react-native';
+import { ChevronRight, Mic, Plus, Zap, Clock, Sparkles } from 'lucide-react-native';
 import { MotiView } from 'moti';
 import React, { useMemo, useState } from 'react';
 import { Pressable, ScrollView, Text, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 export default function MnemoDashboard() {
   const { contexts, isLoaded } = useContextStore();
   const [searchQuery, setSearchQuery] = useState('');
+  const insets = useSafeAreaInsets();
 
   const filteredContexts = useMemo(() => {
     if (!searchQuery.trim()) return contexts;
@@ -40,11 +41,15 @@ export default function MnemoDashboard() {
 
   return (
     <View className="flex-1 bg-bg">
-      <SafeAreaView className="flex-1">
+      <View className="flex-1" style={{ paddingTop: insets.top }}>
         <ScrollView
           className="flex-1"
           showsVerticalScrollIndicator={false}
-          contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 16, paddingBottom: 120 }}
+          contentContainerStyle={{ 
+            paddingHorizontal: 20, 
+            paddingTop: 16, 
+            paddingBottom: insets.bottom + 100 
+          }}
         >
           {/* Hero Section - Compact */}
           <MotiView
@@ -54,7 +59,7 @@ export default function MnemoDashboard() {
             className="mb-6"
           >
             <Text className="font-sans text-xs text-fg-muted mb-1 uppercase tracking-[1px]">
-              Welcome back
+              {new Date().getHours() < 12 ? 'Good Morning' : new Date().getHours() < 17 ? 'Good Afternoon' : 'Good Evening'}
             </Text>
             <Text className="text-3xl font-serif text-fg leading-tight">
               What's on your mind?
@@ -102,21 +107,55 @@ export default function MnemoDashboard() {
 
           {/* Notes List */}
           {filteredContexts.map((ctx, index) => (
-            <ZenCard
+            <MotiView
               key={ctx.id}
-              compact
-              onPress={() => router.push(`/(tabs)/context?id=${ctx.id}` as any)}
-              title={ctx.title}
-              label={formatCompactDistance(ctx.createdAt)}
-              delay={300 + index * 50}
+              from={{ opacity: 0, translateY: 10 }}
+              animate={{ opacity: 1, translateY: 0 }}
+              transition={{ type: 'timing', duration: 400, delay: 300 + index * 40 }}
             >
-              <View className="flex-row justify-between items-center mt-1">
-                <Text className="font-sans text-[13px] text-fg-muted flex-1 mr-4" numberOfLines={2}>
-                  {ctx.notes.trim() || "No content summary available."}
-                </Text>
-                <ChevronRight size={14} color="#9E9890" strokeWidth={2.5} />
-              </View>
-            </ZenCard>
+              <Pressable
+                onPress={() => router.push(`/(tabs)/context?id=${ctx.id}` as any)}
+                className="mb-3 bg-surface border border-border/30 rounded-[20px] p-5 shadow-soft-sm active:bg-surface-warm/50 active:scale-[0.98]"
+              >
+                <View className="flex-row">
+                  <View className="w-10 h-10 rounded-full bg-accent/5 items-center justify-center mr-4 border border-accent/10">
+                    {ctx.pending ? (
+                      <Clock size={16} color="#B2765A" />
+                    ) : (
+                      <Zap size={16} color="#7A8F6A" />
+                    )}
+                  </View>
+                  
+                  <View className="flex-1">
+                    <View className="flex-row justify-between items-baseline mb-1">
+                      <Text className="text-lg font-serif text-fg leading-tight flex-1 mr-2" numberOfLines={1}>
+                        {ctx.title}
+                      </Text>
+                      <Text className="font-sans text-[10px] text-fg-muted uppercase tracking-tighter">
+                        {formatCompactDistance(ctx.createdAt)}
+                      </Text>
+                    </View>
+                    
+                    <Text className="font-sans text-sm text-fg-muted leading-relaxed" numberOfLines={2}>
+                      {ctx.notes.trim() || "No content summary."}
+                    </Text>
+
+                    {ctx.summary && (
+                      <View className="flex-row items-center mt-3 pt-3 border-t border-border/20">
+                        <Sparkles size={11} color="#8B9E7E" />
+                        <Text className="font-sans-medium text-[11px] text-accent ml-1.5" numberOfLines={1}>
+                          {ctx.summary.leftOff}
+                        </Text>
+                      </View>
+                    )}
+                  </View>
+                  
+                  <View className="justify-center ml-2">
+                    <ChevronRight size={14} color="#9E9890" strokeWidth={2.5} />
+                  </View>
+                </View>
+              </Pressable>
+            </MotiView>
           ))}
 
           {/* Empty State / No Results */}
@@ -150,23 +189,38 @@ export default function MnemoDashboard() {
           )}
         </ScrollView>
 
-        {/* Floating Action Button (FAB) */}
+        {/* Floating Action Menu */}
         {!searchQuery && (
-          <MotiView
-            from={{ scale: 0, opacity: 0 }}
-            animate={{ scale: 1, opacity: 1 }}
-            transition={{ type: 'spring', damping: 15, delay: 600 }}
-            className="absolute bottom-8 right-6"
-          >
-            <Pressable
-              onPress={() => router.push('/dump' as any)}
-              className="w-16 h-16 bg-accent rounded-full items-center justify-center shadow-soft-lg active:scale-95 active:opacity-90"
+          <View className="absolute right-6 flex-col items-end gap-3" style={{ bottom: insets.bottom + 24 }}>
+            <MotiView
+              from={{ scale: 0, opacity: 0, translateY: 20 }}
+              animate={{ scale: 1, opacity: 1, translateY: 0 }}
+              transition={{ type: 'spring', damping: 15, delay: 600 }}
             >
-              <Plus size={32} color="white" strokeWidth={2.5} />
-            </Pressable>
-          </MotiView>
+              <Pressable
+                onPress={() => router.push('/manual' as any)}
+                className="flex-row items-center bg-surface border border-border px-4 py-3 rounded-full shadow-soft-lg active:scale-95"
+              >
+                <Zap size={18} color="#7A8F6A" strokeWidth={2} />
+                <Text className="ml-2 font-sans-semi text-xs text-fg">Write note</Text>
+              </Pressable>
+            </MotiView>
+            
+            <MotiView
+              from={{ scale: 0, opacity: 0, translateY: 20 }}
+              animate={{ scale: 1, opacity: 1, translateY: 0 }}
+              transition={{ type: 'spring', damping: 15, delay: 700 }}
+            >
+              <Pressable
+                onPress={() => router.push('/dump' as any)}
+                className="w-16 h-16 bg-accent rounded-full items-center justify-center shadow-soft-lg active:scale-95"
+              >
+                <Mic size={28} color="white" strokeWidth={2} />
+              </Pressable>
+            </MotiView>
+          </View>
         )}
-      </SafeAreaView>
+      </View>
     </View>
   );
 }

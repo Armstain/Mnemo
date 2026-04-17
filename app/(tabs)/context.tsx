@@ -9,7 +9,7 @@ import {
   TextInput,
   Alert,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams } from 'expo-router';
 import * as Clipboard from 'expo-clipboard';
 import { File } from 'expo-file-system';
@@ -35,8 +35,9 @@ import { ZenButton } from '@/components/ZenButton';
 import { ZenCard } from '@/components/ZenCard';
 
 export default function ContextDetailScreen() {
+  const insets = useSafeAreaInsets();
   const { id } = useLocalSearchParams();
-  const { contexts, updateContext, deleteContext } = useContextStore();
+  const { contexts, updateContext, deleteContext, isLoaded } = useContextStore();
 
   const [isGenerating, setIsGenerating] = React.useState(false);
   const [isEditing, setIsEditing] = React.useState(false);
@@ -45,6 +46,14 @@ export default function ContextDetailScreen() {
   const [isCopied, setIsCopied] = React.useState(false);
 
   const context = contexts.find((c) => c.id === id);
+
+  if (!isLoaded) {
+    return (
+      <View className="flex-1 bg-bg items-center justify-center">
+        <ActivityIndicator color="#8B9E7E" />
+      </View>
+    );
+  }
 
   // Keep edit fields in sync when opening a different note.
   React.useEffect(() => {
@@ -175,17 +184,20 @@ export default function ContextDetailScreen() {
 
   return (
     <View className="flex-1 bg-bg">
-      <SafeAreaView className="flex-1">
+      <View className="flex-1">
         {/* Navigation Bar */}
-        <View className="flex-row justify-between items-center px-6 py-4">
+        <View 
+          className="flex-row justify-between items-center px-6 py-4"
+          style={{ marginTop: Math.max(insets.top, 8) }}
+        >
           <Pressable
             onPress={isEditing ? handleCancelEdit : () => router.back()}
             className="w-11 h-11 rounded-full bg-surface items-center justify-center border border-border/50 active:opacity-70"
           >
             {isEditing ? (
-              <X size={20} color="#3D3A36" />
+              <X size={20} color={isEditing ? "#FFFFFF" : "#3D3A36"} />
             ) : (
-              <ChevronLeft size={20} color="#3D3A36" />
+              <ChevronLeft size={20} color="#8B9E7E" />
             )}
           </Pressable>
 
@@ -206,7 +218,7 @@ export default function ContextDetailScreen() {
                   {isCopied ? (
                     <Check size={16} color="#8B9E7E" />
                   ) : (
-                    <Copy size={16} color="#3D3A36" />
+                    <Copy size={16} color="#9E9890" />
                   )}
                 </Pressable>
                 <Pressable
@@ -219,7 +231,7 @@ export default function ContextDetailScreen() {
                   onPress={() => setIsEditing(true)}
                   className="w-11 h-11 rounded-full bg-surface items-center justify-center border border-border/50 active:opacity-70"
                 >
-                  <Pencil size={16} color="#3D3A36" />
+                  <Pencil size={16} color="#9E9890" />
                 </Pressable>
                 <Pressable
                   onPress={() => {
@@ -479,7 +491,7 @@ export default function ContextDetailScreen() {
             </View>
           </MotiView>
         </ScrollView>
-      </SafeAreaView>
+      </View>
     </View>
   );
 }

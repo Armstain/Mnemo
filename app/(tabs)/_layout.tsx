@@ -1,20 +1,24 @@
 import { Tabs } from 'expo-router';
 import { Archive, Home } from 'lucide-react-native';
 import React from 'react';
+import { useColorScheme } from '@/components/useColorScheme';
+import { ZenDarkTheme, ZenLightTheme } from '../_layout';
 
 export default function TabLayout() {
+  const colorScheme = useColorScheme();
+  const theme = colorScheme === 'dark' ? ZenDarkTheme : ZenLightTheme;
+
   return (
     <Tabs
       screenOptions={{
-        tabBarActiveTintColor: '#3D3A36',
-        tabBarInactiveTintColor: '#9E9890',
+        tabBarActiveTintColor: theme.colors.primary,
+        tabBarInactiveTintColor: theme.colors.text + '80', // 50% opacity
         headerShown: false,
         tabBarStyle: {
-          backgroundColor: '#F5F0EB',
-          borderTopWidth: 1,
-          borderTopColor: '#E2DDD6',
-          height: 72,
-          paddingBottom: 16,
+          backgroundColor: theme.colors.background,
+          borderTopWidth: 0,
+          height: 80,
+          paddingBottom: 20,
           paddingTop: 12,
           elevation: 0,
           shadowOpacity: 0,

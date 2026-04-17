@@ -41,7 +41,15 @@
           "microphonePermission": "Allow Mnemo to access your microphone to capture your thoughts."
         }
       ],
-      "expo-secure-store"
+      "expo-secure-store",
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "enableOnBackInvokedCallback": true
+          }
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true

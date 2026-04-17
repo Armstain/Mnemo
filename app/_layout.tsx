@@ -8,11 +8,13 @@ import * as SplashScreen from 'expo-splash-screen';
 import { useEffect } from 'react';
 import { Platform } from 'react-native';
 import 'react-native-reanimated';
+import { StatusBar } from 'expo-status-bar';
 import "../global.css";
 
 import { ONBOARDING_KEY } from '@/app/onboarding';
 import { PendingProcessor } from '@/components/PendingProcessor';
 import { useColorScheme } from '@/components/useColorScheme';
+import { ContextStoreProvider } from '@/hooks/use-context-store';
 
 export {
   // Catch any errors thrown by the Layout component.
@@ -28,7 +30,7 @@ export const unstable_settings = {
 SplashScreen.preventAutoHideAsync();
 
 // Warm Zen navigation theme
-const ZenLightTheme = {
+export const ZenLightTheme = {
   ...DefaultTheme,
   colors: {
     ...DefaultTheme.colors,
@@ -41,7 +43,7 @@ const ZenLightTheme = {
   },
 };
 
-const ZenDarkTheme = {
+export const ZenDarkTheme = {
   ...DarkTheme,
   colors: {
     ...DarkTheme.colors,
@@ -103,20 +105,31 @@ function RootLayoutNav() {
 
   return (
     <SafeAreaProvider>
-      <ThemeProvider value={colorScheme === 'dark' ? ZenDarkTheme : ZenLightTheme}>
-        <Stack>
-          <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-          <Stack.Screen name="onboarding" options={{ headerShown: false }} />
-          <Stack.Screen
-            name="modal"
-            options={{
-              presentation: 'modal',
+      <ContextStoreProvider>
+        <ThemeProvider value={colorScheme === 'dark' ? ZenDarkTheme : ZenLightTheme}>
+          <StatusBar style={colorScheme === 'dark' ? 'light' : 'dark'} />
+          <Stack
+            screenOptions={{
               headerShown: false,
+              contentStyle: { backgroundColor: colorScheme === 'dark' ? ZenDarkTheme.colors.background : ZenLightTheme.colors.background },
+              animation: Platform.OS === 'android' ? 'fade_from_bottom' : 'default',
+              fullScreenGestureEnabled: true,
+              gestureEnabled: true,
             }}
-          />
-        </Stack>
-        <PendingProcessor />
-      </ThemeProvider>
+          >
+            <Stack.Screen name="(tabs)" options={{ animation: 'fade' }} />
+            <Stack.Screen name="onboarding" />
+            <Stack.Screen
+              name="modal"
+              options={{
+                presentation: 'modal',
+                animation: 'slide_from_bottom',
+              }}
+            />
+          </Stack>
+          <PendingProcessor />
+        </ThemeProvider>
+      </ContextStoreProvider>
     </SafeAreaProvider>
   );
 }
