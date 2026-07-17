@@ -6,15 +6,23 @@ import { router, Stack } from 'expo-router';
 import * as SecureStore from 'expo-secure-store';
 import * as SplashScreen from 'expo-splash-screen';
 import { useEffect } from 'react';
-import { Platform } from 'react-native';
+import { LogBox, Platform } from 'react-native';
 import 'react-native-reanimated';
 import { StatusBar } from 'expo-status-bar';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
 import "../global.css";
+
+// moti still bundles an unused MotiSafeAreaView built on RN's deprecated
+// SafeAreaView; importing anything from moti's barrel pulls that
+// submodule in and fires this warning at startup. We never use
+// MotiSafeAreaView — nothing to fix on our side, and no newer moti
+// release drops it yet.
+LogBox.ignoreLogs(['SafeAreaView has been deprecated']);
 
 import { ONBOARDING_KEY } from '@/app/onboarding';
 import { PendingProcessor } from '@/components/PendingProcessor';
-import { useColorScheme } from '@/components/useColorScheme';
-import { ContextStoreProvider } from '@/hooks/use-context-store';
+import { MnemoStoreProvider } from '@/hooks/use-mnemo-store';
+import { applyStoredThemePreference, PALETTE, useThemeName } from '@/hooks/use-theme';
 
 export {
   // Catch any errors thrown by the Layout component.
@@ -29,30 +37,34 @@ export const unstable_settings = {
 // Prevent the splash screen from auto-hiding before asset loading is complete.
 SplashScreen.preventAutoHideAsync();
 
-// Warm Zen navigation theme
-export const ZenLightTheme = {
-  ...DefaultTheme,
-  colors: {
-    ...DefaultTheme.colors,
-    primary: '#8B9E7E',
-    background: '#F5F0EB',
-    card: '#F5F0EB',
-    text: '#3D3A36',
-    border: '#DDD6CD',
-    notification: '#C4856A',
-  },
-};
+// Apply any persisted manual theme choice before first render.
+applyStoredThemePreference();
 
-export const ZenDarkTheme = {
-  ...DarkTheme,
-  colors: {
-    ...DarkTheme.colors,
-    primary: '#A3B896',
-    background: '#2A2826',
-    card: '#2A2826',
-    text: '#E8E4DF',
-    border: '#3E3B38',
-    notification: '#C4856A',
+// Navigation themes derived from the app palette (see hooks/use-theme.tsx).
+export const NavThemes = {
+  dark: {
+    ...DarkTheme,
+    colors: {
+      ...DarkTheme.colors,
+      primary: PALETTE.dark.accent,
+      background: PALETTE.dark.bg,
+      card: PALETTE.dark.bg,
+      text: PALETTE.dark.fg,
+      border: PALETTE.dark.border,
+      notification: PALETTE.dark.accentWarm,
+    },
+  },
+  light: {
+    ...DefaultTheme,
+    colors: {
+      ...DefaultTheme.colors,
+      primary: PALETTE.light.accent,
+      background: PALETTE.light.bg,
+      card: PALETTE.light.bg,
+      text: PALETTE.light.fg,
+      border: PALETTE.light.border,
+      notification: PALETTE.light.accentWarm,
+    },
   },
 };
 
@@ -81,10 +93,8 @@ export default function RootLayout() {
   return <RootLayoutNav />;
 }
 
-import { SafeAreaProvider } from 'react-native-safe-area-context';
-
 function RootLayoutNav() {
-  const colorScheme = useColorScheme();
+  const theme = useThemeName();
 
   // Redirect to onboarding on first launch.
   useEffect(() => {
@@ -105,13 +115,13 @@ function RootLayoutNav() {
 
   return (
     <SafeAreaProvider>
-      <ContextStoreProvider>
-        <ThemeProvider value={colorScheme === 'dark' ? ZenDarkTheme : ZenLightTheme}>
-          <StatusBar style={colorScheme === 'dark' ? 'light' : 'dark'} />
+      <MnemoStoreProvider>
+        <ThemeProvider value={NavThemes[theme]}>
+          <StatusBar style={theme === 'dark' ? 'light' : 'dark'} />
           <Stack
             screenOptions={{
               headerShown: false,
-              contentStyle: { backgroundColor: colorScheme === 'dark' ? ZenDarkTheme.colors.background : ZenLightTheme.colors.background },
+              contentStyle: { backgroundColor: PALETTE[theme].bg },
               animation: Platform.OS === 'android' ? 'fade_from_bottom' : 'default',
               fullScreenGestureEnabled: true,
               gestureEnabled: true,
@@ -119,6 +129,20 @@ function RootLayoutNav() {
           >
             <Stack.Screen name="(tabs)" options={{ animation: 'fade' }} />
             <Stack.Screen name="onboarding" />
+            <Stack.Screen
+              name="capture"
+              options={{
+                presentation: 'modal',
+                animation: 'slide_from_bottom',
+              }}
+            />
+            <Stack.Screen
+              name="dump"
+              options={{
+                presentation: 'modal',
+                animation: 'slide_from_bottom',
+              }}
+            />
             <Stack.Screen
               name="modal"
               options={{
@@ -129,7 +153,7 @@ function RootLayoutNav() {
           </Stack>
           <PendingProcessor />
         </ThemeProvider>
-      </ContextStoreProvider>
+      </MnemoStoreProvider>
     </SafeAreaProvider>
   );
 }

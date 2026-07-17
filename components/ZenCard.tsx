@@ -54,7 +54,7 @@ export const ZenCard = ({
       {title && (
         <Text 
           className={`
-            font-serif text-fg leading-tight mb-1
+            font-sans-medium text-fg leading-tight mb-1
             ${compact ? 'text-lg' : 'text-xl'}
           `}
         >

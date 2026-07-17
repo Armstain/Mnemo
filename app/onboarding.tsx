@@ -1,36 +1,40 @@
 import React from 'react';
 import { View, Text, ScrollView, Platform } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import * as SecureStore from 'expo-secure-store';
 import { MotiView } from 'moti';
+import { AmbientGlow } from '@/components/ui/AmbientGlow';
 import { ZenButton } from '@/components/ZenButton';
-import { Mic, PenLine, Sparkles } from 'lucide-react-native';
+import { useThemeColors } from '@/hooks/use-theme';
+import { PenLine, RefreshCw, Sparkles } from 'lucide-react-native';
 
 export const ONBOARDING_KEY = 'mnemo-onboarded';
 
 const features = [
   {
-    Icon: Mic,
-    title: 'Speak your mind',
+    Icon: PenLine,
+    title: 'Capture anything',
     description:
-      'Record a voice note before stepping away. Mnemo captures every word in any language.',
+      'Notes, checklists, voice memos — one tap. Works completely offline.',
+  },
+  {
+    Icon: RefreshCw,
+    title: 'Resume instantly',
+    description:
+      'See exactly where you left off and what to do next. No more restart friction.',
   },
   {
     Icon: Sparkles,
-    title: 'AI structures it for you',
+    title: 'AI enhances, optionally',
     description:
-      'Your ramble becomes a clean summary, next steps, and key resources — automatically.',
-  },
-  {
-    Icon: PenLine,
-    title: 'Pick up where you left off',
-    description:
-      'Open the app, read the summary, and you\'re instantly back in context.',
+      'Smart summaries and next steps when you want them. Your notes work perfectly without AI.',
   },
 ];
 
 export default function OnboardingScreen() {
+  const insets = useSafeAreaInsets();
+  const colors = useThemeColors();
   const handleGetStarted = async () => {
     try {
       if (Platform.OS === 'web') {
@@ -45,14 +49,14 @@ export default function OnboardingScreen() {
   };
 
   return (
-    <View className="flex-1 bg-bg">
-      <SafeAreaView className="flex-1">
+    <AmbientGlow>
+    <View className="flex-1">
         <ScrollView
           className="flex-1"
           contentContainerStyle={{
             paddingHorizontal: 32,
-            paddingTop: 64,
-            paddingBottom: 48,
+            paddingTop: insets.top + 64,
+            paddingBottom: Math.max(insets.bottom, 24) + 48,
           }}
           showsVerticalScrollIndicator={false}
         >
@@ -63,13 +67,15 @@ export default function OnboardingScreen() {
             transition={{ type: 'timing', duration: 600 }}
             className="mb-16"
           >
-            <Text className="text-5xl mb-5">🍃</Text>
-            <Text className="text-4xl font-serif text-fg leading-tight mb-4">
-              Welcome to{'\n'}Mnemo
+            <View className="w-16 h-16 rounded-full bg-accent/20 items-center justify-center border border-accent/30 mb-5">
+               <View className="w-4 h-4 rounded-full bg-accent" />
+            </View>
+            <Text className="text-4xl font-sans-medium text-fg leading-tight mb-4">
+              Never lose track{'\n'}of life again
             </Text>
             <Text className="font-sans text-base text-fg-muted leading-relaxed">
-              Your personal memory for deep work — capture thoughts before you
-              leave, and step back in instantly.
+              Pause anything. Resume instantly.{'\n'}
+              Your in-progress life, organized.
             </Text>
           </MotiView>
 
@@ -84,7 +90,7 @@ export default function OnboardingScreen() {
                 className="flex-row items-start gap-4"
               >
                 <View className="w-12 h-12 rounded-full bg-accent/15 items-center justify-center mt-0.5 flex-shrink-0">
-                  <Icon size={22} color="#8B9E7E" strokeWidth={1.6} />
+                  <Icon size={22} color={colors.accent} strokeWidth={1.6} />
                 </View>
                 <View className="flex-1">
                   <Text className="font-sans-semi text-base text-fg mb-1">
@@ -114,7 +120,7 @@ export default function OnboardingScreen() {
             />
           </MotiView>
         </ScrollView>
-      </SafeAreaView>
     </View>
+    </AmbientGlow>
   );
 }

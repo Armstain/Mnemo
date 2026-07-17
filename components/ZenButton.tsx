@@ -64,17 +64,19 @@ export const ZenButton = ({
 
   const getTextColor = () => {
     switch (variant) {
+      // Ink tokens pair with the fill per theme (dark ink on the bright
+      // dark-theme fills, white on the deep light-theme fills).
       case 'primary':
-        return 'text-white';
+        return 'text-accent-ink';
       case 'danger':
-        return 'text-white';
+        return 'text-error-ink';
       case 'outline':
       case 'ghost':
         return 'text-fg';
       case 'secondary':
         return 'text-fg';
       default:
-        return 'text-white';
+        return 'text-accent-ink';
     }
   };
 
@@ -114,7 +116,6 @@ export const ZenButton = ({
         ${disabled ? 'opacity-40' : 'active:opacity-90 active:scale-[0.97]'}
         ${className}
       `}
-      style={variant === 'primary' ? { backgroundColor: '#7A8F6A' } : variant === 'danger' ? { backgroundColor: '#C17A6A' } : {}}
     >
       {icon && <View className="mr-3">{icon}</View>}
       <Text

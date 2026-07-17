@@ -1,4 +1,4 @@
-import { ContextDump } from '@/hooks/use-context-store';
+import type { MnemoItem } from '@/types/mnemo';
 
 const K1 = 1.5; // Term frequency saturation — controls how quickly TF effect diminishes
 const B = 0.75;  // Document length normalization — 0 = no length norm, 1 = full length norm
@@ -25,15 +25,18 @@ function termFrequency(term: string, tokens: string[]): number {
 /**
  * Rank documents by BM25 score against the given query.
  * Returns all documents when the query is empty (preserving original order).
+ * Searches across title, content, nextStep, whereLeftOff, tags, and category.
  */
-export function bm25Search(query: string, documents: ContextDump[]): ContextDump[] {
+export function bm25Search(query: string, documents: MnemoItem[]): MnemoItem[] {
   if (!query.trim()) return documents;
 
   const queryTerms = tokenize(query);
   if (queryTerms.length === 0) return documents;
 
   const docTokens = documents.map((doc) =>
-    tokenize(`${doc.title} ${doc.notes}`)
+    tokenize(
+      `${doc.title} ${doc.content} ${doc.nextStep ?? ''} ${doc.whereLeftOff ?? ''} ${doc.tags?.join(' ') ?? ''} ${doc.category}`
+    )
   );
 
   const N = documents.length;

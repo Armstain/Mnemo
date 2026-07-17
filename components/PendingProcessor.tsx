@@ -1,61 +1,72 @@
 import { useEffect, useRef } from 'react';
 import { File } from 'expo-file-system';
-import { useContextStore } from '@/hooks/use-context-store';
-import { processAudioDump, processVoiceDump } from '@/lib/gemini';
+import { useMnemoStore } from '@/hooks/use-mnemo-store';
+import { processVoiceDump } from '@/lib/gemini';
+import { processRecording } from '@/lib/capture';
 
 /**
  * Invisible component mounted at the app root.
- * On startup it finds any notes that were saved while offline and
+ * On startup it finds any items that were saved while offline and
  * tries to structure them via Gemini once connectivity is available.
  */
 export function PendingProcessor() {
-  const { contexts, isLoaded, updateContext } = useContextStore();
+  const { items, isLoaded, updateItem } = useMnemoStore();
   const hasRun = useRef(false);
 
   useEffect(() => {
     if (!isLoaded || hasRun.current) return;
     hasRun.current = true;
 
-    const pending = contexts.filter((c) => c.pending);
+    const pending = items.filter((c) => c.pending);
     if (pending.length === 0) return;
 
-    for (const ctx of pending) {
+    for (const item of pending) {
       (async () => {
         try {
-          if (ctx.pendingAudioUri) {
-            const audioFile = new File(ctx.pendingAudioUri);
+          if (item.pendingAudioUri) {
+            const audioFile = new File(item.pendingAudioUri);
             if (!audioFile.exists) {
-              updateContext(ctx.id, {
+              updateItem(item.id, {
                 pending: false,
                 pendingAudioUri: undefined,
               });
               return;
             }
             const base64 = await audioFile.base64();
-            const processed = await processAudioDump(base64, 'audio/m4a');
+            const processed = await processRecording({
+              fileUri: item.pendingAudioUri,
+              base64,
+              mimeType: 'audio/m4a',
+            });
             try { audioFile.delete(); } catch { /* already deleted — safe to ignore */ }
-            updateContext(ctx.id, {
+            updateItem(item.id, {
               title: processed.title,
-              notes: processed.notes,
+              content: processed.notes,
               links: processed.links,
-              summary: processed.summary,
+              aiSummary: processed.summary,
+              whereLeftOff: processed.summary?.leftOff,
+              nextStep: processed.summary?.nextSteps?.[0],
               pending: false,
               pendingAudioUri: undefined,
               pendingRawText: undefined,
+              status: 'active',
             });
-          } else if (ctx.pendingRawText) {
-            const processed = await processVoiceDump(ctx.pendingRawText);
-            updateContext(ctx.id, {
+          } else if (item.pendingRawText) {
+            const processed = await processVoiceDump(item.pendingRawText);
+            updateItem(item.id, {
               title: processed.title,
-              notes: processed.notes,
+              content: processed.notes,
               links: processed.links,
-              summary: processed.summary,
+              aiSummary: processed.summary,
+              whereLeftOff: processed.summary?.leftOff,
+              nextStep: processed.summary?.nextSteps?.[0],
               pending: false,
               pendingRawText: undefined,
+              status: 'active',
             });
           }
         } catch {
-          // Keep the note as pending — will retry next launch.
+          // Keep the item as pending — will retry next launch.
         }
       })();
     }

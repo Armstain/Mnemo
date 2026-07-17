@@ -1,29 +1,36 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, ActivityIndicator, Alert } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import { Mic, X, Check } from 'lucide-react-native';
 import { router } from 'expo-router';
-import { MotiView, AnimatePresence } from 'moti';
-import { 
-  useAudioRecorder, 
-  AudioModule, 
-  RecordingPresets, 
-  setAudioModeAsync, 
-  useAudioRecorderState 
+import { MotiView } from 'moti';
+import {
+  useAudioRecorder,
+  AudioModule,
+  RecordingPresets,
+  setAudioModeAsync,
+  useAudioRecorderState
 } from 'expo-audio';
 import { File, Directory, Paths } from 'expo-file-system';
-import { useContextStore } from '@/hooks/use-context-store';
-import { processAudioDump } from '@/lib/gemini';
+import { AmbientGlow } from '@/components/ui/AmbientGlow';
+import { useMnemoStore } from '@/hooks/use-mnemo-store';
+import { processRecording } from '@/lib/capture';
 import { ZenButton } from '@/components/ZenButton';
+import { CategoryPill } from '@/components/ui/CategoryPill';
+import { CATEGORY_LIST } from '@/utils/categories';
+import { useThemeColors } from '@/hooks/use-theme';
+import { EASE_OUT } from '@/utils/motion';
+import type { Category } from '@/types/mnemo';
 
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 export default function DumpScreen() {
   const insets = useSafeAreaInsets();
-  const { addContext } = useContextStore();
+  const { addItem } = useMnemoStore();
 
   const [isProcessing, setIsProcessing] = useState(false);
   const [hasPermission, setHasPermission] = useState<boolean | null>(null);
+  const [category, setCategory] = useState<Category>('general');
+  const colors = useThemeColors();
 
   // Initialize recorder with HIGH_QUALITY preset
   const audioRecorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
@@ -34,7 +41,7 @@ export default function DumpScreen() {
     (async () => {
       const status = await AudioModule.requestRecordingPermissionsAsync();
       setHasPermission(status.granted);
-      
+
       if (status.granted) {
         // Configure audio mode for recording
         await setAudioModeAsync({
@@ -88,16 +95,26 @@ export default function DumpScreen() {
 
       try {
         const base64 = await permanentFile.base64();
-        const processed = await processAudioDump(base64, 'audio/m4a');
+        const processed = await processRecording({
+          fileUri: permanentUri,
+          base64,
+          mimeType: 'audio/m4a',
+        });
         // Recording processed successfully — clean up the local copy.
         try { permanentFile.delete(); } catch { /* already deleted — safe to ignore */ }
-        const newCtx = addContext({
+        const newItem = addItem({
+          type: 'voice',
           title: processed.title,
-          notes: processed.notes,
+          content: processed.notes,
           links: processed.links,
-          summary: processed.summary,
+          category,
+          tags: [],
+          status: 'active',
+          nextStep: processed.summary?.nextSteps?.[0],
+          whereLeftOff: processed.summary?.leftOff,
+          aiSummary: processed.summary,
         });
-        router.replace(`/(tabs)/context?id=${newCtx.id}` as any);
+        router.replace(`/(tabs)/context?id=${newItem.id}` as any);
       } catch (aiError) {
         // AI unavailable (offline or rate-limited) — save the recording for
         // deferred processing instead of losing the user's note.
@@ -105,14 +122,18 @@ export default function DumpScreen() {
           hour: '2-digit',
           minute: '2-digit',
         });
-        const newCtx = addContext({
+        const newItem = addItem({
+          type: 'voice',
           title: `Voice note · ${timestamp}`,
-          notes: 'Your recording is saved. It will be transcribed automatically when you\'re back online.',
+          content: 'Your recording is saved. It will be transcribed automatically when you\'re back online.',
           links: [],
+          category,
+          tags: [],
+          status: 'paused',
           pending: true,
           pendingAudioUri: permanentUri,
         });
-        router.replace(`/(tabs)/context?id=${newCtx.id}` as any);
+        router.replace(`/(tabs)/context?id=${newItem.id}` as any);
       }
     } catch (e) {
       console.error('stopAndSave error', e);
@@ -120,7 +141,7 @@ export default function DumpScreen() {
         'Could not save recording',
         'The recording could not be saved. Would you like to type your note instead?',
         [
-          { text: 'Type instead', onPress: () => router.replace('/manual' as any) },
+          { text: 'Type instead', onPress: () => router.replace('/capture' as any) },
           { text: 'Dismiss', style: 'cancel' },
         ],
       );
@@ -138,15 +159,16 @@ export default function DumpScreen() {
   };
 
   return (
-    <View className="flex-1 bg-bg px-6">
+    <AmbientGlow>
+    <View className="flex-1 px-6">
       <View className="flex-1">
         {/* Header */}
         <MotiView
           from={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           transition={{ type: 'timing', duration: 400 }}
-          className="flex-row justify-between items-center mb-8"
-          style={{ marginTop: Math.max(insets.top, 16) }}
+          className="flex-row justify-between items-center mb-6"
+          style={{ paddingTop: Math.max(insets.top, 16) }}
         >
           <Text className="font-sans-medium text-sm text-fg-muted">
             {isRecording ? "Listening..." : "Voice capture"}
@@ -161,6 +183,31 @@ export default function DumpScreen() {
             </MotiView>
           )}
         </MotiView>
+
+        {/* Category selector */}
+        {!isRecording && (
+          <MotiView
+            from={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ type: 'timing', duration: 400, delay: 100 }}
+            className="mb-6"
+          >
+            <Text className="font-sans-medium text-[10px] text-fg-muted tracking-wider uppercase mb-2">
+              Category
+            </Text>
+            <View className="flex-row flex-wrap gap-2">
+              {CATEGORY_LIST.map((cat) => (
+                <CategoryPill
+                  key={cat}
+                  category={cat}
+                  size="md"
+                  selected={category === cat}
+                  onPress={() => setCategory(cat)}
+                />
+              ))}
+            </View>
+          </MotiView>
+        )}
 
         {/* Central Mic Area */}
         <View className="flex-1 items-center justify-center">
@@ -186,12 +233,12 @@ export default function DumpScreen() {
             <MotiView
               animate={{
                 scale: isRecording ? 1.05 : 1,
-                backgroundColor: isRecording ? '#8B9E7E' : '#FFFFFF',
+                backgroundColor: isRecording ? colors.accent : colors.surface,
               }}
               transition={{ type: 'timing', duration: 400 }}
-              className="w-44 h-44 rounded-full items-center justify-center shadow-soft-lg border border-border/30"
+              className="w-44 h-44 rounded-full items-center justify-center shadow-soft-lg border border-border"
             >
-              <Mic size={56} color={isRecording ? '#FFFFFF' : '#8B9E7E'} strokeWidth={1.5} />
+              <Mic size={56} color={isRecording ? colors.accentInk : colors.accent} strokeWidth={1.5} />
             </MotiView>
           </View>
 
@@ -201,7 +248,7 @@ export default function DumpScreen() {
             transition={{ type: 'timing', duration: 500, delay: 200 }}
             className="mt-10"
           >
-            <Text className="text-2xl font-serif text-fg text-center">
+            <Text className="text-2xl font-sans-medium text-fg text-center">
               {isRecording ? "Listening..." : "Ready to listen"}
             </Text>
             <Text className="font-sans text-sm text-fg-muted text-center mt-2">
@@ -216,7 +263,7 @@ export default function DumpScreen() {
 
         {/* Visual feedback Area */}
         <View className="h-36 rounded-[16px] bg-surface border border-border/50 p-5 mb-8 shadow-soft-sm items-center justify-center">
-          <Text className="font-serif text-sm text-fg-muted italic text-center">
+          <Text className="font-sans-medium text-sm text-fg-muted italic text-center">
             {isRecording
               ? "Recording your voice..."
               : "Capture audio directly for AI processing"}
@@ -224,9 +271,17 @@ export default function DumpScreen() {
         </View>
 
         {/* Actions */}
-        <View className="gap-3 pb-12">
-          <AnimatePresence>
-            {!isRecording ? (
+        <View 
+          className="gap-3"
+          style={{ paddingBottom: Math.max(insets.bottom, 24) + 12 }}
+        >
+          {!isRecording ? (
+            <MotiView
+              key="start"
+              from={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              transition={{ type: 'timing', duration: 200, easing: EASE_OUT }}
+            >
               <ZenButton
                 onPress={startRecording}
                 title="Start recording"
@@ -234,33 +289,40 @@ export default function DumpScreen() {
                 size="lg"
                 fullWidth
                 hapticIntensity="medium"
-                icon={<Mic size={22} color="#FFFFFF" />}
+                icon={<Mic size={22} color={colors.accentInk} />}
               />
-            ) : (
-              <View className="flex-row gap-3">
-                <ZenButton
-                  onPress={handleCancel}
-                  title="Cancel"
-                  variant="outline"
-                  size="md"
-                  className="flex-1"
-                  icon={<X size={20} color="#3D3A36" />}
-                />
-                <ZenButton
-                  onPress={stopAndSave}
-                  disabled={isProcessing}
-                  title={isProcessing ? "Saving..." : "Save"}
-                  variant="primary"
-                  size="md"
-                  className="flex-[2]"
-                  hapticIntensity="medium"
-                  icon={isProcessing ? <ActivityIndicator color="#FFFFFF" size="small" /> : <Check size={20} color="#FFFFFF" />}
-                />
-              </View>
-            )}
-          </AnimatePresence>
+            </MotiView>
+          ) : (
+            <MotiView
+              key="controls"
+              from={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              transition={{ type: 'timing', duration: 200, easing: EASE_OUT }}
+              className="flex-row gap-3"
+            >
+              <ZenButton
+                onPress={handleCancel}
+                title="Cancel"
+                variant="outline"
+                size="md"
+                className="flex-1"
+                icon={<X size={20} color={colors.fg} />}
+              />
+              <ZenButton
+                onPress={stopAndSave}
+                disabled={isProcessing}
+                title={isProcessing ? "Saving..." : "Save"}
+                variant="primary"
+                size="md"
+                className="flex-[2]"
+                hapticIntensity="medium"
+                icon={isProcessing ? <ActivityIndicator color={colors.accentInk} size="small" /> : <Check size={20} color={colors.accentInk} />}
+              />
+            </MotiView>
+          )}
         </View>
       </View>
     </View>
+    </AmbientGlow>
   );
 }

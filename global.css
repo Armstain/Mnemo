@@ -1,47 +1,72 @@
 @import "tailwindcss";
 @import "uniwind";
 
+/*
+ * Mnemo — dual-theme glass tokens.
+ *
+ * Light is the base (:root); dark overrides via prefers-color-scheme.
+ * uniwind registers both as themes, follows the system by default, and
+ * Uniwind.setTheme('light'|'dark'|'system') provides the manual override
+ * (see hooks/use-theme.tsx).
+ *
+ * Text tones are a fixed 3-step scale per theme — fg (primary),
+ * fg-secondary (supporting copy, ≥4.5:1), fg-tertiary (small labels /
+ * timestamps, ~4.5:1 floor). No ad-hoc white-alpha text values.
+ */
 :root {
-  --bg: #F5F0EB;
-  --fg: #3D3A36;
-  --fg-muted: #6D6963;
-  --accent: #7A8F6A;
-  --accent-warm: #B2765A;
-  --surface: #FFFFFF;
-  --surface-warm: #EDE8E2;
-  --border: #E2DDD6;
+  --bg: #f2f5f4;
+  --fg: #16181d;
+  --fg-secondary: #4a4f5b;
+  --fg-tertiary: #6b7180;
+  --fg-muted: #6b7180; /* legacy alias for fg-tertiary */
+  --accent: #0b7a52;
+  --accent-ink: #ffffff;
+  --accent-warm: #c2478a;
+  --error-ink: #ffffff;
+  --surface: rgba(255, 255, 255, 0.55);
+  --surface-warm: rgba(255, 255, 255, 0.72);
+  --border: rgba(10, 15, 20, 0.12);
+  --error: #c2543c;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg: #2A2826;
-    --fg: #E8E4DF;
-    --fg-muted: #A8A49F;
-    --accent: #A3B896;
-    --accent-warm: #D48E74;
-    --surface: #3E3B38;
-    --surface-warm: #33302D;
-    --border: #3E3B38;
+    --bg: #0a0b0f;
+    --fg: #f4f5f8;
+    --fg-secondary: #a9aebc;
+    --fg-tertiary: #7e8494;
+    --fg-muted: #7e8494;
+    --accent: #34d399;
+    --accent-ink: #04271b;
+    --accent-warm: #f472b6;
+    --error-ink: #33100a;
+    --surface: rgba(255, 255, 255, 0.06);
+    --surface-warm: rgba(255, 255, 255, 0.09);
+    --border: rgba(255, 255, 255, 0.12);
+    --error: #f0876c;
   }
 }
 
 @theme {
-  /* Colors — Zen / Cognitive Calm */
   --color-bg: var(--bg);
   --color-fg: var(--fg);
+  --color-fg-secondary: var(--fg-secondary);
+  --color-fg-tertiary: var(--fg-tertiary);
   --color-fg-muted: var(--fg-muted);
   --color-accent: var(--accent);
+  --color-accent-ink: var(--accent-ink);
   --color-accent-warm: var(--accent-warm);
   --color-surface: var(--surface);
   --color-surface-warm: var(--surface-warm);
   --color-border: var(--border);
-  --color-error: #C17A6A;
+  --color-error: var(--error);
+  --color-error-ink: var(--error-ink);
 
   /* Typography */
-  --font-serif: "Lora_700Bold";
-  --font-sans: "Inter_400Regular";
-  --font-sans-medium: "Inter_500Medium";
-  --font-sans-semi: "Inter_600SemiBold";
+  --font-serif: "Geist", "Satoshi", "Cabinet Grotesk", sans-serif;
+  --font-sans: "Geist", "Satoshi", sans-serif;
+  --font-sans-medium: "Geist-Medium", "Satoshi-Medium", sans-serif;
+  --font-sans-semi: "Geist-SemiBold", "Satoshi-SemiBold", sans-serif;
 
   /* Border Radius — Squircle feel */
   --radius-sm: 10px;
@@ -49,10 +74,10 @@
   --radius-lg: 24px;
   --radius-full: 9999px;
 
-  /* Shadows — Soft & Diffused */
-  --shadow-soft: 0 8px 30px rgba(61, 58, 54, 0.04);
-  --shadow-soft-sm: 0 4px 16px rgba(61, 58, 54, 0.03);
-  --shadow-soft-lg: 0 12px 48px rgba(61, 58, 54, 0.06);
+  /* Shadows — diffused lift */
+  --shadow-soft: 0 20px 40px -15px rgba(10, 15, 20, 0.18);
+  --shadow-soft-sm: 0 10px 20px -5px rgba(10, 15, 20, 0.1);
+  --shadow-soft-lg: 0 30px 60px -20px rgba(10, 15, 20, 0.25);
 
   /* Spacing */
   --tracking-normal: 0em;

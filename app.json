@@ -11,7 +11,10 @@
     "splash": {
       "image": "./assets/images/splash-icon.png",
       "resizeMode": "contain",
-      "backgroundColor": "#F5F0EB"
+      "backgroundColor": "#F2F5F4",
+      "dark": {
+        "backgroundColor": "#0A0B0F"
+      }
     },
     "ios": {
       "supportsTablet": true,
@@ -20,7 +23,7 @@
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/adaptive-icon.png",
-        "backgroundColor": "#F5F0EB"
+        "backgroundColor": "#0A0B0F"
       },
       "edgeToEdgeEnabled": true,
       "package": "com.mnemo.app",
@@ -30,7 +33,7 @@
     },
     "web": {
       "bundler": "metro",
-      "output": "static",
+      "output": "single",
       "favicon": "./assets/images/favicon.png"
     },
     "plugins": [
@@ -49,7 +52,8 @@
             "enableOnBackInvokedCallback": true
           }
         }
-      ]
+      ],
+      "expo-font"
     ],
     "experiments": {
       "typedRoutes": true
