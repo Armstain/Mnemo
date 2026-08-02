@@ -2,12 +2,13 @@ import React, { useEffect, useRef, useState } from 'react';
 import { Alert, View, Pressable, StyleSheet, Text, GestureResponderEvent } from 'react-native';
 import { Mic, SquarePen, X, Trash2, Check } from 'lucide-react-native';
 import { MotiView, AnimatePresence } from 'moti';
+import { BlurView } from 'expo-blur';
 import * as Haptics from 'expo-haptics';
 import { useAudioRecorderState, type AudioRecorder } from 'expo-audio';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 
-import { useThemeColors } from '@/hooks/use-theme';
+import { useThemeColors, useThemeName } from '@/hooks/use-theme';
 import { useReduceMotion } from '@/hooks/use-accessibility-motion';
 import { useQuickRecording } from '@/hooks/use-quick-recording';
 import { EASE_OUT } from '@/utils/motion';
@@ -149,7 +150,7 @@ export function ActionCluster() {
     });
   };
 
-  const handleTouchMove = (e: GestureResponderEvent) => {
+  const handlePressMove = (e: GestureResponderEvent) => {
     if (holdPhase !== 'recording' && holdPhase !== 'cancelling') return;
     const deltaY = startTouchY.current - e.nativeEvent.pageY;
     if (holdPhase === 'recording' && deltaY > CANCEL_ENTER_PX) {
@@ -273,7 +274,12 @@ export function ActionCluster() {
                 setHoldPhase('charging');
                 Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
               }}
-              onTouchMove={handleTouchMove}
+              // onPressMove isn't in Pressable's public TS types, but it's a
+              // real, first-class Pressability prop at runtime — unlike a
+              // raw onTouchMove, it's guaranteed to fire throughout the same
+              // press/long-press gesture Pressability is already tracking,
+              // which is what makes the slide-to-cancel drag reliable.
+              {...({ onPressMove: handlePressMove } as any)}
               onPressOut={() => {
                 isPressed.current = false;
                 endHold(holdPhase);
@@ -348,6 +354,7 @@ function RecordingOverlay({
   reduceMotion: boolean;
 }) {
   const colors = useThemeColors();
+  const themeName = useThemeName();
   // Polls the recorder only while this overlay itself is mounted — i.e.
   // only during (and just after) an actual hold-to-record session, not for
   // the app's whole lifetime.
@@ -355,13 +362,13 @@ function RecordingOverlay({
   const isLive = tail === null;
   const tint = tail === 'saved' ? colors.accent : colors.error;
 
-  const label =
+  const eyebrow =
     tail === 'saved'
       ? 'Saved'
       : tail === 'discarded'
         ? 'Discarded'
         : tail === 'finishing'
-          ? 'Saving…'
+          ? 'Saving'
           : cancelling
             ? 'Release to cancel'
             : 'Recording';
@@ -380,19 +387,26 @@ function RecordingOverlay({
         transition: { type: 'timing' as const, duration: 150 },
       }
     : {
-        from: { opacity: 0, translateY: 10, scale: 0.85 },
+        from: { opacity: 0, translateY: 8, scale: 0.85 },
         animate: { opacity: 1, translateY: 0, scale: 1 },
-        exit: { opacity: 0, translateY: 6, scale: 0.9 },
+        exit: { opacity: 0, translateY: 6, scale: 0.92 },
         transition: SPRING,
       };
 
   return (
-    <MotiView
-      {...motionProps}
-      style={[styles.overlayCard, { backgroundColor: colors.surfaceHigh, borderColor: tint }]}
-    >
-      <View className="flex-row items-center justify-between mb-2.5">
-        <View className="flex-row items-center gap-2">
+    <MotiView {...motionProps} style={styles.overlayShadow}>
+      <BlurView
+        intensity={64}
+        tint={themeName === 'dark' ? 'dark' : 'light'}
+        style={styles.overlayCard}
+      >
+        {/* Soft color wash over the glass — ties the material to the
+            current state (recording / cancelling / saved) without
+            resorting to a flat, opaque card. */}
+        <View style={[StyleSheet.absoluteFillObject, { backgroundColor: tint, opacity: 0.1 }]} />
+        <View style={[styles.overlayBorder, { borderColor: tint, opacity: 0.35 }]} />
+
+        <View className="flex-row items-center gap-1.5 mb-1">
           {isLive && !cancelling && (
             <MotiView
               from={{ opacity: 0.35 }}
@@ -405,44 +419,48 @@ function RecordingOverlay({
               style={[styles.recDot, { backgroundColor: tint }]}
             />
           )}
-          {tail === 'saved' && <Check size={14} color={colors.accent} strokeWidth={2.4} />}
+          {tail === 'saved' && <Check size={12} color={tint} strokeWidth={2.6} />}
           {(tail === 'discarded' || cancelling) && (
-            <Trash2 size={13} color={colors.error} strokeWidth={2.2} />
+            <Trash2 size={11} color={tint} strokeWidth={2.4} />
           )}
-          <Text className="font-sans-semi text-xs" style={{ color: tint }}>
-            {label}
+          <Text
+            className="font-sans-semi text-[10px] uppercase tracking-wider"
+            style={{ color: tint }}
+          >
+            {eyebrow}
           </Text>
         </View>
+
         {isLive && (
-          <Text className="font-sans-medium text-xs" style={{ color: colors.fgSecondary }}>
+          <Text className="font-sans-semi text-[28px] text-fg mb-2.5" style={{ letterSpacing: -0.5 }}>
             {formatDuration(durationMillis)}
           </Text>
         )}
-      </View>
 
-      {isLive && (
-        <View className="flex-row items-end gap-1 h-8 mb-2.5">
-          {BAR_VARIANCE.map((variance, i) => (
-            <MotiView
-              key={i}
-              animate={{ scaleY: Math.max(0.15, Math.min(1, level * variance)) }}
-              transition={{ type: 'timing', duration: 90 }}
-              style={[styles.bar, { backgroundColor: tint, transformOrigin: 'bottom' } as any]}
-            />
-          ))}
-        </View>
-      )}
+        {isLive && (
+          <View className="flex-row items-center justify-center gap-0.75 h-9 mb-2.5">
+            {BAR_VARIANCE.map((variance, i) => (
+              <MotiView
+                key={i}
+                animate={{ scaleY: Math.max(0.12, Math.min(1, level * variance)) }}
+                transition={{ type: 'timing', duration: 90 }}
+                style={[styles.bar, { backgroundColor: tint, transformOrigin: 'bottom' } as any]}
+              />
+            ))}
+          </View>
+        )}
 
-      {isLive && (
-        <Text className="font-sans text-[11px]" style={{ color: colors.fgTertiary }}>
-          {hint}
-        </Text>
-      )}
+        {isLive && (
+          <Text className="font-sans text-[11px] text-fg-secondary">{hint}</Text>
+        )}
+      </BlurView>
     </MotiView>
   );
 }
 
-const BAR_VARIANCE = [0.5, 0.85, 1.1, 0.7, 1, 0.6, 0.9];
+// Center-weighted so the bars read like an actual waveform silhouette
+// rather than a flat row of equal-ish blips.
+const BAR_VARIANCE = [0.35, 0.55, 0.8, 1, 0.85, 1.05, 0.75, 0.5, 0.3];
 
 function MiniAction({
   label,
@@ -561,17 +579,27 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.16,
     elevation: 4,
   },
-  overlayCard: {
-    width: 236,
-    borderRadius: 20,
-    borderWidth: 1,
-    padding: 16,
-    // M3 elevation level 2.
+  overlayShadow: {
+    // Pulled slightly closer to the FAB than the mini-menu's gap — reads
+    // as emerging from the button rather than a detached popup.
+    marginBottom: -6,
+    borderRadius: 26,
     shadowColor: '#000000',
-    shadowOffset: { width: 0, height: 3 },
-    shadowRadius: 8,
-    shadowOpacity: 0.16,
-    elevation: 4,
+    shadowOffset: { width: 0, height: 10 },
+    shadowRadius: 20,
+    shadowOpacity: 0.22,
+    elevation: 10,
+  },
+  overlayCard: {
+    width: 264,
+    borderRadius: 26,
+    padding: 20,
+    overflow: 'hidden',
+  },
+  overlayBorder: {
+    ...StyleSheet.absoluteFillObject,
+    borderRadius: 26,
+    borderWidth: 1.5,
   },
   recDot: {
     width: 7,
@@ -579,8 +607,8 @@ const styles = StyleSheet.create({
     borderRadius: 4,
   },
   bar: {
-    width: 4,
-    height: 28,
-    borderRadius: 2,
+    width: 5,
+    height: 32,
+    borderRadius: 2.5,
   },
 });
