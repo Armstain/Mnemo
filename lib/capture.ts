@@ -1,11 +1,13 @@
+import { Directory, File, Paths } from 'expo-file-system';
 import { processAudioDump, processVoiceDump } from '@/lib/gemini';
 import { transcribeAudio } from '@/lib/groq';
-import type { AISummary } from '@/types/mnemo';
+import type { AISummary, Category, MnemoItem } from '@/types/mnemo';
 
 export interface ProcessedRecording {
   title: string;
   notes: string;
   links: string[];
+  tags?: string[];
   suggestedCategory?: string;
   summary?: AISummary;
 }
@@ -37,5 +39,141 @@ export async function processRecording(input: {
         links: [],
       };
     }
+  }
+}
+
+type UpdateItemFn = (id: string, updates: Partial<MnemoItem>) => void;
+type AddItemFn = (item: Omit<MnemoItem, 'id' | 'createdAt' | 'updatedAt'>) => MnemoItem;
+type PendingItem = Pick<
+  MnemoItem,
+  'id' | 'pendingAudioUri' | 'pendingRawText' | 'nextStep' | 'whereLeftOff'
+>;
+
+/**
+ * Copies a finished recording out of its temp/cache location, adds it as a
+ * pending voice item, and kicks off background AI structuring. Shared by
+ * the full manual recording screen (dump.tsx) and the FAB's quick
+ * hold-to-record flow — one save path so both stay in sync.
+ */
+export async function saveVoiceRecording(params: {
+  tempUri: string;
+  category: Category;
+  addItem: AddItemFn;
+  updateItem: UpdateItemFn;
+}): Promise<MnemoItem> {
+  const { tempUri, category, addItem, updateItem } = params;
+
+  const recordingsDir = new Directory(Paths.document, 'recordings');
+  try {
+    recordingsDir.create({ intermediates: true, idempotent: true });
+  } catch {
+    // Directory already exists — safe to continue.
+  }
+  const permanentFile = new File(recordingsDir, `recording-${Date.now()}.m4a`);
+  new File(tempUri).copy(permanentFile);
+
+  const timestamp = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  const newItem = addItem({
+    type: 'voice',
+    title: `Voice note · ${timestamp}`,
+    content: 'Transcribing your recording…',
+    links: [],
+    category,
+    tags: [],
+    status: 'active',
+    pending: true,
+    pendingAudioUri: permanentFile.uri,
+  });
+
+  // Fire-and-forget — the caller shouldn't wait on a network round trip to
+  // see their note land.
+  resolvePendingItem(newItem, updateItem);
+
+  return newItem;
+}
+
+/**
+ * Best-effort cleanup for a recording that's being discarded (cancelled
+ * hold, or too short to be intentional) rather than saved. The temp file
+ * lives in a cache dir the OS reclaims anyway, so failures here are fine
+ * to ignore.
+ */
+export function discardRecordingFile(tempUri?: string | null): void {
+  if (!tempUri) return;
+  try {
+    new File(tempUri).delete();
+  } catch {
+    // Already gone, or never existed — nothing to do.
+  }
+}
+
+/**
+ * Structures a pending item (voice or text) and writes the result back via
+ * updateItem. Throws on failure — callers that show their own error
+ * feedback (the manual "Retry" button) should call this directly; silent
+ * background callers should use `resolvePendingItem` instead. User-authored
+ * nextStep/whereLeftOff always win over the AI's guess.
+ */
+export async function structurePendingItem(
+  item: PendingItem,
+  updateItem: UpdateItemFn,
+): Promise<void> {
+  if (item.pendingAudioUri) {
+    const audioFile = new File(item.pendingAudioUri);
+    if (!audioFile.exists) {
+      updateItem(item.id, { pending: false, pendingAudioUri: undefined });
+      return;
+    }
+    const base64 = await audioFile.base64();
+    const processed = await processRecording({
+      fileUri: item.pendingAudioUri,
+      base64,
+      mimeType: 'audio/m4a',
+    });
+    try { audioFile.delete(); } catch { /* already deleted — safe to ignore */ }
+    updateItem(item.id, {
+      title: processed.title,
+      content: processed.notes,
+      links: processed.links,
+      tags: processed.tags ?? [],
+      aiSummary: processed.summary,
+      whereLeftOff: item.whereLeftOff || processed.summary?.leftOff,
+      nextStep: item.nextStep || processed.summary?.nextSteps?.[0],
+      pending: false,
+      pendingAudioUri: undefined,
+      pendingRawText: undefined,
+      status: 'active',
+    });
+  } else if (item.pendingRawText) {
+    const processed = await processVoiceDump(item.pendingRawText);
+    updateItem(item.id, {
+      title: processed.title,
+      content: processed.notes,
+      links: processed.links,
+      tags: processed.tags ?? [],
+      aiSummary: processed.summary,
+      whereLeftOff: item.whereLeftOff || processed.summary?.leftOff,
+      nextStep: item.nextStep || processed.summary?.nextSteps?.[0],
+      pending: false,
+      pendingRawText: undefined,
+      status: 'active',
+    });
+  }
+}
+
+/**
+ * Fire-and-forget version of `structurePendingItem` for background callers
+ * (freshly saved items, PendingProcessor's startup sweep). Never throws —
+ * on failure the item is simply left pending, retried on next launch or by
+ * hand via the item's "Processing queued" banner.
+ */
+export async function resolvePendingItem(
+  item: PendingItem,
+  updateItem: UpdateItemFn,
+): Promise<void> {
+  try {
+    await structurePendingItem(item, updateItem);
+  } catch {
+    // Keep the item as pending — retried next launch or by hand.
   }
 }

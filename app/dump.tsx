@@ -1,7 +1,7 @@
-import React, { useRef, useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { View, Text, ActivityIndicator, Alert, ScrollView } from 'react-native';
 import { Mic, X, Check } from 'lucide-react-native';
-import { router, useLocalSearchParams } from 'expo-router';
+import { router } from 'expo-router';
 import { MotiView } from 'moti';
 import * as Haptics from 'expo-haptics';
 import {
@@ -11,10 +11,9 @@ import {
   setAudioModeAsync,
   useAudioRecorderState
 } from 'expo-audio';
-import { File, Directory, Paths } from 'expo-file-system';
 import { AmbientGlow } from '@/components/ui/AmbientGlow';
 import { useMnemoStore } from '@/hooks/use-mnemo-store';
-import { resolvePendingItem } from '@/lib/capture';
+import { saveVoiceRecording } from '@/lib/capture';
 import { ZenButton } from '@/components/ZenButton';
 import { CategoryPill } from '@/components/ui/CategoryPill';
 import { CATEGORY_LIST } from '@/utils/categories';
@@ -27,15 +26,11 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 export default function DumpScreen() {
   const insets = useSafeAreaInsets();
   const { addItem, updateItem } = useMnemoStore();
-  // Set when the ActionCluster FAB is held rather than tapped — the
-  // fast path straight into recording, no manual "Start recording" tap.
-  const { autoStart } = useLocalSearchParams<{ autoStart?: string }>();
 
   const [isProcessing, setIsProcessing] = useState(false);
   const [hasPermission, setHasPermission] = useState<boolean | null>(null);
   const [category, setCategory] = useState<Category>('general');
   const colors = useThemeColors();
-  const hasAutoStarted = useRef(false);
 
   // Initialize recorder with HIGH_QUALITY preset
   const audioRecorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
@@ -56,14 +51,6 @@ export default function DumpScreen() {
       }
     })();
   }, []);
-
-  useEffect(() => {
-    if (autoStart === '1' && hasPermission && !hasAutoStarted.current) {
-      hasAutoStarted.current = true;
-      startRecording();
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [autoStart, hasPermission]);
 
   async function startRecording() {
     try {
@@ -97,38 +84,12 @@ export default function DumpScreen() {
 
       if (!tempUri) throw new Error('No recording URI');
 
-      // Copy recording to a permanent location so the file survives recorder cleanup.
-      const recordingsDir = new Directory(Paths.document, 'recordings');
-      try {
-        recordingsDir.create({ intermediates: true, idempotent: true });
-      } catch {
-        // Directory already exists — safe to continue.
-      }
-      const permanentFile = new File(recordingsDir, `recording-${Date.now()}.m4a`);
-      new File(tempUri).copy(permanentFile);
-      const permanentUri = permanentFile.uri;
-
-      // Save instantly and leave the AI transcription (a network round
-      // trip) to run in the background — the user shouldn't wait on it
-      // to see their note land.
-      const timestamp = new Date().toLocaleTimeString([], {
-        hour: '2-digit',
-        minute: '2-digit',
-      });
-      const newItem = addItem({
-        type: 'voice',
-        title: `Voice note · ${timestamp}`,
-        content: 'Transcribing your recording…',
-        links: [],
-        category,
-        tags: [],
-        status: 'active',
-        pending: true,
-        pendingAudioUri: permanentUri,
-      });
+      // saveVoiceRecording copies the file to a permanent location, adds
+      // the pending item, and kicks off background AI structuring — the
+      // same path the FAB's quick hold-to-record flow uses.
+      const newItem = await saveVoiceRecording({ tempUri, category, addItem, updateItem });
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       router.replace(`/(tabs)/context?id=${newItem.id}` as any);
-      resolvePendingItem(newItem, updateItem);
     } catch (e) {
       console.error('stopAndSave error', e);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
