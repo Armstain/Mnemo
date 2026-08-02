@@ -1,8 +1,9 @@
-import React, { useState, useEffect } from 'react';
-import { View, Text, ActivityIndicator, Alert } from 'react-native';
+import React, { useRef, useState, useEffect } from 'react';
+import { View, Text, ActivityIndicator, Alert, ScrollView } from 'react-native';
 import { Mic, X, Check } from 'lucide-react-native';
-import { router } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import { MotiView } from 'moti';
+import * as Haptics from 'expo-haptics';
 import {
   useAudioRecorder,
   AudioModule,
@@ -13,7 +14,7 @@ import {
 import { File, Directory, Paths } from 'expo-file-system';
 import { AmbientGlow } from '@/components/ui/AmbientGlow';
 import { useMnemoStore } from '@/hooks/use-mnemo-store';
-import { processRecording } from '@/lib/capture';
+import { resolvePendingItem } from '@/lib/capture';
 import { ZenButton } from '@/components/ZenButton';
 import { CategoryPill } from '@/components/ui/CategoryPill';
 import { CATEGORY_LIST } from '@/utils/categories';
@@ -25,12 +26,16 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 export default function DumpScreen() {
   const insets = useSafeAreaInsets();
-  const { addItem } = useMnemoStore();
+  const { addItem, updateItem } = useMnemoStore();
+  // Set when the ActionCluster FAB is held rather than tapped — the
+  // fast path straight into recording, no manual "Start recording" tap.
+  const { autoStart } = useLocalSearchParams<{ autoStart?: string }>();
 
   const [isProcessing, setIsProcessing] = useState(false);
   const [hasPermission, setHasPermission] = useState<boolean | null>(null);
   const [category, setCategory] = useState<Category>('general');
   const colors = useThemeColors();
+  const hasAutoStarted = useRef(false);
 
   // Initialize recorder with HIGH_QUALITY preset
   const audioRecorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
@@ -52,12 +57,21 @@ export default function DumpScreen() {
     })();
   }, []);
 
+  useEffect(() => {
+    if (autoStart === '1' && hasPermission && !hasAutoStarted.current) {
+      hasAutoStarted.current = true;
+      startRecording();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoStart, hasPermission]);
+
   async function startRecording() {
     try {
       if (!hasPermission) {
         const status = await AudioModule.requestRecordingPermissionsAsync();
         setHasPermission(status.granted);
         if (!status.granted) {
+          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
           Alert.alert('Permission required', 'Please enable microphone access to record thoughts.');
           return;
         }
@@ -67,6 +81,7 @@ export default function DumpScreen() {
       audioRecorder.record();
     } catch (err) {
       console.error('Failed to start recording', err);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
       Alert.alert(
         'Microphone error',
         'Could not start recording. Check that the app has microphone permission in Settings.',
@@ -93,50 +108,30 @@ export default function DumpScreen() {
       new File(tempUri).copy(permanentFile);
       const permanentUri = permanentFile.uri;
 
-      try {
-        const base64 = await permanentFile.base64();
-        const processed = await processRecording({
-          fileUri: permanentUri,
-          base64,
-          mimeType: 'audio/m4a',
-        });
-        // Recording processed successfully — clean up the local copy.
-        try { permanentFile.delete(); } catch { /* already deleted — safe to ignore */ }
-        const newItem = addItem({
-          type: 'voice',
-          title: processed.title,
-          content: processed.notes,
-          links: processed.links,
-          category,
-          tags: [],
-          status: 'active',
-          nextStep: processed.summary?.nextSteps?.[0],
-          whereLeftOff: processed.summary?.leftOff,
-          aiSummary: processed.summary,
-        });
-        router.replace(`/(tabs)/context?id=${newItem.id}` as any);
-      } catch (aiError) {
-        // AI unavailable (offline or rate-limited) — save the recording for
-        // deferred processing instead of losing the user's note.
-        const timestamp = new Date().toLocaleTimeString([], {
-          hour: '2-digit',
-          minute: '2-digit',
-        });
-        const newItem = addItem({
-          type: 'voice',
-          title: `Voice note · ${timestamp}`,
-          content: 'Your recording is saved. It will be transcribed automatically when you\'re back online.',
-          links: [],
-          category,
-          tags: [],
-          status: 'paused',
-          pending: true,
-          pendingAudioUri: permanentUri,
-        });
-        router.replace(`/(tabs)/context?id=${newItem.id}` as any);
-      }
+      // Save instantly and leave the AI transcription (a network round
+      // trip) to run in the background — the user shouldn't wait on it
+      // to see their note land.
+      const timestamp = new Date().toLocaleTimeString([], {
+        hour: '2-digit',
+        minute: '2-digit',
+      });
+      const newItem = addItem({
+        type: 'voice',
+        title: `Voice note · ${timestamp}`,
+        content: 'Transcribing your recording…',
+        links: [],
+        category,
+        tags: [],
+        status: 'active',
+        pending: true,
+        pendingAudioUri: permanentUri,
+      });
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      router.replace(`/(tabs)/context?id=${newItem.id}` as any);
+      resolvePendingItem(newItem, updateItem);
     } catch (e) {
       console.error('stopAndSave error', e);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
       Alert.alert(
         'Could not save recording',
         'The recording could not be saved. Would you like to type your note instead?',
@@ -184,7 +179,7 @@ export default function DumpScreen() {
           )}
         </MotiView>
 
-        {/* Category selector */}
+        {/* Category selector — horizontal scroll to match capture screen */}
         {!isRecording && (
           <MotiView
             from={{ opacity: 0 }}
@@ -195,7 +190,11 @@ export default function DumpScreen() {
             <Text className="font-sans-medium text-[10px] text-fg-muted tracking-wider uppercase mb-2">
               Category
             </Text>
-            <View className="flex-row flex-wrap gap-2">
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={{ gap: 6 }}
+            >
               {CATEGORY_LIST.map((cat) => (
                 <CategoryPill
                   key={cat}
@@ -205,7 +204,7 @@ export default function DumpScreen() {
                   onPress={() => setCategory(cat)}
                 />
               ))}
-            </View>
+            </ScrollView>
           </MotiView>
         )}
 
@@ -261,13 +260,39 @@ export default function DumpScreen() {
           </MotiView>
         </View>
 
-        {/* Visual feedback Area */}
+        {/* Audio level feedback */}
         <View className="h-36 rounded-[16px] bg-surface border border-border/50 p-5 mb-8 shadow-soft-sm items-center justify-center">
-          <Text className="font-sans-medium text-sm text-fg-muted italic text-center">
-            {isRecording
-              ? "Recording your voice..."
-              : "Capture audio directly for AI processing"}
-          </Text>
+          {isRecording ? (
+            // Animated bars give a live-mic feel without actual audio level data.
+            // ponytail: real level metering would need AudioModule.setMeteringInterval —
+            // these static-offset bars are a cheap approximation.
+            <View className="flex-row items-end gap-1.5 h-12">
+              {[0.4, 0.7, 1, 0.6, 0.9, 0.5, 0.8, 0.3, 0.7, 1, 0.5, 0.65].map((h, i) => (
+                <MotiView
+                  key={i}
+                  from={{ scaleY: h * 0.4 }}
+                  animate={{ scaleY: h }}
+                  transition={{
+                    type: 'timing',
+                    duration: 600 + i * 80,
+                    loop: true,
+                    repeatReverse: true,
+                  }}
+                  style={{
+                    width: 4,
+                    height: 48,
+                    borderRadius: 2,
+                    transformOrigin: 'bottom',
+                  }}
+                  className="bg-accent"
+                />
+              ))}
+            </View>
+          ) : (
+            <Text className="font-sans-medium text-sm text-fg-muted text-center">
+              Capture audio directly for AI processing
+            </Text>
+          )}
         </View>
 
         {/* Actions */}

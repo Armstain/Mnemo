@@ -7,6 +7,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { NoteRow } from '@/components/ui/NoteRow';
 import { SearchBar } from '@/components/SearchBar';
+import { NAV_CLEARANCE } from '@/components/ui/FloatingTabBar';
 import { useMnemoStore } from '@/hooks/use-mnemo-store';
 import { useThemeColors } from '@/hooks/use-theme';
 import { bm25Search } from '@/lib/bm25';
@@ -52,7 +53,7 @@ export default function SearchScreen() {
         transition={{ type: 'timing', duration: 400, easing: EASE_OUT }}
         className="px-6 mb-4"
       >
-        <Text className="text-3xl font-sans-medium text-fg">Search</Text>
+        <Text className="text-3xl font-serif text-fg">Search</Text>
       </MotiView>
 
       {/* Search Input */}
@@ -74,7 +75,7 @@ export default function SearchScreen() {
         className="flex-1 px-6"
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
-        contentContainerStyle={{ paddingBottom: insets.bottom + 100 }}
+        contentContainerStyle={{ paddingBottom: insets.bottom + NAV_CLEARANCE }}
       >
         {hasQuery ? (
           /* ── Search Results ────────────────────────────── */

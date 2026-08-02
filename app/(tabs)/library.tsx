@@ -3,9 +3,11 @@ import { Pressable, ScrollView, Text, View } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { MotiView } from 'moti';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Layers } from 'lucide-react-native';
 
 import { NoteRow } from '@/components/ui/NoteRow';
 import { SearchBar } from '@/components/SearchBar';
+import { NAV_CLEARANCE } from '@/components/ui/FloatingTabBar';
 import { useMnemoStore } from '@/hooks/use-mnemo-store';
 import { useThemeColors } from '@/hooks/use-theme';
 import { bm25Search } from '@/lib/bm25';
@@ -70,7 +72,7 @@ export default function LibraryScreen() {
         transition={{ type: 'timing', duration: 400, easing: EASE_OUT }}
         className="mb-4 flex-row items-baseline justify-between"
       >
-        <Text className="text-3xl font-sans-medium text-fg">Library</Text>
+        <Text className="text-3xl font-serif text-fg">Library</Text>
         <Text className="font-sans text-xs text-fg-tertiary">
           {filteredItems.length} item{filteredItems.length !== 1 ? 's' : ''}
         </Text>
@@ -90,13 +92,16 @@ export default function LibraryScreen() {
         />
       </MotiView>
 
-      {/* Category filter — quiet text row, active gets the category's color */}
+      {/* Category filter */}
       <MotiView
         from={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         transition={{ type: 'timing', duration: 400, delay: 140, easing: EASE_OUT }}
         className="mb-1"
       >
+        <Text className="font-sans-medium text-[9px] text-fg-tertiary tracking-widest uppercase mb-0.5 px-0.5">
+          Category
+        </Text>
         <ScrollView
           horizontal
           showsHorizontalScrollIndicator={false}
@@ -127,13 +132,16 @@ export default function LibraryScreen() {
         </ScrollView>
       </MotiView>
 
-      {/* Status filter — same quiet pattern, accent-colored */}
+      {/* Status filter */}
       <MotiView
         from={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         transition={{ type: 'timing', duration: 400, delay: 180, easing: EASE_OUT }}
         className="mb-3"
       >
+        <Text className="font-sans-medium text-[9px] text-fg-tertiary tracking-widest uppercase mb-0.5 px-0.5">
+          Status
+        </Text>
         <ScrollView
           horizontal
           showsHorizontalScrollIndicator={false}
@@ -156,7 +164,7 @@ export default function LibraryScreen() {
       <ScrollView
         className="flex-1"
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={{ paddingBottom: insets.bottom + 100 }}
+        contentContainerStyle={{ paddingBottom: insets.bottom + NAV_CLEARANCE }}
       >
         {filteredItems.length === 0 ? (
           <MotiView
@@ -165,8 +173,8 @@ export default function LibraryScreen() {
             transition={{ type: 'timing', duration: 400, easing: EASE_OUT }}
             className="py-20 items-center"
           >
-            <Text className="text-4xl mb-4">🌿</Text>
-            <Text className="font-sans text-sm text-fg-secondary">
+            <Layers size={32} color={colors.fgTertiary} strokeWidth={1.5} />
+            <Text className="font-sans text-sm text-fg-secondary mt-4">
               {searchQuery ? 'No matching items found' : 'No items yet'}
             </Text>
           </MotiView>

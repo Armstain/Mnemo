@@ -1,143 +1,43 @@
 import React from 'react';
-import { Dimensions, StyleSheet, View, ViewStyle } from 'react-native';
-import { MotiView } from 'moti';
-import Svg, { Ellipse, Defs, RadialGradient, Stop } from 'react-native-svg';
+import { StyleSheet, View } from 'react-native';
+import Svg, { Defs, RadialGradient, Stop, Rect } from 'react-native-svg';
 
-import { useReduceMotion } from '@/hooks/use-accessibility-motion';
 import { PALETTE, useThemeName } from '@/hooks/use-theme';
 
-const { width: W, height: H } = Dimensions.get('window');
-
-interface OrbProps {
-  id: string;
-  width: number;
-  height: number;
-  color: string;
-  coreOpacity: number;
-  position: ViewStyle;
-  drift: { x: number; y: number; duration: number };
-  reduceMotion: boolean;
-}
-
-function Orb({
-  id,
-  width,
-  height,
-  color,
-  coreOpacity,
-  position,
-  drift,
-  reduceMotion,
-}: OrbProps) {
-  // Many stops with an ease-out curve — a 3-stop radial gradient shows a
-  // visible edge on dark backgrounds; this falls off like real light.
-  const gradient = (
-    <Svg width={width} height={height}>
-      <Defs>
-        <RadialGradient id={id} cx="50%" cy="50%" rx="50%" ry="50%">
-          <Stop offset="0%" stopColor={color} stopOpacity={coreOpacity} />
-          <Stop offset="25%" stopColor={color} stopOpacity={coreOpacity * 0.55} />
-          <Stop offset="50%" stopColor={color} stopOpacity={coreOpacity * 0.24} />
-          <Stop offset="75%" stopColor={color} stopOpacity={coreOpacity * 0.08} />
-          <Stop offset="100%" stopColor={color} stopOpacity={0} />
-        </RadialGradient>
-      </Defs>
-      <Ellipse
-        cx={width / 2}
-        cy={height / 2}
-        rx={width / 2}
-        ry={height / 2}
-        fill={`url(#${id})`}
-      />
-    </Svg>
-  );
-
-  if (reduceMotion) {
-    return <View style={[styles.orb, position]}>{gradient}</View>;
-  }
-
-  return (
-    <MotiView
-      style={[styles.orb, position]}
-      from={{ translateX: 0, translateY: 0 }}
-      animate={{ translateX: drift.x, translateY: drift.y }}
-      transition={{ type: 'timing', duration: drift.duration, loop: true }}
-    >
-      {gradient}
-    </MotiView>
-  );
-}
-
-// Per-theme field definition. A soft emerald wash lights the top of the
-// scene (text stays crisp over it because all text tones are SOLID
-// colors — translucent white glyphs were what read as "glow on fonts"),
-// and a second color anchors the lower half where the hero glass
-// surfaces (resume card, tab bar) live.
-const FIELDS = {
-  dark: [
-    {
-      id: 'glow-emerald-top',
-      color: '#2EC592',
-      coreOpacity: 0.08,
-      width: W * 1.8,
-      height: H * 0.7,
-      position: { top: -H * 0.32, left: -W * 0.35 } as ViewStyle,
-      drift: { x: -W * 0.08, y: H * 0.015, duration: 26000 },
-    },
-    {
-      id: 'glow-violet-low',
-      color: '#5B54C9',
-      coreOpacity: 0.07,
-      width: W * 1.8,
-      height: H * 0.9,
-      position: { top: H * 0.62, right: -W * 0.7 } as ViewStyle,
-      drift: { x: -W * 0.06, y: -H * 0.015, duration: 32000 },
-    },
-  ],
-  light: [
-    {
-      id: 'glow-emerald-top',
-      color: '#34D399',
-      coreOpacity: 0.13,
-      width: W * 1.8,
-      height: H * 0.7,
-      position: { top: -H * 0.32, left: -W * 0.35 } as ViewStyle,
-      drift: { x: -W * 0.08, y: H * 0.015, duration: 26000 },
-    },
-    {
-      id: 'glow-violet-low',
-      color: '#8B7CF0',
-      coreOpacity: 0.09,
-      width: W * 1.8,
-      height: H * 0.9,
-      position: { top: H * 0.62, right: -W * 0.7 } as ViewStyle,
-      drift: { x: -W * 0.06, y: -H * 0.015, duration: 32000 },
-    },
-  ],
-};
-
 /**
- * AmbientGlow — the softly-lit field the whole app sits on, in both
- * themes: a deep near-black in dark mode, a cool off-white in light.
+ * AppBackground — the app's base surface, now with a whisper of ambient tint.
  *
- * This is what makes glass read as glass: translucent surfaces above it
- * have actual light to refract. The colored washes are confined to the
- * lower half of the screen so header and body text always sit on the
- * plain field — never on a glow. With reduced motion the field is
- * static.
+ * Material 3 draws most depth from tonal elevation on surfaces themselves
+ * (see Glass), not from a lit background field — but a perfectly flat fill
+ * behind every screen reads sterile at full-bleed size. Two very low-opacity
+ * radial washes (primary top-left, tertiary bottom-right) restore some
+ * atmosphere without competing with content: non-interactive, sit under
+ * everything, and are subtle enough to disappear under any surface placed
+ * on top. The export keeps its historical `AmbientGlow` name so existing
+ * call sites (tabs layout, onboarding, capture, dump) don't need to change.
  */
 export function AmbientGlow({ children }: { children?: React.ReactNode }) {
-  const reduceMotion = useReduceMotion();
   const theme = useThemeName();
-  const orbs = FIELDS[theme];
+  const colors = PALETTE[theme];
+  const primaryOpacity = theme === 'dark' ? 0.16 : 0.1;
+  const warmOpacity = theme === 'dark' ? 0.1 : 0.06;
 
   return (
-    <View style={[styles.root, { backgroundColor: PALETTE[theme].bg }]}>
-      <View pointerEvents="none" style={styles.field}>
-        {orbs.map((orb) => (
-          <Orb key={`${theme}-${orb.id}`} {...orb} reduceMotion={reduceMotion} />
-        ))}
-      </View>
+    <View style={[styles.root, { backgroundColor: colors.bg }]}>
+      <Svg style={StyleSheet.absoluteFillObject} pointerEvents="none">
+        <Defs>
+          <RadialGradient id="primaryGlow" cx="18%" cy="0%" r="65%">
+            <Stop offset="0%" stopColor={colors.accent} stopOpacity={primaryOpacity} />
+            <Stop offset="100%" stopColor={colors.accent} stopOpacity={0} />
+          </RadialGradient>
+          <RadialGradient id="warmGlow" cx="100%" cy="100%" r="55%">
+            <Stop offset="0%" stopColor={colors.accentWarm} stopOpacity={warmOpacity} />
+            <Stop offset="100%" stopColor={colors.accentWarm} stopOpacity={0} />
+          </RadialGradient>
+        </Defs>
+        <Rect x="0" y="0" width="100%" height="100%" fill="url(#primaryGlow)" />
+        <Rect x="0" y="0" width="100%" height="100%" fill="url(#warmGlow)" />
+      </Svg>
       {children}
     </View>
   );
@@ -146,12 +46,5 @@ export function AmbientGlow({ children }: { children?: React.ReactNode }) {
 const styles = StyleSheet.create({
   root: {
     flex: 1,
-  },
-  field: {
-    ...StyleSheet.absoluteFillObject,
-    overflow: 'hidden',
-  },
-  orb: {
-    position: 'absolute',
   },
 });

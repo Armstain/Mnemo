@@ -2,48 +2,74 @@
 @import "uniwind";
 
 /*
- * Mnemo — dual-theme glass tokens.
+ * Mnemo — Material Design 3 tokens (green-seed tonal palette).
  *
  * Light is the base (:root); dark overrides via prefers-color-scheme.
  * uniwind registers both as themes, follows the system by default, and
  * Uniwind.setTheme('light'|'dark'|'system') provides the manual override
  * (see hooks/use-theme.tsx).
  *
- * Text tones are a fixed 3-step scale per theme — fg (primary),
- * fg-secondary (supporting copy, ≥4.5:1), fg-tertiary (small labels /
- * timestamps, ~4.5:1 floor). No ad-hoc white-alpha text values.
+ * Names are mapped to Material 3 roles so the whole app shifts to the
+ * Material system at once:
+ *   fg           = on-surface (primary text)
+ *   fg-secondary = on-surface-variant (supporting copy / secondary icons)
+ *   fg-tertiary  = outline (small labels, timestamps)
+ *   accent       = primary,  accent-ink = on-primary
+ *   surface      = surface-container (the default card tone, SOLID — M3
+ *                  uses tonal elevation, not translucency)
+ *   surface-warm = surface-container-high
+ *   border       = outline-variant
+ * Extra Material tiers (primary-container, the surface-container ramp,
+ * the true outline) are exposed as their own tokens below.
  */
 :root {
-  --bg: #f2f5f4;
-  --fg: #16181d;
-  --fg-secondary: #4a4f5b;
-  --fg-tertiary: #6b7180;
-  --fg-muted: #6b7180; /* legacy alias for fg-tertiary */
-  --accent: #0b7a52;
-  --accent-ink: #ffffff;
-  --accent-warm: #c2478a;
+  --bg: #f7faf7; /* M3 surface */
+  --fg: #191c1a; /* on-surface */
+  --fg-secondary: #404943; /* on-surface-variant */
+  --fg-tertiary: #707972; /* outline */
+  --fg-muted: #707972; /* legacy alias for fg-tertiary */
+  --accent: #0b7a52; /* primary */
+  --accent-ink: #ffffff; /* on-primary */
+  --accent-warm: #7d5260; /* tertiary */
+  --error: #ba1a1a;
   --error-ink: #ffffff;
-  --surface: rgba(255, 255, 255, 0.55);
-  --surface-warm: rgba(255, 255, 255, 0.72);
-  --border: rgba(10, 15, 20, 0.12);
-  --error: #c2543c;
+  --surface: #ebf0eb; /* surface-container */
+  --surface-warm: #e5eae5; /* surface-container-high */
+  --border: #c0c9c0; /* outline-variant */
+
+  /* Material 3 tonal ramp + containers */
+  --primary-container: #a7f3d0;
+  --on-primary-container: #002114;
+  --surface-lowest: #ffffff;
+  --surface-low: #f1f5f1;
+  --surface-high: #e5eae5;
+  --surface-highest: #dfe4df;
+  --outline: #707972;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg: #0a0b0f;
-    --fg: #f4f5f8;
-    --fg-secondary: #a9aebc;
-    --fg-tertiary: #7e8494;
-    --fg-muted: #7e8494;
-    --accent: #34d399;
-    --accent-ink: #04271b;
-    --accent-warm: #f472b6;
-    --error-ink: #33100a;
-    --surface: rgba(255, 255, 255, 0.06);
-    --surface-warm: rgba(255, 255, 255, 0.09);
-    --border: rgba(255, 255, 255, 0.12);
-    --error: #f0876c;
+    --bg: #101410; /* M3 surface (dark) */
+    --fg: #e1e3de;
+    --fg-secondary: #c0c9c0;
+    --fg-tertiary: #8a938b;
+    --fg-muted: #8a938b;
+    --accent: #34d399; /* primary (light tone, per M3 dark) */
+    --accent-ink: #003824; /* on-primary */
+    --accent-warm: #efb8c8;
+    --error: #ffb4ab;
+    --error-ink: #690005;
+    --surface: #1c211c; /* surface-container */
+    --surface-warm: #262b26; /* surface-container-high */
+    --border: #404943; /* outline-variant */
+
+    --primary-container: #005138;
+    --on-primary-container: #a7f3d0;
+    --surface-lowest: #0b0f0b;
+    --surface-low: #181d18;
+    --surface-high: #262b26;
+    --surface-highest: #313631;
+    --outline: #8a938b;
   }
 }
 
@@ -61,12 +87,24 @@
   --color-border: var(--border);
   --color-error: var(--error);
   --color-error-ink: var(--error-ink);
+  --color-primary-container: var(--primary-container);
+  --color-on-primary-container: var(--on-primary-container);
+  --color-surface-lowest: var(--surface-lowest);
+  --color-surface-low: var(--surface-low);
+  --color-surface-high: var(--surface-high);
+  --color-surface-highest: var(--surface-highest);
+  --color-outline: var(--outline);
 
-  /* Typography */
-  --font-serif: "Geist", "Satoshi", "Cabinet Grotesk", sans-serif;
-  --font-sans: "Geist", "Satoshi", sans-serif;
-  --font-sans-medium: "Geist-Medium", "Satoshi-Medium", sans-serif;
-  --font-sans-semi: "Geist-SemiBold", "Satoshi-SemiBold", sans-serif;
+  /* Typography — Inter for UI chrome, Lora for editorial hero moments
+     (loaded via expo-google-fonts in _layout.tsx). Pairing a serif display
+     face on titles/headlines against the clean grotesk body is the one
+     typographic move that makes a memory/journal app feel considered
+     instead of templated — use font-display sparingly, on headlines only. */
+  --font-display: "Lora_700Bold", "Lora", serif;
+  --font-serif: "Lora_700Bold", "Lora", serif;
+  --font-sans: "Inter_400Regular", "Inter", sans-serif;
+  --font-sans-medium: "Inter_500Medium", "Inter", sans-serif;
+  --font-sans-semi: "Inter_600SemiBold", "Inter", sans-serif;
 
   /* Border Radius — Squircle feel */
   --radius-sm: 10px;

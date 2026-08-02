@@ -70,7 +70,7 @@ export default function OnboardingScreen() {
             <View className="w-16 h-16 rounded-full bg-accent/20 items-center justify-center border border-accent/30 mb-5">
                <View className="w-4 h-4 rounded-full bg-accent" />
             </View>
-            <Text className="text-4xl font-sans-medium text-fg leading-tight mb-4">
+            <Text className="text-4xl font-serif text-fg leading-tight mb-4">
               Never lose track{'\n'}of life again
             </Text>
             <Text className="font-sans text-base text-fg-muted leading-relaxed">

@@ -15,10 +15,12 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams } from 'expo-router';
 import * as Clipboard from 'expo-clipboard';
 import { File } from 'expo-file-system';
+import Markdown from 'react-native-markdown-display';
+import { NAV_CLEARANCE } from '@/components/ui/FloatingTabBar';
 import { useMnemoStore } from '@/hooks/use-mnemo-store';
 import { useRebrief } from '@/hooks/use-rebrief';
-import { summarizeContext, processVoiceDump } from '@/lib/gemini';
-import { processRecording } from '@/lib/capture';
+import { summarizeContext } from '@/lib/gemini';
+import { structurePendingItem } from '@/lib/capture';
 import {
   ChevronLeft,
   Trash2,
@@ -38,6 +40,7 @@ import {
   MapPin,
   ArrowRight,
   Volume2,
+  FileQuestion,
 } from 'lucide-react-native';
 import { ExternalLink } from '@/components/ExternalLink';
 import { formatDistanceToNow } from 'date-fns';
@@ -78,6 +81,47 @@ export default function ItemDetailScreen() {
   const colors = useThemeColors();
   const statusColors = useStatusConfig();
 
+  const markdownStyles = React.useMemo(
+    () => ({
+      body: { color: colors.fg, fontSize: 14, lineHeight: 24 },
+      heading1: { color: colors.fg, fontSize: 22, fontWeight: '600' as const, marginTop: 8, marginBottom: 8 },
+      heading2: { color: colors.fg, fontSize: 19, fontWeight: '600' as const, marginTop: 8, marginBottom: 6 },
+      heading3: { color: colors.fg, fontSize: 16, fontWeight: '600' as const, marginTop: 6, marginBottom: 4 },
+      strong: { fontWeight: '700' as const, color: colors.fg },
+      em: { fontStyle: 'italic' as const },
+      link: { color: colors.accent },
+      bullet_list_icon: { color: colors.fgSecondary },
+      ordered_list_icon: { color: colors.fgSecondary },
+      code_inline: {
+        backgroundColor: colors.surfaceHigh,
+        color: colors.fg,
+        borderRadius: 4,
+        paddingHorizontal: 4,
+      },
+      code_block: {
+        backgroundColor: colors.surfaceHigh,
+        color: colors.fg,
+        borderRadius: 8,
+        padding: 10,
+      },
+      fence: {
+        backgroundColor: colors.surfaceHigh,
+        color: colors.fg,
+        borderRadius: 8,
+        padding: 10,
+      },
+      blockquote: {
+        backgroundColor: colors.surfaceHigh,
+        borderLeftColor: colors.accent,
+        borderLeftWidth: 3,
+        paddingHorizontal: 10,
+        paddingVertical: 4,
+      },
+      hr: { backgroundColor: colors.border, height: 1 },
+    }),
+    [colors],
+  );
+
   const item = items.find((c) => c.id === id);
 
   // Keep edit fields in sync when opening a different item.
@@ -102,7 +146,12 @@ export default function ItemDetailScreen() {
   if (!item) {
     return (
       <View className="flex-1 items-center justify-center p-10">
-        <Text className="text-4xl mb-4">🌫️</Text>
+        <View
+          className="w-14 h-14 rounded-full items-center justify-center mb-4"
+          style={{ backgroundColor: colors.surface }}
+        >
+          <FileQuestion size={28} color={colors.fgTertiary} strokeWidth={1.5} />
+        </View>
         <Text className="font-sans-medium text-xl text-fg mb-2">Not found</Text>
         <Text className="font-sans text-sm text-fg-muted mb-8 text-center">
           This item may have drifted away.
@@ -135,45 +184,16 @@ export default function ItemDetailScreen() {
   };
 
   const handleRetryProcessing = async () => {
+    if (item.pendingAudioUri && !new File(item.pendingAudioUri).exists) {
+      Alert.alert('Recording unavailable', 'The audio file could not be found. You can edit the note manually.');
+      updateItem(item.id, { pending: false, pendingAudioUri: undefined });
+      return;
+    }
+
     setIsGenerating(true);
     try {
-      if (item.pendingAudioUri) {
-        const audioFile = new File(item.pendingAudioUri);
-        if (!audioFile.exists) {
-          Alert.alert('Recording unavailable', 'The audio file could not be found. You can edit the note manually.');
-          updateItem(item.id, { pending: false, pendingAudioUri: undefined });
-          return;
-        }
-        const base64 = await audioFile.base64();
-        const processed = await processRecording({
-          fileUri: item.pendingAudioUri,
-          base64,
-          mimeType: 'audio/m4a',
-        });
-        try { audioFile.delete(); } catch { /* safe to ignore */ }
-        updateItem(item.id, {
-          title: processed.title,
-          content: processed.notes,
-          links: processed.links,
-          aiSummary: processed.summary,
-          whereLeftOff: processed.summary?.leftOff,
-          nextStep: processed.summary?.nextSteps?.[0],
-          pending: false,
-          pendingAudioUri: undefined,
-          pendingRawText: undefined,
-        });
-      } else if (item.pendingRawText) {
-        const processed = await processVoiceDump(item.pendingRawText);
-        updateItem(item.id, {
-          title: processed.title,
-          content: processed.notes,
-          links: processed.links,
-          aiSummary: processed.summary,
-          whereLeftOff: processed.summary?.leftOff,
-          nextStep: processed.summary?.nextSteps?.[0],
-          pending: false,
-          pendingRawText: undefined,
-        });
+      if (item.pendingAudioUri || item.pendingRawText) {
+        await structurePendingItem(item, updateItem);
       } else {
         const summary = await summarizeContext(item.content, item.links);
         updateItem(item.id, { aiSummary: summary, pending: false });
@@ -273,13 +293,13 @@ export default function ItemDetailScreen() {
 
           <View className="flex-row gap-2">
             {isEditing ? (
-              <Pressable
+              <ZenButton
                 onPress={handleSaveEdit}
-                className="w-11 h-11 rounded-full bg-accent items-center justify-center active:opacity-70"
-                style={{ backgroundColor: colors.accent }}
-              >
-                <Check size={18} color={colors.accentInk} />
-              </Pressable>
+                title="Save"
+                variant="primary"
+                size="sm"
+                icon={<Check size={16} color={colors.accentInk} />}
+              />
             ) : (
               <>
                 <Pressable
@@ -318,7 +338,7 @@ export default function ItemDetailScreen() {
         <ScrollView 
           className="flex-1" 
           showsVerticalScrollIndicator={false}
-          contentContainerStyle={{ paddingBottom: Math.max(insets.bottom, 20) + 100 }}
+          contentContainerStyle={{ paddingBottom: Math.max(insets.bottom, 20) + NAV_CLEARANCE }}
         >
           {/* Pending banner */}
           {item.pending && (
@@ -330,10 +350,10 @@ export default function ItemDetailScreen() {
             >
               <View className="flex-1 mr-3">
                 <Text className="font-sans-semi text-sm text-accent-warm mb-0.5">
-                  Processing queued
+                  Structuring in background
                 </Text>
                 <Text className="font-sans text-xs text-fg-muted">
-                  Will be structured automatically when you're back online.
+                  AI is titling and summarizing this note — no need to wait.
                 </Text>
               </View>
               <Pressable
@@ -393,19 +413,36 @@ export default function ItemDetailScreen() {
               </View>
             )}
 
+            {/* Tags — AI-generated, read-only */}
+            {item.tags.length > 0 && (
+              <View className="flex-row flex-wrap gap-1.5 mb-4">
+                {item.tags.map((tag) => (
+                  <View
+                    key={tag}
+                    className="rounded-full px-2.5 py-1"
+                    style={{ backgroundColor: colors.surfaceHigh }}
+                  >
+                    <Text className="font-sans-medium text-[11px]" style={{ color: colors.fgSecondary }}>
+                      #{tag}
+                    </Text>
+                  </View>
+                ))}
+              </View>
+            )}
+
             {/* Title */}
             {isEditing ? (
               <TextInput
                 value={editTitle}
                 onChangeText={setEditTitle}
-                className="text-3xl font-sans-medium text-fg leading-snug mb-4 border-b border-accent/40 pb-2"
+                className="text-3xl font-serif text-fg leading-snug mb-4 border-b border-accent/40 pb-2"
                 multiline
                 selectionColor={colors.accent}
                 placeholder="Title"
                 placeholderTextColor={colors.fgTertiary}
               />
             ) : (
-              <Text className="text-3xl font-sans-medium text-fg leading-snug mb-4">
+              <Text className="text-3xl font-serif text-fg leading-snug mb-4">
                 {item.title}
               </Text>
             )}
@@ -426,72 +463,81 @@ export default function ItemDetailScreen() {
           </MotiView>
 
           {/* ─── Status Controls ────────────────────────── */}
-          {!isEditing && (
-            <MotiView
-              from={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              transition={{ type: 'timing', duration: 400, delay: 100 }}
-              className="px-6 mb-4"
-            >
-              <View className="flex-row gap-2">
-                {item.status !== 'active' && (
+          {!isEditing && (() => {
+            // Compute which buttons are actually visible before rendering the row.
+            const hasResume = item.status !== 'active';
+            const hasPause = item.status === 'active';
+            const hasDone = item.status !== 'completed';
+            const hasArchive = item.status !== 'archived';
+            const hasAnyAction = hasResume || hasPause || hasDone || hasArchive;
+            if (!hasAnyAction) return null;
+            return (
+              <MotiView
+                from={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                transition={{ type: 'timing', duration: 400, delay: 100 }}
+                className="px-6 mb-4"
+              >
+                <View className="flex-row gap-2">
+                  {hasResume && (
+                    <Pressable
+                      onPress={() => {
+                        // Speak the re-brief before flipping status, so the
+                        // script reflects how long the item sat untouched.
+                        rebrief.start(item);
+                        resumeItem(item.id);
+                      }}
+                      className="flex-1 flex-row items-center justify-center py-2.5 rounded-xl bg-accent/10 active:bg-accent/20"
+                    >
+                      <Play size={14} color={colors.accent} strokeWidth={2} />
+                      <Text className="font-sans-medium text-xs text-accent ml-1.5">
+                        Resume
+                      </Text>
+                    </Pressable>
+                  )}
+                  {hasPause && (
+                    <Pressable
+                      onPress={() => pauseItem(item.id)}
+                      className="flex-1 flex-row items-center justify-center py-2.5 rounded-xl bg-surface-warm active:opacity-70"
+                    >
+                      <Pause size={14} color={statusColors.paused.color} strokeWidth={2} />
+                      <Text className="font-sans-medium text-xs text-fg-muted ml-1.5">
+                        Pause
+                      </Text>
+                    </Pressable>
+                  )}
+                  {hasDone && (
+                    <Pressable
+                      onPress={() => completeItem(item.id)}
+                      className="flex-1 flex-row items-center justify-center py-2.5 rounded-xl bg-surface-warm active:opacity-70"
+                    >
+                      <CheckCircle size={14} color={statusColors.completed.color} strokeWidth={2} />
+                      <Text className="font-sans-medium text-xs text-fg-muted ml-1.5">
+                        Done
+                      </Text>
+                    </Pressable>
+                  )}
                   <Pressable
-                    onPress={() => {
-                      // Speak the re-brief before flipping status, so the
-                      // script reflects how long the item sat untouched.
-                      rebrief.start(item);
-                      resumeItem(item.id);
-                    }}
-                    className="flex-1 flex-row items-center justify-center py-2.5 rounded-xl bg-accent/10 active:bg-accent/20"
+                    onPress={() =>
+                      rebrief.state === 'idle' ? rebrief.start(item) : rebrief.stop()
+                    }
+                    accessibilityLabel="Play spoken re-brief"
+                    className="flex-row items-center justify-center py-2.5 px-4 rounded-xl bg-accent/10 active:opacity-70"
                   >
-                    <Play size={14} color={colors.accent} strokeWidth={2} />
-                    <Text className="font-sans-medium text-xs text-accent ml-1.5">
-                      Resume
-                    </Text>
+                    <Volume2 size={14} color={colors.accent} strokeWidth={2} />
                   </Pressable>
-                )}
-                {item.status === 'active' && (
-                  <Pressable
-                    onPress={() => pauseItem(item.id)}
-                    className="flex-1 flex-row items-center justify-center py-2.5 rounded-xl bg-surface-warm active:opacity-70"
-                  >
-                    <Pause size={14} color={statusColors.paused.color} strokeWidth={2} />
-                    <Text className="font-sans-medium text-xs text-fg-muted ml-1.5">
-                      Pause
-                    </Text>
-                  </Pressable>
-                )}
-                {item.status !== 'completed' && (
-                  <Pressable
-                    onPress={() => completeItem(item.id)}
-                    className="flex-1 flex-row items-center justify-center py-2.5 rounded-xl bg-surface-warm active:opacity-70"
-                  >
-                    <CheckCircle size={14} color={statusColors.completed.color} strokeWidth={2} />
-                    <Text className="font-sans-medium text-xs text-fg-muted ml-1.5">
-                      Done
-                    </Text>
-                  </Pressable>
-                )}
-                <Pressable
-                  onPress={() =>
-                    rebrief.state === 'idle' ? rebrief.start(item) : rebrief.stop()
-                  }
-                  accessibilityLabel="Play spoken re-brief"
-                  className="flex-row items-center justify-center py-2.5 px-4 rounded-xl bg-accent/10 active:opacity-70"
-                >
-                  <Volume2 size={14} color={colors.accent} strokeWidth={2} />
-                </Pressable>
-                {item.status !== 'archived' && (
-                  <Pressable
-                    onPress={() => archiveItem(item.id)}
-                    className="flex-row items-center justify-center py-2.5 px-4 rounded-xl active:opacity-70"
-                  >
-                    <Archive size={14} color={colors.fgTertiary} strokeWidth={2} />
-                  </Pressable>
-                )}
-              </View>
-            </MotiView>
-          )}
+                  {hasArchive && (
+                    <Pressable
+                      onPress={() => archiveItem(item.id)}
+                      className="flex-row items-center justify-center py-2.5 px-4 rounded-xl active:opacity-70"
+                    >
+                      <Archive size={14} color={colors.fgTertiary} strokeWidth={2} />
+                    </Pressable>
+                  )}
+                </View>
+              </MotiView>
+            );
+          })()}
 
           {/* ─── Re-brief player pill ─────────────────── */}
           {rebrief.state !== 'idle' && (
@@ -615,7 +661,7 @@ export default function ItemDetailScreen() {
             </MotiView>
           )}
 
-          {/* ─── AI Summary Section ──────────────────── */}
+          {/* ─── Smart Digest Section ──────────────────── */}
           <MotiView
             from={{ opacity: 0, translateY: 16 }}
             animate={{ opacity: 1, translateY: 0 }}
@@ -625,7 +671,7 @@ export default function ItemDetailScreen() {
             <View className="flex-row justify-between items-center mb-6">
               <View className="flex-row items-center">
                 <Sparkles size={18} color={colors.accent} />
-                <Text className="text-lg font-sans-medium text-fg ml-2">AI Summary</Text>
+                <Text className="text-lg font-sans-medium text-fg ml-2">Smart Digest</Text>
               </View>
 
               {!item.aiSummary && !item.pending && (
@@ -637,7 +683,7 @@ export default function ItemDetailScreen() {
                   size="sm"
                   icon={
                     isGenerating ? (
-                      <ActivityIndicator color="#FFFFFF" size="small" />
+                      <ActivityIndicator color={colors.accentInk} size="small" />
                     ) : undefined
                   }
                 />
@@ -661,11 +707,11 @@ export default function ItemDetailScreen() {
 
             {!isGenerating && !item.aiSummary && (
               <View className="py-12 items-center rounded-[16px] border border-dashed border-border bg-surface/50">
-                <Text className="text-3xl mb-3">🪷</Text>
-                <Text className="font-sans text-sm text-fg-muted text-center px-8">
+                <Sparkles size={28} color={colors.fgTertiary} strokeWidth={1.5} />
+                <Text className="font-sans text-sm text-fg-muted text-center px-8 mt-3">
                   {item.pending
-                    ? 'Summary will be generated once this note is processed.'
-                    : 'Tap "Generate" to create an AI summary.\nThis is optional — your note works without it.'}
+                    ? 'Digest will be generated once this note is processed.'
+                    : 'Tap "Generate" to create a Smart Digest.\nThis is optional — your note works without it.'}
                 </Text>
               </View>
             )}
@@ -683,7 +729,7 @@ export default function ItemDetailScreen() {
                     AI analysis
                   </Text>
                   <Text className="font-sans-medium text-xl text-fg leading-relaxed">
-                    "{item.aiSummary.leftOff}"
+                    “{item.aiSummary.leftOff ?? 'No summary available.'}”
                   </Text>
                 </ZenCard>
 
@@ -756,11 +802,9 @@ export default function ItemDetailScreen() {
                   placeholder="Your notes..."
                   placeholderTextColor={colors.fgTertiary}
                 />
-              ) : (
-                <Text className="font-sans text-sm leading-7 text-fg/80">
-                  {item.content}
-                </Text>
-              )}
+              ) : item.content.trim() ? (
+                <Markdown style={markdownStyles}>{item.content}</Markdown>
+              ) : null}
 
               {!isEditing && item.links.length > 0 && (
                 <View className="mt-6 pt-6 border-t border-border/40">
