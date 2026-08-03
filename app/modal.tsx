@@ -1,9 +1,26 @@
 import { StatusBar } from 'expo-status-bar';
-import { View, Text, ScrollView, Pressable } from 'react-native';
+import { View, Text, ScrollView, Pressable, TextInput, ActivityIndicator } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { MotiView } from 'moti';
-import { Info, Key, Mic, Moon, Shield, Smartphone, Sun } from 'lucide-react-native';
+import {
+  Info,
+  Key,
+  Mic,
+  Moon,
+  Shield,
+  Smartphone,
+  Sun,
+  Eye,
+  EyeOff,
+  Check,
+  Sparkles,
+  ExternalLink,
+  Trash2,
+  AlertCircle,
+} from 'lucide-react-native';
 import Constants from 'expo-constants';
+import * as WebBrowser from 'expo-web-browser';
+import { useEffect, useState } from 'react';
 import { AmbientGlow } from '@/components/ui/AmbientGlow';
 import {
   useThemeColors,
@@ -11,6 +28,17 @@ import {
   useThemePreference,
   type ThemePreference,
 } from '@/hooks/use-theme';
+import {
+  getActiveApiKey,
+  getApiKeySource,
+  saveApiKey,
+  validateApiKey,
+  getActiveGroqApiKey,
+  getGroqApiKeySource,
+  saveGroqApiKey,
+  validateGroqApiKey,
+  loadStoredApiKeys,
+} from '@/lib/api-key';
 
 const THEME_OPTIONS: { key: ThemePreference; label: string; icon: typeof Sun }[] = [
   { key: 'system', label: 'System', icon: Smartphone },
@@ -18,22 +46,447 @@ const THEME_OPTIONS: { key: ThemePreference; label: string; icon: typeof Sun }[]
   { key: 'dark', label: 'Dark', icon: Moon },
 ];
 
+function ApiKeyConfigCard() {
+  const colors = useThemeColors();
+  const [inputKey, setInputKey] = useState('');
+  const [showKey, setShowKey] = useState(false);
+  const [source, setSource] = useState<'custom' | 'env' | 'none'>('none');
+  const [isTesting, setIsTesting] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
+
+  useEffect(() => {
+    (async () => {
+      await loadStoredApiKeys();
+      setInputKey(getActiveApiKey());
+      setSource(getApiKeySource());
+    })();
+  }, []);
+
+  const handleSave = async () => {
+    setIsSaving(true);
+    setTestResult(null);
+    try {
+      await saveApiKey(inputKey);
+      const newSource = getApiKeySource();
+      setSource(newSource);
+      if (inputKey.trim()) {
+        setTestResult({ success: true, message: 'Key saved securely!' });
+      } else {
+        setTestResult({ success: true, message: 'Custom key cleared.' });
+      }
+    } catch (e: any) {
+      setTestResult({ success: false, message: 'Failed to save key.' });
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleTest = async () => {
+    setIsTesting(true);
+    setTestResult(null);
+    const result = await validateApiKey(inputKey);
+    setIsTesting(false);
+    if (result.valid) {
+      setTestResult({ success: true, message: 'Connection successful! Gemini API is working.' });
+    } else {
+      setTestResult({ success: false, message: result.error || 'Validation failed.' });
+    }
+  };
+
+  const handleClear = async () => {
+    setInputKey('');
+    await saveApiKey('');
+    setSource(getApiKeySource());
+    setInputKey(getActiveApiKey());
+    setTestResult({ success: true, message: 'Custom key reset.' });
+  };
+
+  const openGoogleAIStudio = () => {
+    WebBrowser.openBrowserAsync('https://aistudio.google.com/app/apikey');
+  };
+
+  return (
+    <View className="bg-surface rounded-2xl p-5 border border-border/50 gap-4">
+      {/* Header */}
+      <View className="flex-row items-center justify-between">
+        <View className="flex-row items-center">
+          <Key size={16} color={colors.accent} strokeWidth={2} />
+          <Text className="font-sans-semi text-sm text-fg ml-2">Gemini API Key</Text>
+        </View>
+
+        <View
+          className={`px-3 py-1 rounded-full ${
+            source === 'custom'
+              ? 'bg-accent/15'
+              : source === 'env'
+              ? 'bg-accent/10'
+              : 'bg-error/10'
+          }`}
+        >
+          <Text
+            className={`font-sans-medium text-[11px] ${
+              source === 'none' ? 'text-error' : 'text-accent'
+            }`}
+          >
+            {source === 'custom'
+              ? 'Custom Key Active'
+              : source === 'env'
+              ? 'Environment Key'
+              : 'Not Configured'}
+          </Text>
+        </View>
+      </View>
+
+      {/* Input Field */}
+      <View className="gap-1.5">
+        <Text className="font-sans-medium text-[11px] text-fg-tertiary">
+          ENTER YOUR GEMINI API KEY
+        </Text>
+        <View className="flex-row items-center bg-surface-warm rounded-xl border border-border/60 px-3.5 py-2">
+          <TextInput
+            value={inputKey}
+            onChangeText={(text) => {
+              setInputKey(text);
+              if (testResult) setTestResult(null);
+            }}
+            placeholder="AIzaSy..."
+            placeholderTextColor={colors.fgTertiary}
+            secureTextEntry={!showKey}
+            autoCapitalize="none"
+            autoCorrect={false}
+            className="flex-1 font-sans text-xs text-fg py-1"
+            selectionColor={colors.accent}
+          />
+          <Pressable
+            onPress={() => setShowKey(!showKey)}
+            hitSlop={8}
+            className="p-1.5 ml-1"
+            accessibilityLabel={showKey ? 'Hide API Key' : 'Show API Key'}
+          >
+            {showKey ? (
+              <EyeOff size={15} color={colors.fgSecondary} />
+            ) : (
+              <Eye size={15} color={colors.fgSecondary} />
+            )}
+          </Pressable>
+        </View>
+      </View>
+
+      {/* Test / Feedback Message */}
+      {testResult && (
+        <View
+          className={`p-3 rounded-xl flex-row items-start gap-2 ${
+            testResult.success ? 'bg-accent/10 border border-accent/20' : 'bg-error/10 border border-error/20'
+          }`}
+        >
+          {testResult.success ? (
+            <Check size={15} color={colors.accent} className="mt-0.5" />
+          ) : (
+            <AlertCircle size={15} color={colors.error} className="mt-0.5" />
+          )}
+          <Text
+            className={`font-sans text-xs flex-1 ${
+              testResult.success ? 'text-accent' : 'text-error'
+            }`}
+          >
+            {testResult.message}
+          </Text>
+        </View>
+      )}
+
+      {/* Action Buttons */}
+      <View className="flex-row items-center gap-2 pt-1">
+        <Pressable
+          onPress={handleSave}
+          disabled={isSaving}
+          className="flex-1 flex-row items-center justify-center py-2.5 px-3 rounded-xl bg-accent active:opacity-80"
+        >
+          {isSaving ? (
+            <ActivityIndicator size="small" color={colors.accentInk} />
+          ) : (
+            <>
+              <Check size={14} color={colors.accentInk} strokeWidth={2.2} />
+              <Text className="font-sans-semi text-xs ml-1.5" style={{ color: colors.accentInk }}>
+                Save Key
+              </Text>
+            </>
+          )}
+        </Pressable>
+
+        <Pressable
+          onPress={handleTest}
+          disabled={isTesting || !inputKey.trim()}
+          className={`flex-row items-center justify-center py-2.5 px-3 rounded-xl bg-surface-warm border border-border/60 ${
+            !inputKey.trim() ? 'opacity-40' : 'active:opacity-80'
+          }`}
+        >
+          {isTesting ? (
+            <ActivityIndicator size="small" color={colors.accent} />
+          ) : (
+            <>
+              <Sparkles size={14} color={colors.accent} strokeWidth={2} />
+              <Text className="font-sans-medium text-xs text-fg ml-1.5">Test Key</Text>
+            </>
+          )}
+        </Pressable>
+
+        {source === 'custom' && (
+          <Pressable
+            onPress={handleClear}
+            className="p-2.5 rounded-xl bg-surface-warm border border-border/60 active:opacity-80"
+            accessibilityLabel="Clear custom key"
+          >
+            <Trash2 size={14} color={colors.fgSecondary} />
+          </Pressable>
+        )}
+      </View>
+
+      {/* Link to get key */}
+      <Pressable
+        onPress={openGoogleAIStudio}
+        className="flex-row items-center justify-between pt-2 border-t border-border/40"
+      >
+        <Text className="font-sans text-xs text-fg-secondary">
+          Need a key? Get one free in 30 seconds
+        </Text>
+        <View className="flex-row items-center">
+          <Text className="font-sans-medium text-xs text-accent mr-1">Google AI Studio</Text>
+          <ExternalLink size={12} color={colors.accent} />
+        </View>
+      </Pressable>
+    </View>
+  );
+}
+
+function GroqApiKeyConfigCard() {
+  const colors = useThemeColors();
+  const [inputKey, setInputKey] = useState('');
+  const [showKey, setShowKey] = useState(false);
+  const [source, setSource] = useState<'custom' | 'env' | 'none'>('none');
+  const [isTesting, setIsTesting] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
+
+  useEffect(() => {
+    (async () => {
+      await loadStoredApiKeys();
+      setInputKey(getActiveGroqApiKey());
+      setSource(getGroqApiKeySource());
+    })();
+  }, []);
+
+  const handleSave = async () => {
+    setIsSaving(true);
+    setTestResult(null);
+    try {
+      await saveGroqApiKey(inputKey);
+      const newSource = getGroqApiKeySource();
+      setSource(newSource);
+      if (inputKey.trim()) {
+        setTestResult({ success: true, message: 'Groq key saved securely!' });
+      } else {
+        setTestResult({ success: true, message: 'Custom Groq key cleared.' });
+      }
+    } catch (e: any) {
+      setTestResult({ success: false, message: 'Failed to save Groq key.' });
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleTest = async () => {
+    setIsTesting(true);
+    setTestResult(null);
+    const result = await validateGroqApiKey(inputKey);
+    setIsTesting(false);
+    if (result.valid) {
+      setTestResult({ success: true, message: 'Groq API connected! Whisper transcription active.' });
+    } else {
+      setTestResult({ success: false, message: result.error || 'Groq validation failed.' });
+    }
+  };
+
+  const handleClear = async () => {
+    setInputKey('');
+    await saveGroqApiKey('');
+    setSource(getGroqApiKeySource());
+    setInputKey(getActiveGroqApiKey());
+    setTestResult({ success: true, message: 'Custom Groq key reset.' });
+  };
+
+  const openGroqConsole = () => {
+    WebBrowser.openBrowserAsync('https://console.groq.com/keys');
+  };
+
+  return (
+    <View className="bg-surface rounded-2xl p-5 border border-border/50 gap-4">
+      {/* Header */}
+      <View className="flex-row items-center justify-between">
+        <View className="flex-row items-center">
+          <Mic size={16} color={colors.accent} strokeWidth={2} />
+          <Text className="font-sans-semi text-sm text-fg ml-2">Groq API Key (Whisper Voice)</Text>
+        </View>
+
+        <View
+          className={`px-3 py-1 rounded-full ${
+            source === 'custom'
+              ? 'bg-accent/15'
+              : source === 'env'
+              ? 'bg-accent/10'
+              : 'bg-error/10'
+          }`}
+        >
+          <Text
+            className={`font-sans-medium text-[11px] ${
+              source === 'none' ? 'text-error' : 'text-accent'
+            }`}
+          >
+            {source === 'custom'
+              ? 'Custom Key Active'
+              : source === 'env'
+              ? 'Environment Key'
+              : 'Not Configured'}
+          </Text>
+        </View>
+      </View>
+
+      {/* Input Field */}
+      <View className="gap-1.5">
+        <Text className="font-sans-medium text-[11px] text-fg-tertiary">
+          ENTER YOUR GROQ API KEY
+        </Text>
+        <View className="flex-row items-center bg-surface-warm rounded-xl border border-border/60 px-3.5 py-2">
+          <TextInput
+            value={inputKey}
+            onChangeText={(text) => {
+              setInputKey(text);
+              if (testResult) setTestResult(null);
+            }}
+            placeholder="gsk_..."
+            placeholderTextColor={colors.fgTertiary}
+            secureTextEntry={!showKey}
+            autoCapitalize="none"
+            autoCorrect={false}
+            className="flex-1 font-sans text-xs text-fg py-1"
+            selectionColor={colors.accent}
+          />
+          <Pressable
+            onPress={() => setShowKey(!showKey)}
+            hitSlop={8}
+            className="p-1.5 ml-1"
+            accessibilityLabel={showKey ? 'Hide Groq API Key' : 'Show Groq API Key'}
+          >
+            {showKey ? (
+              <EyeOff size={15} color={colors.fgSecondary} />
+            ) : (
+              <Eye size={15} color={colors.fgSecondary} />
+            )}
+          </Pressable>
+        </View>
+      </View>
+
+      {/* Feedback Message */}
+      {testResult && (
+        <View
+          className={`p-3 rounded-xl flex-row items-start gap-2 ${
+            testResult.success ? 'bg-accent/10 border border-accent/20' : 'bg-error/10 border border-error/20'
+          }`}
+        >
+          {testResult.success ? (
+            <Check size={15} color={colors.accent} className="mt-0.5" />
+          ) : (
+            <AlertCircle size={15} color={colors.error} className="mt-0.5" />
+          )}
+          <Text
+            className={`font-sans text-xs flex-1 ${
+              testResult.success ? 'text-accent' : 'text-error'
+            }`}
+          >
+            {testResult.message}
+          </Text>
+        </View>
+      )}
+
+      {/* Action Buttons */}
+      <View className="flex-row items-center gap-2 pt-1">
+        <Pressable
+          onPress={handleSave}
+          disabled={isSaving}
+          className="flex-1 flex-row items-center justify-center py-2.5 px-3 rounded-xl bg-accent active:opacity-80"
+        >
+          {isSaving ? (
+            <ActivityIndicator size="small" color={colors.accentInk} />
+          ) : (
+            <>
+              <Check size={14} color={colors.accentInk} strokeWidth={2.2} />
+              <Text className="font-sans-semi text-xs ml-1.5" style={{ color: colors.accentInk }}>
+                Save Key
+              </Text>
+            </>
+          )}
+        </Pressable>
+
+        <Pressable
+          onPress={handleTest}
+          disabled={isTesting || !inputKey.trim()}
+          className={`flex-row items-center justify-center py-2.5 px-3 rounded-xl bg-surface-warm border border-border/60 ${
+            !inputKey.trim() ? 'opacity-40' : 'active:opacity-80'
+          }`}
+        >
+          {isTesting ? (
+            <ActivityIndicator size="small" color={colors.accent} />
+          ) : (
+            <>
+              <Sparkles size={14} color={colors.accent} strokeWidth={2} />
+              <Text className="font-sans-medium text-xs text-fg ml-1.5">Test Key</Text>
+            </>
+          )}
+        </Pressable>
+
+        {source === 'custom' && (
+          <Pressable
+            onPress={handleClear}
+            className="p-2.5 rounded-xl bg-surface-warm border border-border/60 active:opacity-80"
+            accessibilityLabel="Clear custom Groq key"
+          >
+            <Trash2 size={14} color={colors.fgSecondary} />
+          </Pressable>
+        )}
+      </View>
+
+      {/* Link to get key */}
+      <Pressable
+        onPress={openGroqConsole}
+        className="flex-row items-center justify-between pt-2 border-t border-border/40"
+      >
+        <Text className="font-sans text-xs text-fg-secondary">
+          Need a Groq key? Free Whisper transcription
+        </Text>
+        <View className="flex-row items-center">
+          <Text className="font-sans-medium text-xs text-accent mr-1">console.groq.com</Text>
+          <ExternalLink size={12} color={colors.accent} />
+        </View>
+      </Pressable>
+    </View>
+  );
+}
+
 export default function ModalScreen() {
   const insets = useSafeAreaInsets();
-  const apiKeyConfigured = !!process.env.EXPO_PUBLIC_GEMINI_API_KEY;
   const colors = useThemeColors();
   const theme = useThemeName();
   const { preference, setPreference } = useThemePreference();
 
   return (
     <AmbientGlow>
-    <View className="flex-1">
+      <View className="flex-1">
         <ScrollView
           className="flex-1"
           contentContainerStyle={{
             paddingHorizontal: 24,
             paddingTop: insets.top + 32,
-            paddingBottom: Math.max(insets.bottom, 24) + 48
+            paddingBottom: Math.max(insets.bottom, 24) + 48,
           }}
           showsVerticalScrollIndicator={false}
         >
@@ -101,30 +554,8 @@ export default function ModalScreen() {
               AI CONFIGURATION
             </Text>
 
-            <View className="bg-surface rounded-2xl p-5 border border-border/50">
-              <View className="flex-row items-center mb-3">
-                <Key size={15} color={colors.accent} />
-                <Text className="font-sans-semi text-sm text-fg ml-2">Gemini API Key</Text>
-              </View>
-              <View
-                className={`px-3 py-1.5 rounded-full self-start mb-3 ${
-                  apiKeyConfigured ? 'bg-accent/15' : 'bg-error/10'
-                }`}
-              >
-                <Text
-                  className={`font-sans-medium text-xs ${
-                    apiKeyConfigured ? 'text-accent' : 'text-error'
-                  }`}
-                >
-                  {apiKeyConfigured ? 'Configured' : 'Not configured'}
-                </Text>
-              </View>
-              <Text className="font-sans text-xs text-fg-secondary leading-relaxed">
-                {apiKeyConfigured
-                  ? 'A key is set. To rotate it, update EXPO_PUBLIC_GEMINI_API_KEY in your .env file and rebuild.'
-                  : 'Add EXPO_PUBLIC_GEMINI_API_KEY to your .env file (see .env.example) and rebuild to enable AI features.'}
-              </Text>
-            </View>
+            <ApiKeyConfigCard />
+            <GroqApiKeyConfigCard />
 
             <View className="bg-surface rounded-2xl p-5 border border-border/50">
               <View className="flex-row items-center mb-2">

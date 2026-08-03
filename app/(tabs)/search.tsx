@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useCallback } from 'react';
+import React, { useState, useMemo, useCallback, useEffect } from 'react';
 import { View, Text, ScrollView } from 'react-native';
 import { router } from 'expo-router';
 import { Clock, Sparkles } from 'lucide-react-native';
@@ -11,8 +11,12 @@ import { NAV_CLEARANCE } from '@/components/ui/FloatingTabBar';
 import { useMnemoStore } from '@/hooks/use-mnemo-store';
 import { useThemeColors } from '@/hooks/use-theme';
 import { bm25Search } from '@/lib/bm25';
+import { hybridSearch } from '@/lib/search';
 import { EASE_OUT } from '@/utils/motion';
 import type { MnemoItem } from '@/types/mnemo';
+
+// Debounce before the semantic (network) half of search fires.
+const SEMANTIC_DEBOUNCE_MS = 300;
 
 /**
  * SearchScreen — A dedicated full-screen search experience.
@@ -24,11 +28,37 @@ export default function SearchScreen() {
   const insets = useSafeAreaInsets();
   const colors = useThemeColors();
 
-  // Debounce is handled by the useMemo recalculation — fast enough for local BM25
-  const results = useMemo(() => {
+  // Instant local keyword results — shown immediately on every keystroke so
+  // search never feels network-gated, even before the semantic half lands.
+  const bm25Results = useMemo(() => {
     if (!query.trim()) return [];
     return bm25Search(query, items);
   }, [query, items]);
+
+  // Upgraded to the hybrid (keyword + semantic) ranking once it resolves.
+  // null means "not ready yet for this query" — falls back to bm25Results.
+  const [hybridResults, setHybridResults] = useState<MnemoItem[] | null>(null);
+
+  useEffect(() => {
+    const trimmed = query.trim();
+    // Clear immediately (not inside the debounce timer) so a fresh query
+    // never shows the previous query's stale hybrid results while waiting.
+    setHybridResults(null);
+    if (!trimmed) return;
+
+    let cancelled = false;
+    const handle = setTimeout(async () => {
+      const fused = await hybridSearch(trimmed, items);
+      if (!cancelled) setHybridResults(fused);
+    }, SEMANTIC_DEBOUNCE_MS);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(handle);
+    };
+  }, [query, items]);
+
+  const results = hybridResults ?? bm25Results;
 
   // Recent items (last 5 updated)
   const recentItems = useMemo(

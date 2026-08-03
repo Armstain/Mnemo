@@ -43,6 +43,8 @@ import {
   FileQuestion,
 } from 'lucide-react-native';
 import { ExternalLink } from '@/components/ExternalLink';
+import { NoteRow } from '@/components/ui/NoteRow';
+import { relatedItems } from '@/lib/search';
 import { formatDistanceToNow } from 'date-fns';
 import { MotiView } from 'moti';
 import { ZenButton } from '@/components/ZenButton';
@@ -54,7 +56,7 @@ import { DueDatePicker } from '@/components/ui/DueDatePicker';
 import { DueDateLabel } from '@/components/ui/DueDatePicker';
 import { CATEGORY_LIST, useStatusConfig } from '@/utils/categories';
 import { useThemeColors } from '@/hooks/use-theme';
-import type { Category, ChecklistItem } from '@/types/mnemo';
+import type { MnemoItem } from '@/types/mnemo';
 
 export default function ItemDetailScreen() {
   const insets = useSafeAreaInsets();
@@ -134,6 +136,24 @@ export default function ItemDetailScreen() {
       setEditWhereLeftOff(item.whereLeftOff ?? '');
     }
   }, [item?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Nearest neighbors by embedding similarity — a supplementary section,
+  // never a blocking one. Empty until the note has a vector (structuring +
+  // embedding finished) and stays empty on failure rather than erroring.
+  const [related, setRelated] = React.useState<MnemoItem[]>([]);
+  React.useEffect(() => {
+    if (!item) {
+      setRelated([]);
+      return;
+    }
+    let cancelled = false;
+    relatedItems(item.id, items).then((found) => {
+      if (!cancelled) setRelated(found);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [item?.id, items]);
 
   if (!isLoaded) {
     return (
@@ -826,6 +846,24 @@ export default function ItemDetailScreen() {
                         </Text>
                         <ExternalLinkIcon size={12} color={colors.fgTertiary} />
                       </ExternalLink>
+                    ))}
+                  </View>
+                </View>
+              )}
+
+              {!isEditing && related.length > 0 && (
+                <View className="mt-6 pt-6 border-t border-border/40">
+                  <Text className="font-sans-medium text-xs text-fg-muted mb-3 tracking-wide">
+                    Related notes
+                  </Text>
+                  <View className="gap-2">
+                    {related.map((relatedItem, i) => (
+                      <NoteRow
+                        key={relatedItem.id}
+                        item={relatedItem}
+                        index={i}
+                        onPress={() => router.push(`/(tabs)/context?id=${relatedItem.id}` as any)}
+                      />
                     ))}
                   </View>
                 </View>

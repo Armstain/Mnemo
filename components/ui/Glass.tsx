@@ -6,12 +6,6 @@ import { useReduceMotion } from '@/hooks/use-accessibility-motion';
 import { useThemeColors } from '@/hooks/use-theme';
 import { EASE_OUT } from '@/utils/motion';
 
-/**
- * Legacy flag kept for callers that still branch on it. Material 3 has no
- * system "liquid glass" material, so this is always false now.
- */
-export const hasLiquidGlass = false;
-
 interface GlassProps extends ViewProps {
   /** Corner radius of the surface (Material uses generous rounding). */
   radius?: number;
@@ -30,11 +24,9 @@ interface GlassProps extends ViewProps {
 /**
  * Surface — the app's Material 3 tonal surface primitive, theme-aware.
  *
- * Historically this was a translucent "liquid glass" panel; the app is now
- * Material Design 3, where depth comes from tonal elevation (a lighter
- * surface-container tone) plus a soft shadow — not blur. The export is
- * still named `Glass` so the ~9 existing call sites keep working; think of
- * it as a Material surface.
+ * Depth comes from tonal elevation (a lighter surface-container tone)
+ * plus a soft shadow. The component is named `Glass` for backwards
+ * compatibility with existing surface call sites.
  */
 export function Glass({
   radius = 24,

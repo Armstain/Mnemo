@@ -23,6 +23,10 @@ import { ONBOARDING_KEY } from '@/app/onboarding';
 import { PendingProcessor } from '@/components/PendingProcessor';
 import { MnemoStoreProvider } from '@/hooks/use-mnemo-store';
 import { applyStoredThemePreference, PALETTE, useThemeName } from '@/hooks/use-theme';
+import { loadStoredApiKey } from '@/lib/api-key';
+
+// Load stored API key early on app start
+loadStoredApiKey();
 
 export {
   // Catch any errors thrown by the Layout component.
