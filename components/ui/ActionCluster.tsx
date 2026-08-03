@@ -2,13 +2,12 @@ import React, { useEffect, useRef, useState } from 'react';
 import { Alert, View, Pressable, StyleSheet, Text, GestureResponderEvent } from 'react-native';
 import { Mic, SquarePen, X, Trash2, Check } from 'lucide-react-native';
 import { MotiView, AnimatePresence } from 'moti';
-import { BlurView } from 'expo-blur';
 import * as Haptics from 'expo-haptics';
 import { useAudioRecorderState, type AudioRecorder } from 'expo-audio';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 
-import { useThemeColors, useThemeName } from '@/hooks/use-theme';
+import { useThemeColors } from '@/hooks/use-theme';
 import { useReduceMotion } from '@/hooks/use-accessibility-motion';
 import { useQuickRecording } from '@/hooks/use-quick-recording';
 import { EASE_OUT } from '@/utils/motion';
@@ -61,6 +60,15 @@ export function ActionCluster() {
   const longPressFired = useRef(false);
   const startTouchY = useRef(0);
   const tailTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Mirrors holdPhase for gesture *decisions* (state stays for rendering).
+  // Pressable re-memoizes its internal Pressability config whenever
+  // onPressOut's identity changes, but applying that new config to the
+  // in-flight gesture isn't guaranteed to land before a fast drag-then-
+  // release fires the native release event — so onPressOut can still
+  // invoke a generation-old closure with a stale holdPhase. A ref has no
+  // such gap: it's a single mutable box, always current the instant it's
+  // written, regardless of which render's closure ends up reading it.
+  const holdPhaseRef = useRef<HoldPhase>('idle');
   // start() awaits real async work (permission + recorder prep). If the
   // finger lifts before it resolves, the gesture is already over by the
   // time we'd flip to "recording" — this ref lets beginHold notice and
@@ -72,6 +80,13 @@ export function ActionCluster() {
       if (tailTimeout.current) clearTimeout(tailTimeout.current);
     };
   }, []);
+
+  // Single point of truth update: keeps the ref and the render state in
+  // lockstep so every call site only has to make one call.
+  const setPhase = (phase: HoldPhase) => {
+    holdPhaseRef.current = phase;
+    setHoldPhase(phase);
+  };
 
   const entrance = reduceMotion
     ? {
@@ -104,7 +119,7 @@ export function ActionCluster() {
   const beginHold = async () => {
     const result = await start();
     if (result !== 'ok') {
-      setHoldPhase('idle');
+      setPhase('idle');
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
       if (result === 'permission-denied') {
         Alert.alert('Permission required', 'Please enable microphone access to record thoughts.');
@@ -121,20 +136,20 @@ export function ActionCluster() {
       // — the gesture ended before recording could visibly begin. Discard
       // rather than leave the mic recording with no one holding the button.
       finish('general', false);
-      setHoldPhase('idle');
+      setPhase('idle');
       return;
     }
-    setHoldPhase('recording');
+    setPhase('recording');
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
   };
 
   const endHold = (phaseAtRelease: HoldPhase) => {
     if (phaseAtRelease !== 'recording' && phaseAtRelease !== 'cancelling') {
-      setHoldPhase('idle');
+      setPhase('idle');
       return;
     }
     const wantsSave = phaseAtRelease === 'recording';
-    setHoldPhase('idle');
+    setPhase('idle');
     setTail('finishing');
     if (tailTimeout.current) clearTimeout(tailTimeout.current);
 
@@ -150,14 +165,17 @@ export function ActionCluster() {
     });
   };
 
+  // Reads/writes holdPhaseRef directly (not the holdPhase state closure) so
+  // the cancel-zone decision is never one render behind a fast drag.
   const handlePressMove = (e: GestureResponderEvent) => {
-    if (holdPhase !== 'recording' && holdPhase !== 'cancelling') return;
+    const current = holdPhaseRef.current;
+    if (current !== 'recording' && current !== 'cancelling') return;
     const deltaY = startTouchY.current - e.nativeEvent.pageY;
-    if (holdPhase === 'recording' && deltaY > CANCEL_ENTER_PX) {
-      setHoldPhase('cancelling');
+    if (current === 'recording' && deltaY > CANCEL_ENTER_PX) {
+      setPhase('cancelling');
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    } else if (holdPhase === 'cancelling' && deltaY < CANCEL_EXIT_PX) {
-      setHoldPhase('recording');
+    } else if (current === 'cancelling' && deltaY < CANCEL_EXIT_PX) {
+      setPhase('recording');
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     }
   };
@@ -271,7 +289,7 @@ export function ActionCluster() {
                 longPressFired.current = false;
                 isPressed.current = true;
                 startTouchY.current = e.nativeEvent.pageY;
-                setHoldPhase('charging');
+                setPhase('charging');
                 Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
               }}
               // onPressMove isn't in Pressable's public TS types, but it's a
@@ -282,7 +300,9 @@ export function ActionCluster() {
               {...({ onPressMove: handlePressMove } as any)}
               onPressOut={() => {
                 isPressed.current = false;
-                endHold(holdPhase);
+                // Reads the ref, not the holdPhase closure — see
+                // holdPhaseRef's comment for why that distinction matters.
+                endHold(holdPhaseRef.current);
               }}
               onLongPress={() => {
                 longPressFired.current = true;
@@ -342,6 +362,11 @@ export function ActionCluster() {
   );
 }
 
+const WAVEFORM_BARS = 9;
+// Rough dBFS-ish baseline so bars start small instead of flickering empty
+// before the first real metering sample arrives.
+const METERING_BASELINE = -50;
+
 function RecordingOverlay({
   recorder,
   cancelling,
@@ -354,7 +379,6 @@ function RecordingOverlay({
   reduceMotion: boolean;
 }) {
   const colors = useThemeColors();
-  const themeName = useThemeName();
   // Polls the recorder only while this overlay itself is mounted — i.e.
   // only during (and just after) an actual hold-to-record session, not for
   // the app's whole lifetime.
@@ -362,22 +386,28 @@ function RecordingOverlay({
   const isLive = tail === null;
   const tint = tail === 'saved' ? colors.accent : colors.error;
 
-  const eyebrow =
+  // A real rolling window of actual metering samples (one per poll tick)
+  // rather than one instantaneous value fanned out across arbitrary shape
+  // constants — each bar reflects an actual past instant, oldest to newest.
+  const [levels, setLevels] = useState<number[]>(() =>
+    Array(WAVEFORM_BARS).fill(METERING_BASELINE),
+  );
+  useEffect(() => {
+    setLevels((prev) => [...prev.slice(1), metering ?? METERING_BASELINE]);
+  }, [metering]);
+
+  const label =
     tail === 'saved'
       ? 'Saved'
       : tail === 'discarded'
         ? 'Discarded'
         : tail === 'finishing'
-          ? 'Saving'
+          ? 'Saving…'
           : cancelling
             ? 'Release to cancel'
             : 'Recording';
 
   const hint = cancelling ? 'Release to discard' : 'Slide up to cancel · release to save';
-
-  // Rough dBFS-ish → 0..1 normalization for the waveform bars. Not
-  // scientifically precise — this is decoration, not a metering tool.
-  const level = Math.max(0.12, Math.min(1, ((metering ?? -50) + 50) / 45));
 
   const motionProps = reduceMotion
     ? {
@@ -387,80 +417,70 @@ function RecordingOverlay({
         transition: { type: 'timing' as const, duration: 150 },
       }
     : {
-        from: { opacity: 0, translateY: 8, scale: 0.85 },
+        from: { opacity: 0, translateY: 6, scale: 0.9 },
         animate: { opacity: 1, translateY: 0, scale: 1 },
-        exit: { opacity: 0, translateY: 6, scale: 0.92 },
+        exit: { opacity: 0, translateY: 4, scale: 0.94 },
         transition: SPRING,
       };
 
   return (
     <MotiView {...motionProps} style={styles.overlayShadow}>
-      <BlurView
-        intensity={64}
-        tint={themeName === 'dark' ? 'dark' : 'light'}
-        style={styles.overlayCard}
-      >
-        {/* Soft color wash over the glass — ties the material to the
-            current state (recording / cancelling / saved) without
-            resorting to a flat, opaque card. */}
-        <View style={[StyleSheet.absoluteFillObject, { backgroundColor: tint, opacity: 0.1 }]} />
-        <View style={[styles.overlayBorder, { borderColor: tint, opacity: 0.35 }]} />
-
-        <View className="flex-row items-center gap-1.5 mb-1">
-          {isLive && !cancelling && (
-            <MotiView
-              from={{ opacity: 0.35 }}
-              animate={{ opacity: reduceMotion ? 0.9 : 1 }}
-              transition={
-                reduceMotion
-                  ? { type: 'timing', duration: 200 }
-                  : { type: 'timing', duration: 650, loop: true }
-              }
-              style={[styles.recDot, { backgroundColor: tint }]}
-            />
+      <View style={[styles.overlayCard, { backgroundColor: colors.surfaceHigh, borderColor: tint }]}>
+        <View className="flex-row items-center justify-between mb-1.5">
+          <View className="flex-row items-center gap-1.5">
+            {isLive && !cancelling && (
+              <MotiView
+                from={{ opacity: 0.35 }}
+                animate={{ opacity: reduceMotion ? 0.9 : 1 }}
+                transition={
+                  reduceMotion
+                    ? { type: 'timing', duration: 200 }
+                    : { type: 'timing', duration: 650, loop: true }
+                }
+                style={[styles.recDot, { backgroundColor: tint }]}
+              />
+            )}
+            {tail === 'saved' && <Check size={12} color={tint} strokeWidth={2.6} />}
+            {(tail === 'discarded' || cancelling) && (
+              <Trash2 size={11} color={tint} strokeWidth={2.4} />
+            )}
+            <Text
+              className="font-sans-semi text-[10px] uppercase tracking-wider"
+              style={{ color: tint }}
+            >
+              {label}
+            </Text>
+          </View>
+          {isLive && (
+            <Text className="font-sans-medium text-xs" style={{ color: colors.fgSecondary }}>
+              {formatDuration(durationMillis)}
+            </Text>
           )}
-          {tail === 'saved' && <Check size={12} color={tint} strokeWidth={2.6} />}
-          {(tail === 'discarded' || cancelling) && (
-            <Trash2 size={11} color={tint} strokeWidth={2.4} />
-          )}
-          <Text
-            className="font-sans-semi text-[10px] uppercase tracking-wider"
-            style={{ color: tint }}
-          >
-            {eyebrow}
-          </Text>
         </View>
 
         {isLive && (
-          <Text className="font-sans-semi text-[28px] text-fg mb-2.5" style={{ letterSpacing: -0.5 }}>
-            {formatDuration(durationMillis)}
-          </Text>
-        )}
-
-        {isLive && (
-          <View className="flex-row items-center justify-center gap-0.75 h-9 mb-2.5">
-            {BAR_VARIANCE.map((variance, i) => (
-              <MotiView
-                key={i}
-                animate={{ scaleY: Math.max(0.12, Math.min(1, level * variance)) }}
-                transition={{ type: 'timing', duration: 90 }}
-                style={[styles.bar, { backgroundColor: tint, transformOrigin: 'bottom' } as any]}
-              />
-            ))}
+          <View className="flex-row items-center gap-0.5 h-7 mb-1.5">
+            {levels.map((sample, i) => {
+              const level = Math.max(0.12, Math.min(1, (sample + 50) / 45));
+              return (
+                <MotiView
+                  key={i}
+                  animate={{ scaleY: level }}
+                  transition={{ type: 'timing', duration: 80 }}
+                  style={[styles.bar, { backgroundColor: tint, transformOrigin: 'bottom' } as any]}
+                />
+              );
+            })}
           </View>
         )}
 
         {isLive && (
-          <Text className="font-sans text-[11px] text-fg-secondary">{hint}</Text>
+          <Text className="font-sans text-[11px] text-fg-tertiary">{hint}</Text>
         )}
-      </BlurView>
+      </View>
     </MotiView>
   );
 }
-
-// Center-weighted so the bars read like an actual waveform silhouette
-// rather than a flat row of equal-ish blips.
-const BAR_VARIANCE = [0.35, 0.55, 0.8, 1, 0.85, 1.05, 0.75, 0.5, 0.3];
 
 function MiniAction({
   label,
@@ -583,32 +603,31 @@ const styles = StyleSheet.create({
     // Pulled slightly closer to the FAB than the mini-menu's gap — reads
     // as emerging from the button rather than a detached popup.
     marginBottom: -6,
-    borderRadius: 26,
+    borderRadius: 20,
+    // Matches Glass's "regular" elevated-surface recipe (see
+    // components/ui/Glass.tsx) — the app's own flat M3 language, not a
+    // bespoke material just for this one component.
     shadowColor: '#000000',
-    shadowOffset: { width: 0, height: 10 },
-    shadowRadius: 20,
-    shadowOpacity: 0.22,
-    elevation: 10,
+    shadowOffset: { width: 0, height: 3 },
+    shadowRadius: 8,
+    shadowOpacity: 0.16,
+    elevation: 3,
   },
   overlayCard: {
-    width: 264,
-    borderRadius: 26,
-    padding: 20,
+    width: 224,
+    borderRadius: 20,
+    borderWidth: 1.5,
+    padding: 14,
     overflow: 'hidden',
   },
-  overlayBorder: {
-    ...StyleSheet.absoluteFillObject,
-    borderRadius: 26,
-    borderWidth: 1.5,
-  },
   recDot: {
-    width: 7,
-    height: 7,
-    borderRadius: 4,
+    width: 6,
+    height: 6,
+    borderRadius: 3,
   },
   bar: {
-    width: 5,
-    height: 32,
-    borderRadius: 2.5,
+    width: 4,
+    height: 24,
+    borderRadius: 2,
   },
 });
