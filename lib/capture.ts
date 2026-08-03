@@ -1,6 +1,8 @@
 import { Directory, File, Paths } from 'expo-file-system';
 import { processAudioDump, processVoiceDump } from '@/lib/gemini';
 import { transcribeAudio } from '@/lib/groq';
+import { embedText, embeddableText, toBlob, EMBEDDING_MODEL, EMBEDDING_DIMS } from '@/lib/embeddings';
+import { upsertEmbedding } from '@/lib/db';
 import type { AISummary, Category, MnemoItem } from '@/types/mnemo';
 
 export interface ProcessedRecording {
@@ -46,8 +48,38 @@ type UpdateItemFn = (id: string, updates: Partial<MnemoItem>) => void;
 type AddItemFn = (item: Omit<MnemoItem, 'id' | 'createdAt' | 'updatedAt'>) => MnemoItem;
 type PendingItem = Pick<
   MnemoItem,
-  'id' | 'pendingAudioUri' | 'pendingRawText' | 'nextStep' | 'whereLeftOff'
+  'id' | 'pendingAudioUri' | 'pendingRawText' | 'nextStep' | 'whereLeftOff' | 'category'
 >;
+
+/**
+ * Embeds a just-structured note and stores the vector, for semantic search
+ * and "related notes". Best-effort by design: embedding is an enhancement
+ * on top of an already-saved, already-searchable (via BM25) note — a
+ * failure here must never throw out of `structurePendingItem` or leave the
+ * item `pending`. An un-embedded note just stays keyword-only until the
+ * next backfill sweep picks it up.
+ */
+async function embedAndStore(item: {
+  id: string;
+  title: string;
+  content: string;
+  nextStep?: string;
+  whereLeftOff?: string;
+  tags?: string[];
+  category: Category;
+}): Promise<void> {
+  try {
+    const vector = await embedText(embeddableText(item), 'RETRIEVAL_DOCUMENT');
+    await upsertEmbedding({
+      itemId: item.id,
+      vector: toBlob(vector),
+      model: EMBEDDING_MODEL,
+      dims: EMBEDDING_DIMS,
+    });
+  } catch {
+    // Left un-embedded — PendingProcessor's backfill sweep retries it later.
+  }
+}
 
 /**
  * Copies a finished recording out of its temp/cache location, adds it as a
@@ -131,32 +163,54 @@ export async function structurePendingItem(
       mimeType: 'audio/m4a',
     });
     try { audioFile.delete(); } catch { /* already deleted — safe to ignore */ }
+    const whereLeftOff = item.whereLeftOff || processed.summary?.leftOff;
+    const nextStep = item.nextStep || processed.summary?.nextSteps?.[0];
     updateItem(item.id, {
       title: processed.title,
       content: processed.notes,
       links: processed.links,
       tags: processed.tags ?? [],
       aiSummary: processed.summary,
-      whereLeftOff: item.whereLeftOff || processed.summary?.leftOff,
-      nextStep: item.nextStep || processed.summary?.nextSteps?.[0],
+      whereLeftOff,
+      nextStep,
       pending: false,
       pendingAudioUri: undefined,
       pendingRawText: undefined,
       status: 'active',
     });
+    await embedAndStore({
+      id: item.id,
+      title: processed.title,
+      content: processed.notes,
+      whereLeftOff,
+      nextStep,
+      tags: processed.tags,
+      category: item.category,
+    });
   } else if (item.pendingRawText) {
     const processed = await processVoiceDump(item.pendingRawText);
+    const whereLeftOff = item.whereLeftOff || processed.summary?.leftOff;
+    const nextStep = item.nextStep || processed.summary?.nextSteps?.[0];
     updateItem(item.id, {
       title: processed.title,
       content: processed.notes,
       links: processed.links,
       tags: processed.tags ?? [],
       aiSummary: processed.summary,
-      whereLeftOff: item.whereLeftOff || processed.summary?.leftOff,
-      nextStep: item.nextStep || processed.summary?.nextSteps?.[0],
+      whereLeftOff,
+      nextStep,
       pending: false,
       pendingRawText: undefined,
       status: 'active',
+    });
+    await embedAndStore({
+      id: item.id,
+      title: processed.title,
+      content: processed.notes,
+      whereLeftOff,
+      nextStep,
+      tags: processed.tags,
+      category: item.category,
     });
   }
 }

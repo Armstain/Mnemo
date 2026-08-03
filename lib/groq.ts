@@ -1,15 +1,16 @@
 import { Platform } from 'react-native';
+import { getActiveGroqApiKey } from './api-key';
 
 // Groq free tier: Whisper Large v3 Turbo, multilingual (99 languages),
 // ~2,000 transcription requests/day. Used as the backup ear when
 // Gemini audio understanding is rate-limited or down.
-const GROQ_API_KEY = process.env.EXPO_PUBLIC_GROQ_API_KEY || '';
 const TRANSCRIPTION_MODEL = 'whisper-large-v3-turbo';
 const TRANSCRIPTION_URL = 'https://api.groq.com/openai/v1/audio/transcriptions';
 
 /** Transcribe a local audio file. Detects the spoken language automatically. */
 export async function transcribeAudio(fileUri: string, mimeType = 'audio/m4a'): Promise<string> {
-  if (!GROQ_API_KEY) throw new Error('Groq API key not configured');
+  const apiKey = getActiveGroqApiKey();
+  if (!apiKey) throw new Error('Groq API key not configured');
 
   const form = new FormData();
   form.append('model', TRANSCRIPTION_MODEL);
@@ -22,7 +23,7 @@ export async function transcribeAudio(fileUri: string, mimeType = 'audio/m4a'): 
 
   const res = await fetch(TRANSCRIPTION_URL, {
     method: 'POST',
-    headers: { Authorization: `Bearer ${GROQ_API_KEY}` },
+    headers: { Authorization: `Bearer ${apiKey}` },
     body: form,
   });
   if (!res.ok) {

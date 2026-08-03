@@ -33,6 +33,14 @@ export function initDb(): Promise<void> {
       CREATE INDEX IF NOT EXISTS idx_items_status ON items(status);
       CREATE INDEX IF NOT EXISTS idx_items_category ON items(category);
       CREATE INDEX IF NOT EXISTS idx_items_updatedAt ON items(updatedAt);
+
+      CREATE TABLE IF NOT EXISTS embeddings (
+        itemId TEXT PRIMARY KEY NOT NULL,
+        vector BLOB NOT NULL,
+        model TEXT NOT NULL,
+        dims INTEGER NOT NULL,
+        updatedAt INTEGER NOT NULL
+      );
     `);
   }
   return initPromise;
@@ -179,4 +187,61 @@ export async function updatePartialItem(id: string, updates: Partial<MnemoItem>)
 
 export async function deleteItemRow(id: string): Promise<void> {
   await db.runAsync('DELETE FROM items WHERE id = $id', { $id: id });
+  await deleteEmbedding(id);
+}
+
+// ─── Embeddings ─────────────────────────────────────────────────
+// One vector per item, stored as a raw BLOB (Float32Array bytes) rather
+// than JSON — a fraction of the size and no parse cost. `model`/`dims` are
+// kept alongside so a future embedding-model change can detect and
+// re-embed stale vectors instead of silently comparing incompatible ones.
+
+export interface EmbeddingRecord {
+  itemId: string;
+  vector: Uint8Array;
+  model: string;
+  dims: number;
+}
+
+interface EmbeddingRow {
+  itemId: string;
+  vector: Uint8Array;
+  model: string;
+  dims: number;
+  updatedAt: number;
+}
+
+export async function upsertEmbedding(record: EmbeddingRecord): Promise<void> {
+  await db.runAsync(
+    `INSERT INTO embeddings (itemId, vector, model, dims, updatedAt)
+     VALUES ($itemId, $vector, $model, $dims, $updatedAt)
+     ON CONFLICT(itemId) DO UPDATE SET
+       vector = $vector, model = $model, dims = $dims, updatedAt = $updatedAt`,
+    {
+      $itemId: record.itemId,
+      $vector: record.vector,
+      $model: record.model,
+      $dims: record.dims,
+      $updatedAt: Date.now(),
+    },
+  );
+}
+
+export async function getAllEmbeddings(): Promise<EmbeddingRow[]> {
+  return db.getAllAsync<EmbeddingRow>('SELECT * FROM embeddings');
+}
+
+/** IDs that already have a vector — used to find what the backfill sweep still needs to embed. */
+export async function getEmbeddedItemIds(): Promise<Set<string>> {
+  const rows = await db.getAllAsync<{ itemId: string }>('SELECT itemId FROM embeddings');
+  return new Set(rows.map((r) => r.itemId));
+}
+
+export async function deleteEmbedding(itemId: string): Promise<void> {
+  await db.runAsync('DELETE FROM embeddings WHERE itemId = $itemId', { $itemId: itemId });
+}
+
+export async function countEmbeddings(): Promise<number> {
+  const row = await db.getFirstAsync<{ count: number }>('SELECT COUNT(*) as count FROM embeddings', {});
+  return row?.count ?? 0;
 }

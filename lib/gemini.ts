@@ -1,21 +1,30 @@
 import { GoogleGenAI, Modality, Type, type GenerateContentParameters } from '@google/genai';
+import { getActiveApiKey } from './api-key';
 
-const GEMINI_API_KEY = process.env.EXPO_PUBLIC_GEMINI_API_KEY || "";
+export function getAIClient(): GoogleGenAI {
+  return new GoogleGenAI({ apiKey: getActiveApiKey() });
+}
 
-const ai = new GoogleGenAI({ apiKey: GEMINI_API_KEY });
+export const ai = new Proxy({} as GoogleGenAI, {
+  get(_target, prop) {
+    const client = getAIClient();
+    const value = (client as any)[prop];
+    return typeof value === 'function' ? value.bind(client) : value;
+  },
+});
 
-// Newest models this key can access with a free-tier quota
-// (verified against the live /v1beta/models listing, July 2026).
-// gemini-3.5-flash hits "high demand" errors on the free tier at peak
-// times, so text calls fall back to the previous flash automatically.
-const TEXT_MODELS = ['gemini-3.5-flash', 'gemini-3-flash-preview'];
+// Latest Gemini 3 series models (August 2026).
+// gemini-3.6-flash is the primary model for agentic and text processing,
+// with gemini-3.5-flash and gemini-3.1-flash as reliable fallbacks.
+const TEXT_MODELS = ['gemini-3.6-flash', 'gemini-3.5-flash', 'gemini-3.1-flash'];
 const TTS_MODEL = 'gemini-3.1-flash-tts-preview';
 
 async function generateText(params: Omit<GenerateContentParameters, 'model'>) {
   let lastError: unknown;
+  const client = getAIClient();
   for (const model of TEXT_MODELS) {
     try {
-      return await ai.models.generateContent({ model, ...params });
+      return await client.models.generateContent({ model, ...params });
     } catch (e) {
       lastError = e;
     }
@@ -186,7 +195,8 @@ export async function processVoiceDump(transcript: string) {
 
 export async function generateSpeech(text: string) {
   try {
-    const response = await ai.models.generateContent({
+    const client = getAIClient();
+    const response = await client.models.generateContent({
       model: TTS_MODEL,
       contents: [{ parts: [{ text }] }],
       config: {
