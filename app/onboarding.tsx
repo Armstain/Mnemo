@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, ScrollView, Platform } from 'react-native';
+import { View, Text, ScrollView, Platform, Image } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import * as SecureStore from 'expo-secure-store';
@@ -67,9 +67,12 @@ export default function OnboardingScreen() {
             transition={{ type: 'timing', duration: 600 }}
             className="mb-16"
           >
-            <View className="w-16 h-16 rounded-full bg-accent/20 items-center justify-center border border-accent/30 mb-5">
-               <View className="w-4 h-4 rounded-full bg-accent" />
-            </View>
+            <Image
+              source={require('@/assets/Mnemo_logo_dark.png')}
+              style={{ width: 64, height: 64, marginBottom: 20 }}
+              resizeMode="contain"
+              accessibilityLabel="Mnemo logo"
+            />
             <Text className="text-4xl font-serif text-fg leading-tight mb-4">
               Never lose track{'\n'}of life again
             </Text>

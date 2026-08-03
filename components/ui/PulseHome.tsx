@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, Pressable, ScrollView } from 'react-native';
+import { View, Text, Pressable, ScrollView, Image } from 'react-native';
 import { Settings, Mic, Layers, ArrowUpRight, Sparkles, Clock, CheckCircle2 } from 'lucide-react-native';
 import { MotiView } from 'moti';
 import { router } from 'expo-router';
@@ -135,21 +135,19 @@ export function PulseHome() {
     >
       {/* Header */}
       <View
-        className="flex-row justify-between items-center px-6 mb-8"
-        style={{ paddingTop: Math.max(insets.top, 16) }}
+        className="flex-row justify-between items-center px-6 mb-6"
+        style={{ paddingTop: Math.max(insets.top + 8, 20) }}
       >
         <View className="flex-row items-center">
-          <View
-            accessible
+          <Image
+            source={require('@/assets/Mnemo_logo_dark.png')}
+            style={{ width: 40, height: 40, marginRight: 12 }}
+            resizeMode="contain"
             accessibilityLabel="Mnemo logo"
-            className="w-10 h-10 rounded-full items-center justify-center mr-3"
-            style={{ backgroundColor: colors.primaryContainer }}
-          >
-            <Mic size={18} color={colors.onPrimaryContainer} strokeWidth={2} />
-          </View>
-          <View>
-            <Text className="text-fg font-serif text-xl tracking-wide">Mnemo</Text>
-            <Text className="text-fg-tertiary font-sans text-[11px]">
+          />
+          <View className="justify-center">
+            <Text className="text-fg font-serif text-xl tracking-wide leading-tight">Mnemo</Text>
+            <Text className="text-fg-tertiary font-sans text-[11px] mt-0.5">
               {greeting}
             </Text>
           </View>
@@ -160,7 +158,7 @@ export function PulseHome() {
           accessibilityRole="button"
           accessibilityLabel="Open settings"
           android_ripple={{ color: colors.border, borderless: true, radius: 24 }}
-          className="w-11 h-11 rounded-full items-center justify-center overflow-hidden"
+          className="w-10 h-10 rounded-full items-center justify-center overflow-hidden"
           style={{ backgroundColor: colors.surfaceHigh }}
         >
           <Settings size={20} color={colors.fgSecondary} strokeWidth={1.8} />
