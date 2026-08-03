@@ -55,19 +55,16 @@ export function ActionCluster() {
   const [holdPhase, setHoldPhase] = useState<HoldPhase>('idle');
   const [tail, setTail] = useState<OverlayTail>(null);
 
-  // Pressable doesn't reliably suppress onPress after onLongPress fires,
-  // so we track it ourselves to avoid also toggling the menu on release.
+  // Tracks whether the hold has committed to recording, so a plain tap
+  // (timer never fires) doesn't also get treated as a release-to-save.
   const longPressFired = useRef(false);
   const startTouchY = useRef(0);
   const tailTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
-  // Mirrors holdPhase for gesture *decisions* (state stays for rendering).
-  // Pressable re-memoizes its internal Pressability config whenever
-  // onPressOut's identity changes, but applying that new config to the
-  // in-flight gesture isn't guaranteed to land before a fast drag-then-
-  // release fires the native release event — so onPressOut can still
-  // invoke a generation-old closure with a stale holdPhase. A ref has no
-  // such gap: it's a single mutable box, always current the instant it's
-  // written, regardless of which render's closure ends up reading it.
+  // Our own long-press timer — see the comment on the responder handlers
+  // below for why this isn't Pressable's onLongPress/delayLongPress.
+  const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Mirrors holdPhase for gesture *decisions* (state stays for rendering) —
+  // always current the instant it's written, with no render/effect gap.
   const holdPhaseRef = useRef<HoldPhase>('idle');
   // start() awaits real async work (permission + recorder prep). If the
   // finger lifts before it resolves, the gesture is already over by the
@@ -78,6 +75,7 @@ export function ActionCluster() {
   useEffect(() => {
     return () => {
       if (tailTimeout.current) clearTimeout(tailTimeout.current);
+      if (longPressTimer.current) clearTimeout(longPressTimer.current);
     };
   }, []);
 
@@ -165,9 +163,7 @@ export function ActionCluster() {
     });
   };
 
-  // Reads/writes holdPhaseRef directly (not the holdPhase state closure) so
-  // the cancel-zone decision is never one render behind a fast drag.
-  const handlePressMove = (e: GestureResponderEvent) => {
+  const handleDragMove = (e: GestureResponderEvent) => {
     const current = holdPhaseRef.current;
     if (current !== 'recording' && current !== 'cancelling') return;
     const deltaY = startTouchY.current - e.nativeEvent.pageY;
@@ -177,6 +173,75 @@ export function ActionCluster() {
     } else if (current === 'cancelling' && deltaY < CANCEL_EXIT_PX) {
       setPhase('recording');
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    }
+  };
+
+  // The FAB's gesture is handled via the raw Responder System instead of
+  // Pressable, deliberately. Pressable/Pressability sits its own state
+  // machine between us and the touch stream (press-rect tracking, a
+  // long-press deactivation distance, responder negotiation with any
+  // ancestor pannable/scrollable view) — and a fast upward drag is exactly
+  // the kind of gesture that negotiation can quietly reassign mid-flight.
+  // That lines up with what was actually observed: the visual "cancelling"
+  // state always appeared correctly, but release only *sometimes* honored
+  // it — consistent with the responder occasionally being taken/terminated
+  // through a path Pressable's onPressOut doesn't cover, rather than a
+  // plain closure/timing bug (which the earlier holdPhaseRef fix already
+  // ruled out — the ref stayed current, and it still misfired). Owning the
+  // responder outright removes that whole negotiation layer: we grant it on
+  // touch start, refuse to give it up mid-gesture, and drive our own
+  // long-press timer, so every release is `onResponderRelease` on the exact
+  // gesture we started, never something Pressability decided on our behalf.
+  const handleGrant = (e: GestureResponderEvent) => {
+    longPressFired.current = false;
+    isPressed.current = true;
+    startTouchY.current = e.nativeEvent.pageY;
+    setPhase('charging');
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    if (longPressTimer.current) clearTimeout(longPressTimer.current);
+    longPressTimer.current = setTimeout(() => {
+      longPressFired.current = true;
+      // A hold always wins over an already-open tap-menu — the two
+      // shouldn't ever be visible at once.
+      setExpanded(false);
+      beginHold();
+    }, LONG_PRESS_MS);
+  };
+
+  const clearLongPressTimer = () => {
+    if (longPressTimer.current) {
+      clearTimeout(longPressTimer.current);
+      longPressTimer.current = null;
+    }
+  };
+
+  const handleRelease = () => {
+    clearLongPressTimer();
+    isPressed.current = false;
+    const wasLongPress = longPressFired.current;
+    longPressFired.current = false;
+    // Always runs — resolves charging/recording/cancelling back to idle,
+    // and saves/discards when a hold had actually committed.
+    endHold(holdPhaseRef.current);
+    if (!wasLongPress) {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      setExpanded((v) => !v);
+    }
+  };
+
+  // Fires if the OS/another view rips the responder away mid-gesture
+  // (a real release never reaches us in that case). Ambiguous intent, so
+  // always discard rather than risk a save the user never actually asked
+  // for by releasing normally.
+  const handleTerminate = () => {
+    clearLongPressTimer();
+    isPressed.current = false;
+    longPressFired.current = false;
+    const phaseAtEnd = holdPhaseRef.current;
+    if (phaseAtEnd === 'recording' || phaseAtEnd === 'cancelling') {
+      endHold('cancelling');
+    } else {
+      setPhase('idle');
     }
   };
 
@@ -274,7 +339,8 @@ export function ActionCluster() {
                 pointerEvents="none"
               />
             )}
-            <Pressable
+            <View
+              accessible
               accessibilityRole="button"
               accessibilityLabel={
                 expanded ? 'Close quick actions' : 'Capture — tap for options, hold to record'
@@ -283,42 +349,15 @@ export function ActionCluster() {
               onAccessibilityAction={(event) => {
                 if (event.nativeEvent.actionName === 'longpress') goRecordScreen();
               }}
-              android_ripple={{ color: 'rgba(255,255,255,0.18)', borderless: false, radius: 30 }}
-              delayLongPress={LONG_PRESS_MS}
-              onPressIn={(e) => {
-                longPressFired.current = false;
-                isPressed.current = true;
-                startTouchY.current = e.nativeEvent.pageY;
-                setPhase('charging');
-                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-              }}
-              // onPressMove isn't in Pressable's public TS types, but it's a
-              // real, first-class Pressability prop at runtime — unlike a
-              // raw onTouchMove, it's guaranteed to fire throughout the same
-              // press/long-press gesture Pressability is already tracking,
-              // which is what makes the slide-to-cancel drag reliable.
-              {...({ onPressMove: handlePressMove } as any)}
-              onPressOut={() => {
-                isPressed.current = false;
-                // Reads the ref, not the holdPhase closure — see
-                // holdPhaseRef's comment for why that distinction matters.
-                endHold(holdPhaseRef.current);
-              }}
-              onLongPress={() => {
-                longPressFired.current = true;
-                // A hold always wins over an already-open tap-menu — the
-                // two shouldn't ever be visible at once.
-                setExpanded(false);
-                beginHold();
-              }}
-              onPress={() => {
-                if (longPressFired.current) {
-                  longPressFired.current = false;
-                  return;
-                }
-                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                setExpanded((v) => !v);
-              }}
+              // Raw Responder System, not Pressable — see the comment above
+              // handleGrant for why. We claim the responder immediately and
+              // refuse to release it until the gesture ends on our terms.
+              onStartShouldSetResponder={() => true}
+              onResponderTerminationRequest={() => false}
+              onResponderGrant={handleGrant}
+              onResponderMove={handleDragMove}
+              onResponderRelease={handleRelease}
+              onResponderTerminate={handleTerminate}
               style={styles.mainFabTouchable}
             >
               <MotiView
@@ -354,7 +393,7 @@ export function ActionCluster() {
                   </View>
                 </MotiView>
               </MotiView>
-            </Pressable>
+            </View>
           </View>
         </MotiView>
       </View>
