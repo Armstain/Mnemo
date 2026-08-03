@@ -1,9 +1,15 @@
 import { AmbientGlow } from '@/components/ui/AmbientGlow';
 import { FloatingTabBar } from '@/components/ui/FloatingTabBar';
+import { ActionCluster } from '@/components/ui/ActionCluster';
 import { Tabs } from 'expo-router';
+import { usePathname } from 'expo-router';
 import React from 'react';
 
 export default function TabLayout() {
+  const pathname = usePathname();
+  // Hide the FAB on the detail screen — it overlaps the status action row.
+  const showFab = !pathname.includes('context');
+
   return (
     <AmbientGlow>
       <Tabs
@@ -21,6 +27,7 @@ export default function TabLayout() {
       </Tabs>
 
       <FloatingTabBar />
+      {showFab && <ActionCluster />}
     </AmbientGlow>
   );
 }

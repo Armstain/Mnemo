@@ -15,30 +15,47 @@ export const THEME_PREF_KEY = 'mnemo-theme-preference';
  */
 export const PALETTE = {
   light: {
-    bg: '#F2F5F4',
-    fg: '#16181D',
-    fgSecondary: '#4A4F5B',
-    fgTertiary: '#6B7180',
-    accent: '#0B7A52',
-    accentInk: '#FFFFFF',
-    accentWarm: '#C2478A',
-    surface: 'rgba(255,255,255,0.55)',
-    border: 'rgba(10,15,20,0.12)',
-    error: '#C2543C',
+    bg: '#F7FAF7', // M3 surface
+    fg: '#191C1A', // on-surface
+    fgSecondary: '#404943', // on-surface-variant
+    fgTertiary: '#707972', // outline
+    accent: '#0B7A52', // primary
+    accentInk: '#FFFFFF', // on-primary
+    accentWarm: '#7D5260', // tertiary
+    surface: '#EBF0EB', // surface-container
+    surfaceWarm: '#E5EAE5', // surface-container-high
+    border: '#C0C9C0', // outline-variant
+    error: '#BA1A1A',
     errorInk: '#FFFFFF',
+    // Material 3 tonal ramp + containers
+    primaryContainer: '#A7F3D0',
+    onPrimaryContainer: '#002114',
+    surfaceLowest: '#FFFFFF',
+    surfaceLow: '#F1F5F1',
+    surfaceHigh: '#E5EAE5',
+    surfaceHighest: '#DFE4DF',
+    outline: '#707972',
   },
   dark: {
-    bg: '#0A0B0F',
-    fg: '#F4F5F8',
-    fgSecondary: '#A9AEBC',
-    fgTertiary: '#7E8494',
-    accent: '#34d399',
-    accentInk: '#04271B',
-    accentWarm: '#F472B6',
-    surface: 'rgba(255,255,255,0.06)',
-    border: 'rgba(255,255,255,0.12)',
-    error: '#F0876C',
-    errorInk: '#33100A',
+    bg: '#101410', // M3 surface (dark)
+    fg: '#E1E3DE',
+    fgSecondary: '#C0C9C0',
+    fgTertiary: '#8A938B',
+    accent: '#34d399', // primary (light tone)
+    accentInk: '#003824', // on-primary
+    accentWarm: '#EFB8C8',
+    surface: '#1C211C', // surface-container
+    surfaceWarm: '#262B26', // surface-container-high
+    border: '#404943', // outline-variant
+    error: '#FFB4AB',
+    errorInk: '#690005',
+    primaryContainer: '#005138',
+    onPrimaryContainer: '#A7F3D0',
+    surfaceLowest: '#0B0F0B',
+    surfaceLow: '#181D18',
+    surfaceHigh: '#262B26',
+    surfaceHighest: '#313631',
+    outline: '#8A938B',
   },
 } as const;
 

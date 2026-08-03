@@ -4,8 +4,11 @@ import * as SecureStore from 'expo-secure-store';
 import { Platform } from 'react-native';
 import type { MnemoItem, Category, ItemStatus } from '@/types/mnemo';
 import { migrateStoredData } from '@/utils/migration';
+import { initDb, countItems, getAllItems, insertItem, insertItems, updatePartialItem, deleteItemRow } from '@/lib/db';
 
-// ─── Storage keys ───────────────────────────────────────────────
+// ─── Legacy storage keys ────────────────────────────────────────
+// SQLite (lib/db.ts) is now the source of truth. These are read exactly
+// once, on first launch after this migration, to pull in existing data.
 const STORAGE_KEY_V2 = 'mnemo-items-v2';
 const LEGACY_STORAGE_KEY = 'mnemo-work-contexts';
 
@@ -50,22 +53,11 @@ function isToday(timestamp: number): boolean {
   );
 }
 
-// Items live in AsyncStorage (localStorage on web). SecureStore is only read
-// during migration: it has a ~2KB per-value limit on Android, so it cannot
-// hold a growing item list — early builds stored it there anyway.
 async function readStorage(key: string): Promise<string | null> {
   if (Platform.OS === 'web') {
     return localStorage.getItem(key);
   }
   return AsyncStorage.getItem(key);
-}
-
-async function writeStorage(key: string, data: string): Promise<void> {
-  if (Platform.OS === 'web') {
-    localStorage.setItem(key, data);
-  } else {
-    await AsyncStorage.setItem(key, data);
-  }
 }
 
 async function removeStorage(key: string): Promise<void> {
@@ -95,49 +87,70 @@ async function removeSecureLegacy(key: string): Promise<void> {
   }
 }
 
+/**
+ * Reads whatever pre-SQLite data exists, in the same three-tier order the
+ * app has always checked, without touching SQLite. Returns `[]` if there's
+ * nothing to migrate.
+ */
+async function readLegacyItems(): Promise<MnemoItem[]> {
+  // 1. Old current home: AsyncStorage (localStorage on web)
+  const stored = await readStorage(STORAGE_KEY_V2);
+  if (stored) {
+    const parsed = JSON.parse(stored);
+    if (Array.isArray(parsed)) return parsed;
+  }
+
+  // 2. Older builds kept v2 items in SecureStore.
+  const secureV2 = await readSecureLegacy(STORAGE_KEY_V2);
+  if (secureV2) {
+    const parsed = JSON.parse(secureV2);
+    if (Array.isArray(parsed)) return parsed;
+  }
+
+  // 3. Oldest format: legacy context dumps.
+  const legacy =
+    (await readStorage(LEGACY_STORAGE_KEY)) ?? (await readSecureLegacy(LEGACY_STORAGE_KEY));
+  if (legacy) {
+    const parsed = JSON.parse(legacy);
+    if (Array.isArray(parsed)) return migrateStoredData(parsed);
+  }
+
+  return [];
+}
+
+async function clearLegacyStorage(): Promise<void> {
+  await removeStorage(STORAGE_KEY_V2);
+  await removeStorage(LEGACY_STORAGE_KEY);
+  await removeSecureLegacy(STORAGE_KEY_V2);
+  await removeSecureLegacy(LEGACY_STORAGE_KEY);
+}
+
 // ─── Provider ───────────────────────────────────────────────────
 export function MnemoStoreProvider({ children }: { children: React.ReactNode }) {
   const [items, setItems] = useState<MnemoItem[]>([]);
   const [isLoaded, setIsLoaded] = useState(false);
 
-  // Load & migrate on mount
+  // Load on mount: SQLite is the source of truth once it has any rows.
+  // On the very first run after this migration, SQLite is empty, so we
+  // pull in whatever the old AsyncStorage/SecureStore chain has, write it
+  // into SQLite once, and stop touching the old keys from then on.
   useEffect(() => {
     async function load() {
       try {
-        // 1. Current home: AsyncStorage (localStorage on web)
-        const stored = await readStorage(STORAGE_KEY_V2);
-        if (stored) {
-          const parsed = JSON.parse(stored);
-          setItems(Array.isArray(parsed) ? parsed : []);
+        await initDb();
+
+        const existing = await countItems();
+        if (existing > 0) {
+          setItems(await getAllItems());
           return;
         }
 
-        // 2. Older builds kept v2 items in SecureStore — move them over.
-        const secureV2 = await readSecureLegacy(STORAGE_KEY_V2);
-        if (secureV2) {
-          const parsed = JSON.parse(secureV2);
-          if (Array.isArray(parsed)) {
-            setItems(parsed);
-            await writeStorage(STORAGE_KEY_V2, secureV2);
-            await removeSecureLegacy(STORAGE_KEY_V2);
-            return;
-          }
+        const legacyItems = await readLegacyItems();
+        if (legacyItems.length > 0) {
+          await insertItems(legacyItems);
+          await clearLegacyStorage();
         }
-
-        // 3. Oldest format: legacy context dumps.
-        const legacy =
-          (await readStorage(LEGACY_STORAGE_KEY)) ??
-          (await readSecureLegacy(LEGACY_STORAGE_KEY));
-        if (legacy) {
-          const parsed = JSON.parse(legacy);
-          if (Array.isArray(parsed)) {
-            const migrated = migrateStoredData(parsed);
-            setItems(migrated);
-            await writeStorage(STORAGE_KEY_V2, JSON.stringify(migrated));
-            await removeStorage(LEGACY_STORAGE_KEY);
-            await removeSecureLegacy(LEGACY_STORAGE_KEY);
-          }
-        }
+        setItems(legacyItems);
       } catch (e) {
         console.error('Failed to load items', e);
       } finally {
@@ -146,13 +159,6 @@ export function MnemoStoreProvider({ children }: { children: React.ReactNode }) 
     }
     load();
   }, []);
-
-  // Persist whenever items change
-  useEffect(() => {
-    if (isLoaded) {
-      writeStorage(STORAGE_KEY_V2, JSON.stringify(items));
-    }
-  }, [items, isLoaded]);
 
   // ─── CRUD ───────────────────────────────────────────────────
   const addItem = useCallback(
@@ -165,23 +171,27 @@ export function MnemoStoreProvider({ children }: { children: React.ReactNode }) 
         updatedAt: now,
       };
       setItems((prev) => [newItem, ...prev]);
+      insertItem(newItem).catch((e) => console.error('Failed to persist new item', e));
       return newItem;
     },
     [],
   );
 
   const updateItem = useCallback((id: string, updates: Partial<MnemoItem>) => {
+    const updatedAt = Date.now();
     setItems((prev) =>
       prev.map((item) =>
-        item.id === id
-          ? { ...item, ...updates, updatedAt: Date.now() }
-          : item,
+        item.id === id ? { ...item, ...updates, updatedAt } : item,
       ),
+    );
+    updatePartialItem(id, { ...updates, updatedAt }).catch((e) =>
+      console.error('Failed to persist item update', e),
     );
   }, []);
 
   const deleteItem = useCallback((id: string) => {
     setItems((prev) => prev.filter((item) => item.id !== id));
+    deleteItemRow(id).catch((e) => console.error('Failed to persist item delete', e));
   }, []);
 
   // ─── Status transitions ─────────────────────────────────────

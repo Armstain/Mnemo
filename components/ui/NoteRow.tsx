@@ -84,10 +84,10 @@ export function NoteRow({ item, index, onPress, onDelete, showStatus = false }: 
             <Pressable
               onPress={onDelete}
               accessibilityLabel="Delete item"
-              className="p-1.5 ml-3 rounded-full active:bg-surface-warm"
-              hitSlop={10}
+              className="w-11 h-11 ml-2 items-center justify-center rounded-full active:bg-surface-warm"
+              hitSlop={4}
             >
-              <Trash2 size={13} color={colors.error} />
+              <Trash2 size={15} color={colors.error} />
             </Pressable>
           )}
         </View>

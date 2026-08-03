@@ -1,14 +1,13 @@
 import React from 'react';
-import { View, Pressable, StyleSheet } from 'react-native';
+import { View, Pressable, StyleSheet, Text } from 'react-native';
 import { Home, Search, Library } from 'lucide-react-native';
 import { MotiView } from 'moti';
-import Animated, { useSharedValue, useAnimatedStyle, withTiming } from 'react-native-reanimated';
 import * as Haptics from 'expo-haptics';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router, usePathname } from 'expo-router';
 
-import { Glass } from '@/components/ui/Glass';
-import { useThemeColors, useThemeName } from '@/hooks/use-theme';
+import { useThemeColors } from '@/hooks/use-theme';
+import { useReduceMotion } from '@/hooks/use-accessibility-motion';
 import { EASE_OUT } from '@/utils/motion';
 
 const TABS = [
@@ -17,55 +16,66 @@ const TABS = [
   { name: 'Library', icon: Library, route: '/(tabs)/library' },
 ] as const;
 
+// Material 3 navigation bar container height (excludes the bottom safe
+// inset, which is added on top). Exported so the FAB and screens can
+// reserve clearance without magic numbers.
+export const NAV_BAR_HEIGHT = 64;
+
+// Scroll-content bottom padding that clears the floating nav bar + FAB stack.
+// Only use on screens that render ActionCluster (Home tab).
+export const CONTENT_BOTTOM_CLEARANCE = NAV_BAR_HEIGHT + 130;
+
+// Bottom padding for screens WITHOUT the FAB (Library, Search, Context).
+// Clears just the nav bar + standard 16dp M3 margin.
+export const NAV_CLEARANCE = NAV_BAR_HEIGHT + 16;
+
 /**
- * FloatingTabBar — the navigation pill, rendered in the app's Glass
- * material (native Liquid Glass on iOS 26+, layered blur elsewhere).
- * Glass supplies its own shadow and materialize-in, so this only lays
- * out the tab row itself.
+ * FloatingTabBar — Floaty, minimal pill navigation bar.
+ * Elevated off the bottom edge with rounded capsule styling, subtle shadow,
+ * and compact minimal tabs.
  */
 export function FloatingTabBar() {
   const insets = useSafeAreaInsets();
   const pathname = usePathname();
+  const colors = useThemeColors();
 
   return (
     <View
-      className="absolute bottom-0 left-0 right-0 items-center justify-center z-50 pointer-events-box-none"
-      style={{ paddingBottom: Math.max(insets.bottom, 16) + 8 }}
+      className="absolute left-6 right-6 z-40"
+      style={[
+        styles.bar,
+        {
+          bottom: Math.max(insets.bottom, 16),
+          height: NAV_BAR_HEIGHT,
+          backgroundColor: colors.surface,
+          borderColor: colors.border,
+        },
+      ]}
     >
-      <MotiView
-        from={{ translateY: 100, opacity: 0 }}
-        animate={{ translateY: 0, opacity: 1 }}
-        transition={{ type: 'spring', damping: 20, delay: 500 }}
-      >
-        <Glass radius={34} intensity={60} interactive>
-          <View style={styles.content}>
-            {TABS.map((item) => {
-              const isActive =
-                (item.route === '/' && pathname === '/') ||
-                (item.route !== '/' &&
-                  pathname.includes(item.route.replace('/(tabs)/', '')));
+      {TABS.map((item) => {
+        const isActive =
+          (item.route === '/' && pathname === '/') ||
+          (item.route !== '/' &&
+            pathname.includes(item.route.replace('/(tabs)/', '')));
 
-              return (
-                <TabButton
-                  key={item.name}
-                  name={item.name}
-                  icon={item.icon}
-                  isActive={isActive}
-                  onPress={() => {
-                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                    router.push(item.route as any);
-                  }}
-                />
-              );
-            })}
-          </View>
-        </Glass>
-      </MotiView>
+        return (
+          <NavItem
+            key={item.name}
+            name={item.name}
+            icon={item.icon}
+            isActive={isActive}
+            onPress={() => {
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              router.push(item.route as any);
+            }}
+          />
+        );
+      })}
     </View>
   );
 }
 
-function TabButton({
+function NavItem({
   name,
   icon: Icon,
   isActive,
@@ -76,90 +86,84 @@ function TabButton({
   isActive: boolean;
   onPress: () => void;
 }) {
-  const theme = useThemeName();
   const colors = useThemeColors();
-  // Owns its own shared value so press feedback is instant and smoothly
-  // interruptible — a hard style-array swap on `pressed` has no easing
-  // at all, which reads as a snap rather than a press.
-  const pressed = useSharedValue(0);
-  const pressStyle = useAnimatedStyle(() => ({
-    transform: [{ scale: 1 - pressed.value * 0.08 }],
-  }));
+  const reduceMotion = useReduceMotion();
 
   return (
     <Pressable
-      onPressIn={() => {
-        pressed.value = withTiming(1, { duration: 100, easing: EASE_OUT });
-      }}
-      onPressOut={() => {
-        pressed.value = withTiming(0, { duration: 160, easing: EASE_OUT });
-      }}
       onPress={onPress}
-      style={styles.tabButton}
+      accessibilityRole="button"
+      accessibilityState={{ selected: isActive }}
       accessibilityLabel={name}
+      android_ripple={{ color: colors.border, borderless: true, radius: 28 }}
+      style={styles.item}
     >
-      <Animated.View style={[styles.tabButtonInner, pressStyle]}>
-        {/* Always mounted and interpolated by `isActive`, rather than
-            conditionally rendered — mount/unmount restarts from scratch
-            on every rapid tab switch, the RN equivalent of a keyframe
-            animation that can't be interrupted mid-flight. */}
+      <View style={styles.indicatorWrap}>
+        {/* Pill active indicator */}
         <MotiView
-          style={[
-            styles.activeGlow,
-            {
-              backgroundColor:
-                theme === 'dark'
-                  ? 'rgba(255,255,255,0.12)'
-                  : 'rgba(10,15,20,0.07)',
-            },
-          ]}
-          animate={{ opacity: isActive ? 1 : 0, scale: isActive ? 1 : 0.5 }}
-          transition={{ type: 'timing', duration: 220, easing: EASE_OUT }}
+          style={[styles.indicator, { backgroundColor: colors.primaryContainer }]}
+          animate={{
+            opacity: isActive ? 1 : 0,
+            // ponytail: skip scaleX when user prefers reduced motion — only
+            // opacity should change per accessibility guidelines.
+            scaleX: reduceMotion ? 1 : (isActive ? 1 : 0.6),
+          }}
+          transition={{ type: 'timing', duration: reduceMotion ? 120 : 240, easing: EASE_OUT }}
         />
-
         <Icon
           size={20}
-          color={isActive ? colors.fg : colors.fgTertiary}
-          strokeWidth={isActive ? 2.2 : 1.5}
+          color={isActive ? colors.onPrimaryContainer : colors.fgSecondary}
+          strokeWidth={isActive ? 2.2 : 1.8}
         />
-
-        <MotiView
-          style={[styles.activeDot, { backgroundColor: colors.accent }]}
-          animate={{ opacity: isActive ? 1 : 0, scale: isActive ? 1 : 0.5 }}
-          transition={{ type: 'timing', duration: 220, delay: isActive ? 100 : 0, easing: EASE_OUT }}
-        />
-      </Animated.View>
+      </View>
+      <Text
+        numberOfLines={1}
+        style={[
+          styles.label,
+          { color: isActive ? colors.fg : colors.fgSecondary },
+        ]}
+        className={isActive ? 'font-sans-semi' : 'font-sans-medium'}
+      >
+        {name}
+      </Text>
     </Pressable>
   );
 }
 
 const styles = StyleSheet.create({
-  content: {
+  bar: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingVertical: 12,
-    gap: 20,
+    justifyContent: 'space-around',
+    borderRadius: 32,
+    borderWidth: 1,
+    paddingHorizontal: 12,
+    // Soft floating shadow lift
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 6 },
+    shadowRadius: 16,
+    shadowOpacity: 0.14,
+    elevation: 10,
   },
-  tabButton: {
-    width: 44,
-    height: 44,
-    borderRadius: 9999,
-  },
-  tabButtonInner: {
+  item: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
+    gap: 2,
+    paddingVertical: 4,
   },
-  activeGlow: {
+  indicatorWrap: {
+    width: 48,
+    height: 28,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  indicator: {
     ...StyleSheet.absoluteFillObject,
-    borderRadius: 9999,
+    borderRadius: 14,
   },
-  activeDot: {
-    position: 'absolute',
-    bottom: 2,
-    width: 4,
-    height: 4,
-    borderRadius: 2,
+  label: {
+    fontSize: 11,
+    letterSpacing: 0.1,
   },
 });

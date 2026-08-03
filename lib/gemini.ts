@@ -68,10 +68,15 @@ const DUMP_SCHEMA = {
       items: { type: Type.STRING },
       description: 'URLs mentioned in the note',
     },
+    tags: {
+      type: Type.ARRAY,
+      items: { type: Type.STRING },
+      description: '2-5 short lowercase keyword tags capturing the topic (e.g. "passport", "travel", "recipe"). No hashtags, no categories already covered by suggestedCategory.',
+    },
     suggestedCategory: { type: Type.STRING, enum: VALID_CATEGORIES },
     summary: SUMMARY_SCHEMA,
   },
-  required: ['title', 'notes', 'links', 'suggestedCategory', 'summary'],
+  required: ['title', 'notes', 'links', 'tags', 'suggestedCategory', 'summary'],
 };
 
 const ENHANCE_SCHEMA = {
@@ -156,6 +161,7 @@ export async function processVoiceDump(transcript: string) {
       "title": "Short punchy title (max 5 words)",
       "notes": "Cleaned up, well-formatted version of their notes. Fix grammar and make it readable, but keep all details.",
       "links": ["Extract any URLs or links mentioned. If none, empty array."],
+      "tags": ["2-5 short lowercase keyword tags for the topic, e.g. passport, travel"],
       "suggestedCategory": "one of: ${VALID_CATEGORIES.join(', ')}",
       "summary": {
         "leftOff": "1-2 sentences on exactly where they left off",
@@ -217,6 +223,7 @@ export async function processAudioDump(base64Audio: string, mimeType: string) {
       "title": "Short punchy title (max 5 words) in the speaker's language",
       "notes": "Clean, well-formatted transcription/expanded notes in the speaker's language.",
       "links": ["Extract any URLs or links mentioned. If none, empty array."],
+      "tags": ["2-5 short lowercase keyword tags for the topic, in the speaker's language"],
       "suggestedCategory": "one of: ${VALID_CATEGORIES.join(', ')}",
       "summary": {
         "leftOff": "1-2 sentences on exactly where they left off in the speaker's language",

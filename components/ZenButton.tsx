@@ -1,7 +1,8 @@
 import React from 'react';
 import { Pressable, Text, View } from 'react-native';
 import * as Haptics from 'expo-haptics';
-import { MotiView } from 'moti';
+
+import { useThemeColors } from '@/hooks/use-theme';
 
 interface ZenButtonProps {
   onPress: () => void;
@@ -26,6 +27,8 @@ export const ZenButton = ({
   hapticIntensity = 'light',
   className = '',
 }: ZenButtonProps) => {
+  const colors = useThemeColors();
+
   const handlePress = () => {
     if (disabled) return;
 
@@ -50,9 +53,9 @@ export const ZenButton = ({
       case 'primary':
         return 'bg-accent';
       case 'secondary':
-        return 'bg-surface-warm';
+        return 'bg-surface-high';
       case 'outline':
-        return 'bg-transparent border border-border';
+        return 'bg-transparent border border-outline';
       case 'ghost':
         return 'bg-transparent';
       case 'danger':
@@ -61,6 +64,12 @@ export const ZenButton = ({
         return 'bg-accent';
     }
   };
+
+  // Material ripple: light-on-dark for solid fills, ink-on-light elsewhere.
+  const rippleColor =
+    variant === 'primary' || variant === 'danger'
+      ? 'rgba(255,255,255,0.18)'
+      : colors.border;
 
   const getTextColor = () => {
     switch (variant) {
@@ -103,17 +112,24 @@ export const ZenButton = ({
     }
   };
 
+  const getShadowStyle = () => {
+    if (disabled || variant === 'ghost' || variant === 'outline') return '';
+    return 'shadow-sm shadow-black/20 elevation-2';
+  };
+
   return (
     <Pressable
       onPress={handlePress}
       disabled={disabled}
+      android_ripple={disabled ? undefined : { color: rippleColor }}
       className={`
-        flex-row items-center justify-center
-        rounded-lg
+        flex-row items-center justify-center overflow-hidden
+        rounded-full
         ${getVariantStyles()}
         ${getSizeStyles()}
+        ${getShadowStyle()}
         ${fullWidth ? 'w-full' : ''}
-        ${disabled ? 'opacity-40' : 'active:opacity-90 active:scale-[0.97]'}
+        ${disabled ? 'opacity-55' : 'active:opacity-90'}
         ${className}
       `}
     >

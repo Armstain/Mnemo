@@ -5,46 +5,41 @@ import {
   TextInput,
   ScrollView,
   Pressable,
-  ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
 } from 'react-native';
-import { router, useLocalSearchParams } from 'expo-router';
+import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import {
-  Check,
-  X,
-  PenLine,
-  CheckSquare,
-  ChevronDown,
-  ChevronUp,
-} from 'lucide-react-native';
+import { Check, X, ChevronDown, ChevronUp } from 'lucide-react-native';
 import { MotiView } from 'moti';
 import { AmbientGlow } from '@/components/ui/AmbientGlow';
 import { useMnemoStore } from '@/hooks/use-mnemo-store';
-import { processVoiceDump } from '@/lib/gemini';
+import { resolvePendingItem } from '@/lib/capture';
 import { ZenButton } from '@/components/ZenButton';
 import { CategoryPill } from '@/components/ui/CategoryPill';
 import { ChecklistEditor } from '@/components/ui/ChecklistEditor';
 import { DueDatePicker } from '@/components/ui/DueDatePicker';
-import { CATEGORY_LIST, useStatusConfig } from '@/utils/categories';
+import { EditorToolbar, type TextSelection } from '@/components/ui/EditorToolbar';
+import { CATEGORY_LIST } from '@/utils/categories';
 import { useThemeColors } from '@/hooks/use-theme';
-import type { Category, ChecklistItem, ItemType } from '@/types/mnemo';
+import type { Category, ChecklistItem } from '@/types/mnemo';
 
-type CaptureMode = 'note' | 'checklist';
-
+/**
+ * CaptureScreen — one unified surface for a thought: freeform (markdown)
+ * text plus an always-available checklist section, the way Apple Notes /
+ * Google Keep let you mix prose and checkboxes in the same note instead of
+ * forcing an upfront "note vs. checklist" choice. The saved item's `type`
+ * is inferred from whether any checklist items were actually added.
+ */
 export default function CaptureScreen() {
   const insets = useSafeAreaInsets();
-  const params = useLocalSearchParams<{ mode?: string }>();
-  const { addItem } = useMnemoStore();
-
-  // Mode
-  const initialMode = (params.mode === 'checklist' ? 'checklist' : 'note') as CaptureMode;
-  const [mode, setMode] = useState<CaptureMode>(initialMode);
+  const { addItem, updateItem } = useMnemoStore();
 
   // Core fields
   const [text, setText] = useState('');
+  const [selection, setSelection] = useState<TextSelection>({ start: 0, end: 0 });
   const [checklistItems, setChecklistItems] = useState<ChecklistItem[]>([]);
+  const [showChecklist, setShowChecklist] = useState(false);
   const [category, setCategory] = useState<Category>('general');
 
   // Optional fields
@@ -53,67 +48,51 @@ export default function CaptureScreen() {
   const [whereLeftOff, setWhereLeftOff] = useState('');
   const [dueDate, setDueDate] = useState<number | undefined>();
 
-  // UI state
-  const [isProcessing, setIsProcessing] = useState(false);
   const colors = useThemeColors();
-  const statusColors = useStatusConfig();
 
-  const canSave = useMemo(() => {
-    if (mode === 'note') return text.trim().length > 0;
-    if (mode === 'checklist')
-      return checklistItems.length > 0 || text.trim().length > 0;
-    return false;
-  }, [mode, text, checklistItems]);
+  const canSave = useMemo(
+    () => text.trim().length > 0 || checklistItems.length > 0,
+    [text, checklistItems],
+  );
 
-  const handleSave = async () => {
+  const handleSave = () => {
     if (!canSave) return;
-    setIsProcessing(true);
 
-    // Build title from first line of text
-    const rawTitle = text.trim().split('\n')[0];
+    const trimmedText = text.trim();
+    const hasChecklist = checklistItems.length > 0;
+
+    // Build title from the first line of text, falling back to a
+    // checklist-aware default when there's no free text at all.
+    const rawTitle = trimmedText.split('\n')[0];
     const fallbackTitle =
       rawTitle.length > 50
         ? rawTitle.substring(0, 50) + '…'
-        : rawTitle || (mode === 'checklist' ? 'Checklist' : 'Quick note');
+        : rawTitle || (hasChecklist ? 'Checklist' : 'Quick note');
+    const hasTextToStructure = trimmedText.length > 0;
 
-    try {
-      // Try AI processing for richer output
-      const processed = await processVoiceDump(text);
-      const newItem = addItem({
-        type: mode as ItemType,
-        title: processed.title || fallbackTitle,
-        content: processed.notes || text.trim(),
-        checklistItems: mode === 'checklist' ? checklistItems : undefined,
-        links: processed.links || [],
-        category,
-        tags: [],
-        status: 'active',
-        nextStep: nextStep.trim() || processed.summary?.nextSteps?.[0],
-        whereLeftOff: whereLeftOff.trim() || processed.summary?.leftOff,
-        dueDate,
-        aiSummary: processed.summary,
-      });
-      router.replace(`/(tabs)/context?id=${newItem.id}` as any);
-    } catch {
-      // AI unavailable — save offline with raw content
-      const newItem = addItem({
-        type: mode as ItemType,
-        title: fallbackTitle,
-        content: text.trim(),
-        checklistItems: mode === 'checklist' ? checklistItems : undefined,
-        links: [],
-        category,
-        tags: [],
-        status: 'active',
-        nextStep: nextStep.trim() || undefined,
-        whereLeftOff: whereLeftOff.trim() || undefined,
-        dueDate,
-        pending: true,
-        pendingRawText: text.trim(),
-      });
-      router.replace(`/(tabs)/context?id=${newItem.id}` as any);
-    } finally {
-      setIsProcessing(false);
+    // Save instantly with the raw content so the user never waits on the
+    // network — AI structuring (title/summary/links) happens in the
+    // background and patches the item in place when it lands.
+    const newItem = addItem({
+      type: hasChecklist ? 'checklist' : 'note',
+      title: fallbackTitle,
+      content: trimmedText,
+      checklistItems: hasChecklist ? checklistItems : undefined,
+      links: [],
+      category,
+      tags: [],
+      status: 'active',
+      nextStep: nextStep.trim() || undefined,
+      whereLeftOff: whereLeftOff.trim() || undefined,
+      dueDate,
+      pending: hasTextToStructure,
+      pendingRawText: hasTextToStructure ? trimmedText : undefined,
+    });
+
+    router.replace(`/(tabs)/context?id=${newItem.id}` as any);
+
+    if (hasTextToStructure) {
+      resolvePendingItem(newItem, updateItem);
     }
   };
 
@@ -136,55 +115,8 @@ export default function CaptureScreen() {
             Capture
           </Text>
           <Text className="text-3xl font-sans-medium text-fg">
-            {mode === 'checklist' ? 'New checklist' : 'New note'}
+            New thought
           </Text>
-        </MotiView>
-
-        {/* Mode toggle */}
-        <MotiView
-          from={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ type: 'timing', duration: 400, delay: 100 }}
-          className="flex-row bg-surface-warm/50 rounded-xl p-1 mb-5"
-        >
-          <Pressable
-            onPress={() => setMode('note')}
-            className={`flex-1 flex-row items-center justify-center py-2.5 rounded-lg ${
-              mode === 'note' ? 'bg-surface shadow-soft-sm' : ''
-            }`}
-          >
-            <PenLine
-              size={14}
-              color={mode === 'note' ? colors.accent : colors.fgTertiary}
-              strokeWidth={1.8}
-            />
-            <Text
-              className={`font-sans-medium text-xs ml-1.5 ${
-                mode === 'note' ? 'text-fg' : 'text-fg-muted'
-              }`}
-            >
-              Note
-            </Text>
-          </Pressable>
-          <Pressable
-            onPress={() => setMode('checklist')}
-            className={`flex-1 flex-row items-center justify-center py-2.5 rounded-lg ${
-              mode === 'checklist' ? 'bg-surface shadow-soft-sm' : ''
-            }`}
-          >
-            <CheckSquare
-              size={14}
-              color={mode === 'checklist' ? statusColors.completed.color : colors.fgTertiary}
-              strokeWidth={1.8}
-            />
-            <Text
-              className={`font-sans-medium text-xs ml-1.5 ${
-                mode === 'checklist' ? 'text-fg' : 'text-fg-muted'
-              }`}
-            >
-              Checklist
-            </Text>
-          </Pressable>
         </MotiView>
 
         <ScrollView
@@ -197,7 +129,7 @@ export default function CaptureScreen() {
           <MotiView
             from={{ opacity: 0 }}
             animate={{ opacity: 1 }}
-            transition={{ type: 'timing', duration: 400, delay: 150 }}
+            transition={{ type: 'timing', duration: 400, delay: 100 }}
             className="mb-5"
           >
             <Text className="font-sans-medium text-[10px] text-fg-muted tracking-wider uppercase mb-2">
@@ -220,34 +152,32 @@ export default function CaptureScreen() {
             </ScrollView>
           </MotiView>
 
-          {/* Main content area */}
+          {/* Main content area — freeform text + optional checklist, one surface */}
           <MotiView
             from={{ opacity: 0, translateY: 12 }}
             animate={{ opacity: 1, translateY: 0 }}
-            transition={{ type: 'timing', duration: 500, delay: 200 }}
+            transition={{ type: 'timing', duration: 500, delay: 150 }}
           >
-            <View className="rounded-[16px] bg-surface border border-border/50 p-5 shadow-soft mb-4">
+            <View
+              className="rounded-[20px] p-5 mb-4"
+              style={{ backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border }}
+            >
               <TextInput
                 multiline
                 autoFocus
-                placeholder={
-                  mode === 'checklist'
-                    ? 'Title or description...'
-                    : "What's on your mind?"
-                }
+                placeholder="What's on your mind?"
                 placeholderTextColor={colors.fgTertiary}
-                className={`font-sans text-base text-fg leading-7 ${
-                  mode === 'note' ? 'min-h-[200px]' : 'min-h-[60px] mb-4'
-                }`}
+                className="font-sans text-base text-fg leading-7 min-h-[140px]"
                 value={text}
                 onChangeText={setText}
+                selection={selection}
+                onSelectionChange={(e) => setSelection(e.nativeEvent.selection)}
                 textAlignVertical="top"
                 selectionColor={colors.accent}
               />
 
-              {/* Checklist editor */}
-              {mode === 'checklist' && (
-                <View className="border-t border-border/30 pt-4">
+              {showChecklist && (
+                <View className="border-t mt-4 pt-4" style={{ borderColor: colors.border }}>
                   <ChecklistEditor
                     items={checklistItems}
                     onChange={setChecklistItems}
@@ -255,12 +185,25 @@ export default function CaptureScreen() {
                   />
                 </View>
               )}
+
+              <View className="mt-4">
+                <EditorToolbar
+                  value={text}
+                  selection={selection}
+                  onApply={(nextValue, nextSelection) => {
+                    setText(nextValue);
+                    setSelection(nextSelection);
+                  }}
+                  checklistVisible={showChecklist}
+                  onToggleChecklist={() => setShowChecklist((v) => !v)}
+                />
+              </View>
             </View>
 
-            {/* Character count */}
+            {/* Character / item count */}
             <Text className="font-sans text-xs text-fg-muted text-right mb-4">
               {text.length} characters
-              {mode === 'checklist' && ` · ${checklistItems.length} items`}
+              {checklistItems.length > 0 && ` · ${checklistItems.length} items`}
             </Text>
           </MotiView>
 
@@ -268,11 +211,12 @@ export default function CaptureScreen() {
           <MotiView
             from={{ opacity: 0 }}
             animate={{ opacity: 1 }}
-            transition={{ type: 'timing', duration: 400, delay: 300 }}
+            transition={{ type: 'timing', duration: 400, delay: 250 }}
           >
             <Pressable
               onPress={() => setShowOptional(!showOptional)}
-              className="flex-row items-center justify-between py-3 mb-2"
+              android_ripple={{ color: colors.border }}
+              className="flex-row items-center justify-between py-3 mb-2 rounded-xl overflow-hidden"
             >
               <Text className="font-sans-medium text-xs text-fg-muted tracking-wide">
                 More details (optional)
@@ -299,7 +243,8 @@ export default function CaptureScreen() {
                   <TextInput
                     placeholder="e.g. Halfway through chapter 3..."
                     placeholderTextColor={colors.fgTertiary}
-                    className="font-sans text-sm text-fg py-2.5 px-3.5 rounded-xl bg-surface-warm/50 border border-border/30"
+                    className="font-sans text-sm text-fg py-2.5 px-3.5 rounded-xl"
+                    style={{ backgroundColor: colors.surfaceHigh }}
                     value={whereLeftOff}
                     onChangeText={setWhereLeftOff}
                     selectionColor={colors.accent}
@@ -314,7 +259,8 @@ export default function CaptureScreen() {
                   <TextInput
                     placeholder="e.g. Call the plumber..."
                     placeholderTextColor={colors.fgTertiary}
-                    className="font-sans text-sm text-fg py-2.5 px-3.5 rounded-xl bg-surface-warm/50 border border-border/30"
+                    className="font-sans text-sm text-fg py-2.5 px-3.5 rounded-xl"
+                    style={{ backgroundColor: colors.surfaceHigh }}
                     value={nextStep}
                     onChangeText={setNextStep}
                     selectionColor={colors.accent}
@@ -337,25 +283,19 @@ export default function CaptureScreen() {
         <MotiView
           from={{ opacity: 0, translateY: 12 }}
           animate={{ opacity: 1, translateY: 0 }}
-          transition={{ type: 'timing', duration: 400, delay: 350 }}
+          transition={{ type: 'timing', duration: 400, delay: 300 }}
           className="gap-3"
           style={{ paddingBottom: Math.max(insets.bottom, 24) + 8 }}
         >
           <ZenButton
             onPress={handleSave}
-            disabled={isProcessing || !canSave}
-            title={isProcessing ? 'Saving...' : 'Save'}
+            disabled={!canSave}
+            title="Save"
             variant="primary"
             size="lg"
             fullWidth
             hapticIntensity="medium"
-            icon={
-              isProcessing ? (
-                <ActivityIndicator color={colors.accentInk} size="small" />
-              ) : (
-                <Check size={22} color={colors.accentInk} />
-              )
-            }
+            icon={<Check size={22} color={colors.accentInk} />}
           />
           <ZenButton
             onPress={() => router.back()}
