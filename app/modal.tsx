@@ -1,6 +1,8 @@
 import { StatusBar } from 'expo-status-bar';
-import { View, Text, ScrollView, Pressable, TextInput, ActivityIndicator, Alert } from 'react-native';
+import { View, Text, ScrollView, Pressable, TextInput, ActivityIndicator, Alert, Platform } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { router } from 'expo-router';
+import * as SecureStore from 'expo-secure-store';
 import { MotiView } from 'moti';
 import {
   Info,
@@ -30,6 +32,7 @@ import {
   type ThemePreference,
 } from '@/hooks/use-theme';
 import { useMnemoStore } from '@/hooks/use-mnemo-store';
+import { ONBOARDING_KEY } from '@/app/onboarding';
 import {
   getActiveApiKey,
   getApiKeySource,
@@ -497,7 +500,15 @@ export default function ModalScreen() {
             setIsClearing(true);
             try {
               await clearAllData();
+              // Reset onboarding too — a full data wipe should read as a
+              // fresh install, not just an empty library.
+              if (Platform.OS === 'web') {
+                localStorage.removeItem(ONBOARDING_KEY);
+              } else {
+                await SecureStore.deleteItemAsync(ONBOARDING_KEY);
+              }
               Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+              router.replace('/onboarding');
             } catch (e) {
               console.error('Failed to clear all data', e);
               Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
