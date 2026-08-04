@@ -7,35 +7,57 @@ import * as Haptics from 'expo-haptics';
 import {
   useAudioRecorder,
   AudioModule,
-  RecordingPresets,
   setAudioModeAsync,
   useAudioRecorderState
 } from 'expo-audio';
 import { AmbientGlow } from '@/components/ui/AmbientGlow';
 import { useMnemoStore } from '@/hooks/use-mnemo-store';
 import { saveVoiceRecording } from '@/lib/capture';
+import { QUICK_RECORDER_OPTIONS } from '@/hooks/use-quick-recording';
 import { ZenButton } from '@/components/ZenButton';
 import { CategoryPill } from '@/components/ui/CategoryPill';
 import { CATEGORY_LIST } from '@/utils/categories';
 import { useThemeColors } from '@/hooks/use-theme';
+import { useReduceMotion } from '@/hooks/use-accessibility-motion';
 import { EASE_OUT } from '@/utils/motion';
 import type { Category } from '@/types/mnemo';
 
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+const WAVEFORM_BARS = 12;
+// Rough dBFS-ish baseline so bars start small instead of flickering empty
+// before the first real metering sample arrives — matches ActionCluster's
+// hold-to-record overlay so both recording paths feel the same.
+const METERING_BASELINE = -50;
+
 export default function DumpScreen() {
   const insets = useSafeAreaInsets();
   const { addItem, updateItem } = useMnemoStore();
+  const reduceMotion = useReduceMotion();
 
   const [isProcessing, setIsProcessing] = useState(false);
   const [hasPermission, setHasPermission] = useState<boolean | null>(null);
   const [category, setCategory] = useState<Category>('general');
   const colors = useThemeColors();
 
-  // Initialize recorder with HIGH_QUALITY preset
-  const audioRecorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
-  const recorderState = useAudioRecorderState(audioRecorder);
+  // Metering on, and polled fast (60ms), so the waveform reflects actual
+  // input instead of a decorative loop — the recording should feel heard.
+  const audioRecorder = useAudioRecorder(QUICK_RECORDER_OPTIONS);
+  const recorderState = useAudioRecorderState(audioRecorder, 60);
   const isRecording = recorderState.isRecording;
+
+  // Rolling window of real metering samples, oldest to newest — each bar is
+  // an actual past instant rather than an arbitrary shape constant.
+  const [levels, setLevels] = useState<number[]>(() =>
+    Array(WAVEFORM_BARS).fill(METERING_BASELINE),
+  );
+  useEffect(() => {
+    if (!isRecording) return;
+    setLevels((prev) => [...prev.slice(1), recorderState.metering ?? METERING_BASELINE]);
+  }, [recorderState.metering, isRecording]);
+  useEffect(() => {
+    if (isRecording) setLevels(Array(WAVEFORM_BARS).fill(METERING_BASELINE));
+  }, [isRecording]);
 
   useEffect(() => {
     (async () => {
@@ -192,10 +214,20 @@ export default function DumpScreen() {
 
             <MotiView
               animate={{
-                scale: isRecording ? 1.05 : 1,
+                // A slow breathe (matched to a relaxed ~4s respiratory
+                // cycle) instead of a single static scale bump — recording
+                // reads as a living, ongoing state rather than a switch
+                // that was merely flipped on.
+                scale: isRecording ? 1.03 : 1,
                 backgroundColor: isRecording ? colors.accent : colors.surface,
               }}
-              transition={{ type: 'timing', duration: 400 }}
+              transition={{
+                scale:
+                  isRecording && !reduceMotion
+                    ? { type: 'timing', duration: 2000, loop: true, repeatReverse: true }
+                    : { type: 'timing', duration: 400 },
+                backgroundColor: { type: 'timing', duration: 400 },
+              }}
               className="w-44 h-44 rounded-full items-center justify-center shadow-soft-lg border border-border"
             >
               <Mic size={56} color={isRecording ? colors.accentInk : colors.accent} strokeWidth={1.5} />
@@ -224,30 +256,27 @@ export default function DumpScreen() {
         {/* Audio level feedback */}
         <View className="h-36 rounded-[16px] bg-surface border border-border/50 p-5 mb-8 shadow-soft-sm items-center justify-center">
           {isRecording ? (
-            // Animated bars give a live-mic feel without actual audio level data.
-            // ponytail: real level metering would need AudioModule.setMeteringInterval —
-            // these static-offset bars are a cheap approximation.
+            // Each bar reflects a real past metering sample, oldest to
+            // newest — the waveform tracks actual input instead of a
+            // decorative loop, so speaking louder visibly registers.
             <View className="flex-row items-end gap-1.5 h-12">
-              {[0.4, 0.7, 1, 0.6, 0.9, 0.5, 0.8, 0.3, 0.7, 1, 0.5, 0.65].map((h, i) => (
-                <MotiView
-                  key={i}
-                  from={{ scaleY: h * 0.4 }}
-                  animate={{ scaleY: h }}
-                  transition={{
-                    type: 'timing',
-                    duration: 600 + i * 80,
-                    loop: true,
-                    repeatReverse: true,
-                  }}
-                  style={{
-                    width: 4,
-                    height: 48,
-                    borderRadius: 2,
-                    transformOrigin: 'bottom',
-                  }}
-                  className="bg-accent"
-                />
-              ))}
+              {levels.map((sample, i) => {
+                const level = Math.max(0.12, Math.min(1, (sample + 50) / 45));
+                return (
+                  <MotiView
+                    key={i}
+                    animate={{ scaleY: level }}
+                    transition={{ type: 'timing', duration: 80 }}
+                    style={{
+                      width: 4,
+                      height: 48,
+                      borderRadius: 2,
+                      transformOrigin: 'bottom',
+                    }}
+                    className="bg-accent"
+                  />
+                );
+              })}
             </View>
           ) : (
             <Text className="font-sans-medium text-sm text-fg-muted text-center">

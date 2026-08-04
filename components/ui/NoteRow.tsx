@@ -2,6 +2,7 @@ import React from 'react';
 import { Pressable, Text, View } from 'react-native';
 import { Trash2 } from 'lucide-react-native';
 import { MotiView } from 'moti';
+import * as Haptics from 'expo-haptics';
 
 import { useCategories, useStatusConfig } from '@/utils/categories';
 import { useThemeColors } from '@/hooks/use-theme';
@@ -82,7 +83,10 @@ export function NoteRow({ item, index, onPress, onDelete, showStatus = false }: 
           </Text>
           {onDelete && (
             <Pressable
-              onPress={onDelete}
+              onPress={() => {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                onDelete();
+              }}
               accessibilityLabel="Delete item"
               className="w-11 h-11 ml-2 items-center justify-center rounded-full active:bg-surface-warm"
               hitSlop={4}

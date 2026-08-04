@@ -1,5 +1,5 @@
-import React from 'react';
-import { View, Pressable, StyleSheet, Text } from 'react-native';
+import React, { useState, useCallback } from 'react';
+import { View, Pressable, StyleSheet, Text, type LayoutChangeEvent } from 'react-native';
 import { Home, Search, Library } from 'lucide-react-native';
 import { MotiView } from 'moti';
 import * as Haptics from 'expo-haptics';
@@ -8,7 +8,7 @@ import { router, usePathname } from 'expo-router';
 
 import { useThemeColors } from '@/hooks/use-theme';
 import { useReduceMotion } from '@/hooks/use-accessibility-motion';
-import { EASE_OUT } from '@/utils/motion';
+import { SPRING_NAV, SPRING_PRESS, motion } from '@/utils/motion';
 
 const TABS = [
   { name: 'Home', icon: Home, route: '/' },
@@ -29,15 +29,54 @@ export const CONTENT_BOTTOM_CLEARANCE = NAV_BAR_HEIGHT + 130;
 // Clears just the nav bar + standard 16dp M3 margin.
 export const NAV_CLEARANCE = NAV_BAR_HEIGHT + 16;
 
+const PILL_WIDTH = 48;
+const PILL_HEIGHT = 28;
+// Matches styles.item paddingVertical — the pill sits over the icon slot,
+// which is the first child inside that padding.
+const ITEM_PAD_Y = 4;
+
+/** Which tab a pathname belongs to, or 0 when nothing matches. */
+export function activeTabIndex(pathname: string): number {
+  const found = TABS.findIndex(
+    (item) =>
+      (item.route === '/' && pathname === '/') ||
+      (item.route !== '/' && pathname.includes(item.route.replace('/(tabs)/', ''))),
+  );
+  return found === -1 ? 0 : found;
+}
+
+type Rect = { x: number; y: number; width: number };
+
 /**
  * FloatingTabBar — Floaty, minimal pill navigation bar.
- * Elevated off the bottom edge with rounded capsule styling, subtle shadow,
- * and compact minimal tabs.
+ *
+ * The active pill is a single element owned by the bar, not one per tab, so
+ * it *travels* between tabs on a spring instead of cross-fading. Tracking one
+ * object through space costs the user far less than re-finding a new one on
+ * every screen change — that continuity is the whole point.
  */
 export function FloatingTabBar() {
   const insets = useSafeAreaInsets();
   const pathname = usePathname();
   const colors = useThemeColors();
+  const reduceMotion = useReduceMotion();
+
+  // Measured per-tab geometry, so the pill's travel needs no assumptions
+  // about bar padding or how flex divides the row.
+  const [rects, setRects] = useState<Record<number, Rect>>({});
+  const onItemLayout = useCallback((index: number, e: LayoutChangeEvent) => {
+    const { x, y, width } = e.nativeEvent.layout;
+    setRects((prev) => {
+      const prevRect = prev[index];
+      if (prevRect && prevRect.x === x && prevRect.y === y && prevRect.width === width) {
+        return prev;
+      }
+      return { ...prev, [index]: { x, y, width } };
+    });
+  }, []);
+
+  const activeIndex = activeTabIndex(pathname);
+  const activeRect = rects[activeIndex];
 
   return (
     <View
@@ -52,25 +91,41 @@ export function FloatingTabBar() {
         },
       ]}
     >
-      {TABS.map((item) => {
-        const isActive =
-          (item.route === '/' && pathname === '/') ||
-          (item.route !== '/' &&
-            pathname.includes(item.route.replace('/(tabs)/', '')));
+      {/* Traveling active indicator — rendered once, behind every tab. */}
+      {activeRect && (
+        <MotiView
+          pointerEvents="none"
+          style={[
+            styles.indicator,
+            {
+              backgroundColor: colors.primaryContainer,
+              top: activeRect.y + ITEM_PAD_Y,
+            },
+          ]}
+          animate={{
+            translateX: activeRect.x + (activeRect.width - PILL_WIDTH) / 2,
+            opacity: 1,
+          }}
+          transition={motion(SPRING_NAV, reduceMotion)}
+        />
+      )}
 
-        return (
-          <NavItem
-            key={item.name}
-            name={item.name}
-            icon={item.icon}
-            isActive={isActive}
-            onPress={() => {
-              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-              router.push(item.route as any);
-            }}
-          />
-        );
-      })}
+      {TABS.map((item, index) => (
+        <NavItem
+          key={item.name}
+          name={item.name}
+          icon={item.icon}
+          isActive={index === activeIndex}
+          onLayout={(e) => onItemLayout(index, e)}
+          onPress={() => {
+            // Re-tapping the current tab shouldn't fire feedback for a
+            // navigation that isn't happening.
+            if (index === activeIndex) return;
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+            router.push(item.route as any);
+          }}
+        />
+      ))}
     </View>
   );
 }
@@ -80,52 +135,55 @@ function NavItem({
   icon: Icon,
   isActive,
   onPress,
+  onLayout,
 }: {
   name: string;
   icon: typeof Home;
   isActive: boolean;
   onPress: () => void;
+  onLayout: (e: LayoutChangeEvent) => void;
 }) {
   const colors = useThemeColors();
   const reduceMotion = useReduceMotion();
+  const [pressed, setPressed] = useState(false);
 
   return (
     <Pressable
       onPress={onPress}
+      onPressIn={() => setPressed(true)}
+      onPressOut={() => setPressed(false)}
+      onLayout={onLayout}
       accessibilityRole="button"
       accessibilityState={{ selected: isActive }}
       accessibilityLabel={name}
       android_ripple={{ color: colors.border, borderless: true, radius: 28 }}
       style={styles.item}
     >
-      <View style={styles.indicatorWrap}>
-        {/* Pill active indicator */}
-        <MotiView
-          style={[styles.indicator, { backgroundColor: colors.primaryContainer }]}
-          animate={{
-            opacity: isActive ? 1 : 0,
-            // ponytail: skip scaleX when user prefers reduced motion — only
-            // opacity should change per accessibility guidelines.
-            scaleX: reduceMotion ? 1 : (isActive ? 1 : 0.6),
-          }}
-          transition={{ type: 'timing', duration: reduceMotion ? 120 : 240, easing: EASE_OUT }}
-        />
-        <Icon
-          size={20}
-          color={isActive ? colors.onPrimaryContainer : colors.fgSecondary}
-          strokeWidth={isActive ? 2.2 : 1.8}
-        />
-      </View>
-      <Text
-        numberOfLines={1}
-        style={[
-          styles.label,
-          { color: isActive ? colors.fg : colors.fgSecondary },
-        ]}
-        className={isActive ? 'font-sans-semi' : 'font-sans-medium'}
+      {/* Finger-down acknowledgement: the target gives before it acts, so
+          the tap is confirmed even if navigation takes a frame to land. */}
+      <MotiView
+        style={styles.itemInner}
+        animate={{ scale: reduceMotion ? 1 : pressed ? 0.9 : 1 }}
+        transition={motion(SPRING_PRESS, reduceMotion)}
       >
-        {name}
-      </Text>
+        <View style={styles.indicatorWrap}>
+          <Icon
+            size={20}
+            color={isActive ? colors.onPrimaryContainer : colors.fgSecondary}
+            strokeWidth={isActive ? 2.2 : 1.8}
+          />
+        </View>
+        <Text
+          numberOfLines={1}
+          style={[
+            styles.label,
+            { color: isActive ? colors.fg : colors.fgSecondary },
+          ]}
+          className={isActive ? 'font-sans-semi' : 'font-sans-medium'}
+        >
+          {name}
+        </Text>
+      </MotiView>
     </Pressable>
   );
 }
@@ -149,17 +207,24 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
+    paddingVertical: ITEM_PAD_Y,
+  },
+  itemInner: {
+    alignItems: 'center',
+    justifyContent: 'center',
     gap: 2,
-    paddingVertical: 4,
   },
   indicatorWrap: {
-    width: 48,
-    height: 28,
+    width: PILL_WIDTH,
+    height: PILL_HEIGHT,
     alignItems: 'center',
     justifyContent: 'center',
   },
   indicator: {
-    ...StyleSheet.absoluteFillObject,
+    position: 'absolute',
+    left: 0,
+    width: PILL_WIDTH,
+    height: PILL_HEIGHT,
     borderRadius: 14,
   },
   label: {

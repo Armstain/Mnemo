@@ -1,8 +1,11 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Pressable, Text, View } from 'react-native';
 import * as Haptics from 'expo-haptics';
+import { MotiView } from 'moti';
 
 import { useThemeColors } from '@/hooks/use-theme';
+import { useReduceMotion } from '@/hooks/use-accessibility-motion';
+import { SPRING_PRESS, motion } from '@/utils/motion';
 
 interface ZenButtonProps {
   onPress: () => void;
@@ -28,6 +31,8 @@ export const ZenButton = ({
   className = '',
 }: ZenButtonProps) => {
   const colors = useThemeColors();
+  const reduceMotion = useReduceMotion();
+  const [pressed, setPressed] = useState(false);
 
   const handlePress = () => {
     if (disabled) return;
@@ -120,25 +125,36 @@ export const ZenButton = ({
   return (
     <Pressable
       onPress={handlePress}
+      onPressIn={() => setPressed(true)}
+      onPressOut={() => setPressed(false)}
       disabled={disabled}
       android_ripple={disabled ? undefined : { color: rippleColor }}
-      className={`
-        flex-row items-center justify-center overflow-hidden
-        rounded-full
-        ${getVariantStyles()}
-        ${getSizeStyles()}
-        ${getShadowStyle()}
-        ${fullWidth ? 'w-full' : ''}
-        ${disabled ? 'opacity-55' : 'active:opacity-90'}
-        ${className}
-      `}
+      className={fullWidth ? 'w-full' : ''}
     >
-      {icon && <View className="mr-3">{icon}</View>}
-      <Text
-        className={`font-sans-semi ${getTextColor()} ${getTextSize()}`}
+      {/* Same spring-scale press vocabulary as the tab bar (utils/motion
+          SPRING_PRESS) — a subtle settle instead of an instant CSS snap,
+          so every tap target in the app shares one tactile feel. */}
+      <MotiView
+        animate={{ scale: reduceMotion ? 1 : pressed ? 0.985 : 1 }}
+        transition={motion(SPRING_PRESS, reduceMotion)}
+        className={`
+          flex-row items-center justify-center overflow-hidden
+          rounded-full
+          ${getVariantStyles()}
+          ${getSizeStyles()}
+          ${getShadowStyle()}
+          ${fullWidth ? 'w-full' : ''}
+          ${disabled ? 'opacity-55' : ''}
+          ${className}
+        `}
       >
-        {title}
-      </Text>
+        {icon && <View className="mr-3">{icon}</View>}
+        <Text
+          className={`font-sans-semi ${getTextColor()} ${getTextSize()}`}
+        >
+          {title}
+        </Text>
+      </MotiView>
     </Pressable>
   );
 };

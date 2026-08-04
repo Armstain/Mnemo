@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, ScrollView, Platform, Image } from 'react-native';
+import { View, Text, ScrollView, Platform, Image, useWindowDimensions } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import * as SecureStore from 'expo-secure-store';
@@ -35,6 +35,18 @@ const features = [
 export default function OnboardingScreen() {
   const insets = useSafeAreaInsets();
   const colors = useThemeColors();
+  const { width, height } = useWindowDimensions();
+  // Compact = short phones (SE-class, ~667pt) where generous fixed margins
+  // push the CTA below the fold; narrow = small-width phones (~320-360pt)
+  // where the default horizontal padding eats too much of the content.
+  const isCompact = height < 700;
+  const isNarrow = width < 360;
+  const horizontalPadding = isNarrow ? 24 : 32;
+  const heroSpacing = isCompact ? 'mb-10' : 'mb-16';
+  const featuresGap = isCompact ? 'gap-6' : 'gap-8';
+  const featuresSpacing = isCompact ? 'mb-10' : 'mb-16';
+  const heroTitleSize = isCompact ? 'text-3xl' : 'text-4xl';
+  const logoSize = isCompact ? 52 : 64;
   const handleGetStarted = async () => {
     try {
       if (Platform.OS === 'web') {
@@ -54,9 +66,9 @@ export default function OnboardingScreen() {
         <ScrollView
           className="flex-1"
           contentContainerStyle={{
-            paddingHorizontal: 32,
-            paddingTop: insets.top + 64,
-            paddingBottom: Math.max(insets.bottom, 24) + 48,
+            paddingHorizontal: horizontalPadding,
+            paddingTop: insets.top + (isCompact ? 32 : 64),
+            paddingBottom: Math.max(insets.bottom, 24) + (isCompact ? 24 : 48),
           }}
           showsVerticalScrollIndicator={false}
         >
@@ -65,15 +77,15 @@ export default function OnboardingScreen() {
             from={{ opacity: 0, translateY: 20 }}
             animate={{ opacity: 1, translateY: 0 }}
             transition={{ type: 'timing', duration: 600 }}
-            className="mb-16"
+            className={heroSpacing}
           >
             <Image
               source={require('@/assets/Mnemo_logo_dark.png')}
-              style={{ width: 64, height: 64, marginBottom: 20 }}
+              style={{ width: logoSize, height: logoSize, marginBottom: isCompact ? 14 : 20 }}
               resizeMode="contain"
               accessibilityLabel="Mnemo logo"
             />
-            <Text className="text-4xl font-serif text-fg leading-tight mb-4">
+            <Text className={`${heroTitleSize} font-serif text-fg leading-tight mb-4`}>
               Never lose track{'\n'}of life again
             </Text>
             <Text className="font-sans text-base text-fg-muted leading-relaxed">
@@ -83,7 +95,7 @@ export default function OnboardingScreen() {
           </MotiView>
 
           {/* Feature bullets */}
-          <View className="gap-8 mb-16">
+          <View className={`${featuresGap} ${featuresSpacing}`}>
             {features.map(({ Icon, title, description }, i) => (
               <MotiView
                 key={i}

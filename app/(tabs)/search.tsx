@@ -6,6 +6,7 @@ import { MotiView } from 'moti';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { NoteRow } from '@/components/ui/NoteRow';
+import { NoteListSkeleton } from '@/components/ui/NoteListSkeleton';
 import { SearchBar } from '@/components/SearchBar';
 import { NAV_CLEARANCE } from '@/components/ui/FloatingTabBar';
 import { useMnemoStore } from '@/hooks/use-mnemo-store';
@@ -72,7 +73,13 @@ export default function SearchScreen() {
     router.push(`/(tabs)/context?id=${item.id}` as any);
   }, []);
 
-  if (!isLoaded) return <View className="flex-1" />;
+  if (!isLoaded) {
+    return (
+      <View className="flex-1 px-6" style={{ paddingTop: insets.top + 16 }}>
+        <NoteListSkeleton />
+      </View>
+    );
+  }
 
   return (
     <View className="flex-1" style={{ paddingTop: insets.top + 16 }}>

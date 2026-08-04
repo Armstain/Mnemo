@@ -6,9 +6,11 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Layers } from 'lucide-react-native';
 
 import { NoteRow } from '@/components/ui/NoteRow';
+import { NoteListSkeleton } from '@/components/ui/NoteListSkeleton';
 import { SearchBar } from '@/components/SearchBar';
 import { NAV_CLEARANCE } from '@/components/ui/FloatingTabBar';
 import { useMnemoStore } from '@/hooks/use-mnemo-store';
+import { useUndoToast } from '@/hooks/use-undo-toast';
 import { useThemeColors } from '@/hooks/use-theme';
 import { bm25Search } from '@/lib/bm25';
 import { CATEGORY_LIST, useCategories } from '@/utils/categories';
@@ -26,7 +28,8 @@ const STATUS_FILTERS: { key: FilterStatus; label: string }[] = [
 ];
 
 export default function LibraryScreen() {
-  const { items, deleteItem, isLoaded } = useMnemoStore();
+  const { items, deleteItem, undoDelete, isLoaded } = useMnemoStore();
+  const { showUndoToast } = useUndoToast();
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<Category | 'all'>('all');
   const [selectedStatus, setSelectedStatus] = useState<FilterStatus>('all');
@@ -61,7 +64,13 @@ export default function LibraryScreen() {
     return result;
   }, [items, selectedCategory, selectedStatus, searchQuery]);
 
-  if (!isLoaded) return <View className="flex-1" />;
+  if (!isLoaded) {
+    return (
+      <View className="flex-1 px-5" style={{ paddingTop: insets.top + 16 }}>
+        <NoteListSkeleton />
+      </View>
+    );
+  }
 
   return (
     <View className="flex-1 px-5" style={{ paddingTop: insets.top + 16 }}>
@@ -189,7 +198,10 @@ export default function LibraryScreen() {
                 onPress={() =>
                   router.push(`/(tabs)/context?id=${item.id}` as any)
                 }
-                onDelete={() => deleteItem(item.id)}
+                onDelete={() => {
+                  deleteItem(item.id);
+                  showUndoToast(`"${item.title}" deleted`, () => undoDelete(item.id));
+                }}
               />
             ))}
           </View>

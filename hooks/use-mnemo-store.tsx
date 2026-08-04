@@ -1,10 +1,11 @@
-import React, { createContext, useContext, useState, useEffect, useCallback, useMemo } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as SecureStore from 'expo-secure-store';
 import { Platform } from 'react-native';
 import type { MnemoItem, Category, ItemStatus } from '@/types/mnemo';
 import { migrateStoredData } from '@/utils/migration';
 import { initDb, countItems, getAllItems, insertItem, insertItems, updatePartialItem, deleteItemRow } from '@/lib/db';
+import { UNDO_WINDOW_MS } from '@/hooks/use-undo-toast';
 
 // ─── Legacy storage keys ────────────────────────────────────────
 // SQLite (lib/db.ts) is now the source of truth. These are read exactly
@@ -20,7 +21,10 @@ interface MnemoStoreType {
   // CRUD
   addItem: (item: Omit<MnemoItem, 'id' | 'createdAt' | 'updatedAt'>) => MnemoItem;
   updateItem: (id: string, updates: Partial<MnemoItem>) => void;
+  /** Removes from view immediately; only persisted as gone after UNDO_WINDOW_MS unless undoDelete() is called first. */
   deleteItem: (id: string) => void;
+  /** Restores an item removed by deleteItem, as long as its grace window hasn't lapsed. */
+  undoDelete: (id: string) => void;
 
   // Status transitions
   resumeItem: (id: string) => void;
@@ -189,9 +193,38 @@ export function MnemoStoreProvider({ children }: { children: React.ReactNode }) 
     );
   }, []);
 
+  // Snapshots of items pulled out of view by deleteItem, keyed by id, so
+  // undoDelete can put them back before the grace-period timer commits the
+  // delete to SQLite. If the app is killed mid-window the timer never
+  // fires and the row survives in the DB — reload just brings it back,
+  // which is the safe failure mode for a "delete" action.
+  const removedItemsRef = useRef<Record<string, MnemoItem>>({});
+  const deleteTimersRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
+
   const deleteItem = useCallback((id: string) => {
-    setItems((prev) => prev.filter((item) => item.id !== id));
-    deleteItemRow(id).catch((e) => console.error('Failed to persist item delete', e));
+    setItems((prev) => {
+      const found = prev.find((item) => item.id === id);
+      if (found) removedItemsRef.current[id] = found;
+      return prev.filter((item) => item.id !== id);
+    });
+
+    deleteTimersRef.current[id] = setTimeout(() => {
+      delete removedItemsRef.current[id];
+      delete deleteTimersRef.current[id];
+      deleteItemRow(id).catch((e) => console.error('Failed to persist item delete', e));
+    }, UNDO_WINDOW_MS);
+  }, []);
+
+  const undoDelete = useCallback((id: string) => {
+    const timer = deleteTimersRef.current[id];
+    if (timer) clearTimeout(timer);
+    delete deleteTimersRef.current[id];
+
+    const restored = removedItemsRef.current[id];
+    if (!restored) return;
+    delete removedItemsRef.current[id];
+
+    setItems((prev) => (prev.some((item) => item.id === id) ? prev : [restored, ...prev]));
   }, []);
 
   // ─── Status transitions ─────────────────────────────────────
@@ -272,6 +305,7 @@ export function MnemoStoreProvider({ children }: { children: React.ReactNode }) 
       addItem,
       updateItem,
       deleteItem,
+      undoDelete,
       resumeItem,
       pauseItem,
       completeItem,
@@ -288,6 +322,7 @@ export function MnemoStoreProvider({ children }: { children: React.ReactNode }) 
       addItem,
       updateItem,
       deleteItem,
+      undoDelete,
       resumeItem,
       pauseItem,
       completeItem,

@@ -44,9 +44,12 @@ import {
 } from 'lucide-react-native';
 import { ExternalLink } from '@/components/ExternalLink';
 import { NoteRow } from '@/components/ui/NoteRow';
+import { DetailSkeleton } from '@/components/ui/NoteListSkeleton';
 import { relatedItems } from '@/lib/search';
 import { formatDistanceToNow } from 'date-fns';
 import { MotiView } from 'moti';
+import * as Haptics from 'expo-haptics';
+import { useUndoToast } from '@/hooks/use-undo-toast';
 import { ZenButton } from '@/components/ZenButton';
 import { ZenCard } from '@/components/ZenCard';
 import { CategoryPill } from '@/components/ui/CategoryPill';
@@ -65,12 +68,14 @@ export default function ItemDetailScreen() {
     items,
     updateItem,
     deleteItem,
+    undoDelete,
     resumeItem,
     pauseItem,
     completeItem,
     archiveItem,
     isLoaded,
   } = useMnemoStore();
+  const { showUndoToast } = useUndoToast();
 
   const [isGenerating, setIsGenerating] = React.useState(false);
   const [isEditing, setIsEditing] = React.useState(false);
@@ -157,8 +162,8 @@ export default function ItemDetailScreen() {
 
   if (!isLoaded) {
     return (
-      <View className="flex-1 items-center justify-center">
-        <ActivityIndicator color={colors.accent} />
+      <View className="flex-1 px-6" style={{ paddingTop: Math.max(insets.top, 16) + 20 }}>
+        <DetailSkeleton />
       </View>
     );
   }
@@ -272,21 +277,13 @@ export default function ItemDetailScreen() {
   };
 
   const handleDelete = () => {
-    Alert.alert(
-      'Delete item',
-      'This cannot be undone.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: () => {
-            deleteItem(item.id);
-            router.back();
-          },
-        },
-      ],
-    );
+    // Deletes immediately with a grace window instead of blocking on a
+    // confirm dialog — an "Undo" toast removes the fear of a mistake
+    // without making every delete cost a second tap.
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+    deleteItem(item.id);
+    showUndoToast(`"${item.title}" deleted`, () => undoDelete(item.id));
+    router.back();
   };
 
   return (

@@ -284,8 +284,11 @@ export default function CaptureScreen() {
           from={{ opacity: 0, translateY: 12 }}
           animate={{ opacity: 1, translateY: 0 }}
           transition={{ type: 'timing', duration: 400, delay: 300 }}
-          className="gap-3"
-          style={{ paddingBottom: Math.max(insets.bottom, 24) + 8 }}
+          className="gap-3 border-t border-border/40"
+          style={{
+            paddingTop: 16,
+            paddingBottom: Math.max(insets.bottom, 24) + 8,
+          }}
         >
           <ZenButton
             onPress={handleSave}

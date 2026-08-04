@@ -21,7 +21,9 @@ LogBox.ignoreLogs(['SafeAreaView has been deprecated']);
 
 import { ONBOARDING_KEY } from '@/app/onboarding';
 import { PendingProcessor } from '@/components/PendingProcessor';
+import { UndoToastHost } from '@/components/ui/UndoToastHost';
 import { MnemoStoreProvider } from '@/hooks/use-mnemo-store';
+import { UndoToastProvider } from '@/hooks/use-undo-toast';
 import { applyStoredThemePreference, PALETTE, useThemeName } from '@/hooks/use-theme';
 import { loadStoredApiKey } from '@/lib/api-key';
 
@@ -120,6 +122,7 @@ function RootLayoutNav() {
   return (
     <SafeAreaProvider>
       <MnemoStoreProvider>
+        <UndoToastProvider>
         <ThemeProvider value={NavThemes[theme]}>
           <StatusBar style={theme === 'dark' ? 'light' : 'dark'} />
           <Stack
@@ -156,7 +159,9 @@ function RootLayoutNav() {
             />
           </Stack>
           <PendingProcessor />
+          <UndoToastHost />
         </ThemeProvider>
+        </UndoToastProvider>
       </MnemoStoreProvider>
     </SafeAreaProvider>
   );
