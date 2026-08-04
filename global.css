@@ -47,8 +47,41 @@
   --outline: #707972;
 }
 
+/*
+ * Dark overrides apply in two cases, matching uniwind's own `dark:`/`light:`
+ * variant selectors (see node_modules/uniwind/uniwind.css) so manual
+ * Uniwind.setTheme('light'|'dark') overrides (hooks/use-theme.tsx) actually
+ * take effect instead of being silently shadowed by the system setting:
+ *   1. An explicit .dark ancestor (manual override, any system setting)
+ *   2. System prefers dark AND no explicit .light/.dark override is set
+ *      ("system" preference)
+ */
+:where(.dark, .dark *) {
+  --bg: #101410; /* M3 surface (dark) */
+  --fg: #e1e3de;
+  --fg-secondary: #c0c9c0;
+  --fg-tertiary: #8a938b;
+  --fg-muted: #8a938b;
+  --accent: #34d399; /* primary (light tone, per M3 dark) */
+  --accent-ink: #003824; /* on-primary */
+  --accent-warm: #efb8c8;
+  --error: #ffb4ab;
+  --error-ink: #690005;
+  --surface: #1c211c; /* surface-container */
+  --surface-warm: #262b26; /* surface-container-high */
+  --border: #404943; /* outline-variant */
+
+  --primary-container: #005138;
+  --on-primary-container: #a7f3d0;
+  --surface-lowest: #0b0f0b;
+  --surface-low: #181d18;
+  --surface-high: #262b26;
+  --surface-highest: #313631;
+  --outline: #8a938b;
+}
+
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not(:where(.light, .light *, .dark, .dark *)) {
     --bg: #101410; /* M3 surface (dark) */
     --fg: #e1e3de;
     --fg-secondary: #c0c9c0;

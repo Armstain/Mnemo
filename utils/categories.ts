@@ -26,7 +26,7 @@ interface DualColor {
 }
 
 // Dark colors are tuned for legibility on dark glass (L ≥ 0.65); light
-// colors are their deep counterparts, ≥4.5:1 on the light bg (#F2F5F4).
+// colors are their deep counterparts, ≥4.5:1 on the light bg (#F7FAF7).
 const CATEGORY_META: Record<
   Category,
   { label: string; icon: typeof Briefcase; colors: DualColor }

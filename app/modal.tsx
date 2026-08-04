@@ -121,18 +121,15 @@ function ApiKeyConfigCard() {
         </View>
 
         <View
-          className={`px-3 py-1 rounded-full ${
-            source === 'custom'
-              ? 'bg-accent/15'
-              : source === 'env'
-              ? 'bg-accent/10'
-              : 'bg-error/10'
-          }`}
+          className="px-3 py-1 rounded-full"
+          style={{
+            backgroundColor:
+              source === 'none' ? `${colors.error}1A` : source === 'custom' ? `${colors.accent}26` : `${colors.accent}1A`,
+          }}
         >
           <Text
-            className={`font-sans-medium text-[11px] ${
-              source === 'none' ? 'text-error' : 'text-accent'
-            }`}
+            className="font-sans-medium text-[11px]"
+            style={{ color: source === 'none' ? colors.error : colors.accent }}
           >
             {source === 'custom'
               ? 'Custom Key Active'
@@ -181,9 +178,11 @@ function ApiKeyConfigCard() {
       {/* Test / Feedback Message */}
       {testResult && (
         <View
-          className={`p-3 rounded-xl flex-row items-start gap-2 ${
-            testResult.success ? 'bg-accent/10 border border-accent/20' : 'bg-error/10 border border-error/20'
-          }`}
+          className="p-3 rounded-xl flex-row items-start gap-2 border"
+          style={{
+            backgroundColor: testResult.success ? `${colors.accent}1A` : `${colors.error}1A`,
+            borderColor: testResult.success ? `${colors.accent}33` : `${colors.error}33`,
+          }}
         >
           {testResult.success ? (
             <Check size={15} color={colors.accent} className="mt-0.5" />
@@ -191,9 +190,8 @@ function ApiKeyConfigCard() {
             <AlertCircle size={15} color={colors.error} className="mt-0.5" />
           )}
           <Text
-            className={`font-sans text-xs flex-1 ${
-              testResult.success ? 'text-accent' : 'text-error'
-            }`}
+            className="font-sans text-xs flex-1"
+            style={{ color: testResult.success ? colors.accent : colors.error }}
           >
             {testResult.message}
           </Text>
@@ -334,18 +332,15 @@ function GroqApiKeyConfigCard() {
         </View>
 
         <View
-          className={`px-3 py-1 rounded-full ${
-            source === 'custom'
-              ? 'bg-accent/15'
-              : source === 'env'
-              ? 'bg-accent/10'
-              : 'bg-error/10'
-          }`}
+          className="px-3 py-1 rounded-full"
+          style={{
+            backgroundColor:
+              source === 'none' ? `${colors.error}1A` : source === 'custom' ? `${colors.accent}26` : `${colors.accent}1A`,
+          }}
         >
           <Text
-            className={`font-sans-medium text-[11px] ${
-              source === 'none' ? 'text-error' : 'text-accent'
-            }`}
+            className="font-sans-medium text-[11px]"
+            style={{ color: source === 'none' ? colors.error : colors.accent }}
           >
             {source === 'custom'
               ? 'Custom Key Active'
@@ -394,9 +389,11 @@ function GroqApiKeyConfigCard() {
       {/* Feedback Message */}
       {testResult && (
         <View
-          className={`p-3 rounded-xl flex-row items-start gap-2 ${
-            testResult.success ? 'bg-accent/10 border border-accent/20' : 'bg-error/10 border border-error/20'
-          }`}
+          className="p-3 rounded-xl flex-row items-start gap-2 border"
+          style={{
+            backgroundColor: testResult.success ? `${colors.accent}1A` : `${colors.error}1A`,
+            borderColor: testResult.success ? `${colors.accent}33` : `${colors.error}33`,
+          }}
         >
           {testResult.success ? (
             <Check size={15} color={colors.accent} className="mt-0.5" />
@@ -404,9 +401,8 @@ function GroqApiKeyConfigCard() {
             <AlertCircle size={15} color={colors.error} className="mt-0.5" />
           )}
           <Text
-            className={`font-sans text-xs flex-1 ${
-              testResult.success ? 'text-accent' : 'text-error'
-            }`}
+            className="font-sans text-xs flex-1"
+            style={{ color: testResult.success ? colors.accent : colors.error }}
           >
             {testResult.message}
           </Text>
@@ -565,9 +561,12 @@ export default function ModalScreen() {
                     key={key}
                     onPress={() => setPreference(key)}
                     accessibilityLabel={`Use ${label.toLowerCase()} theme`}
-                    className={`flex-1 flex-row items-center justify-center py-2.5 rounded-xl ${
-                      selected ? 'bg-surface-warm border border-border/60' : ''
-                    } active:opacity-70`}
+                    className="flex-1 flex-row items-center justify-center py-2.5 rounded-xl active:opacity-70"
+                    style={{
+                      backgroundColor: selected ? colors.surfaceWarm : 'transparent',
+                      borderWidth: selected ? 1 : 0,
+                      borderColor: selected ? `${colors.border}99` : 'transparent',
+                    }}
                   >
                     <Icon
                       size={14}
@@ -575,9 +574,8 @@ export default function ModalScreen() {
                       strokeWidth={2}
                     />
                     <Text
-                      className={`font-sans-medium text-xs ml-1.5 ${
-                        selected ? 'text-fg' : 'text-fg-tertiary'
-                      }`}
+                      className="font-sans-medium text-xs ml-1.5"
+                      style={{ color: selected ? colors.fg : colors.fgTertiary }}
                     >
                       {label}
                     </Text>

@@ -8,7 +8,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Glass } from '@/components/ui/Glass';
 import { CONTENT_BOTTOM_CLEARANCE } from '@/components/ui/FloatingTabBar';
 import { useMnemoStore } from '@/hooks/use-mnemo-store';
-import { useThemeColors } from '@/hooks/use-theme';
+import { useThemeColors, useThemeName } from '@/hooks/use-theme';
 import { formatCompactDistance } from '@/utils/time';
 import { useCategories } from '@/utils/categories';
 import { EASE_OUT, enterUp } from '@/utils/motion';
@@ -113,6 +113,7 @@ export function PulseHome() {
   const insets = useSafeAreaInsets();
   const { items, getActiveItems } = useMnemoStore();
   const colors = useThemeColors();
+  const theme = useThemeName();
   const categories = useCategories();
 
   const activeItems = getActiveItems();
@@ -140,7 +141,11 @@ export function PulseHome() {
       >
         <View className="flex-row items-center">
           <Image
-            source={require('@/assets/Mnemo_logo_dark.png')}
+            source={
+              theme === 'dark'
+                ? require('@/assets/Mnemo_logo_dark.png')
+                : require('@/assets/Mnemo_logo_light.png')
+            }
             style={{ width: 40, height: 40, marginRight: 12 }}
             resizeMode="contain"
             accessibilityLabel="Mnemo logo"

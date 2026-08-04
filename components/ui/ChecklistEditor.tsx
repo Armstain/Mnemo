@@ -98,26 +98,18 @@ export function ChecklistEditor({
           >
             <Pressable
               onPress={() => toggleItem(item.id)}
-              className={`w-5 h-5 rounded-md items-center justify-center mr-3 border ${
-                item.checked
-                  ? 'bg-accent border-accent'
-                  : 'bg-transparent border-border'
-              }`}
-              style={
-                item.checked
-                  ? { backgroundColor: colors.accent, borderColor: colors.accent }
-                  : undefined
-              }
+              className="w-5 h-5 rounded-md items-center justify-center mr-3 border"
+              style={{
+                backgroundColor: item.checked ? colors.accent : 'transparent',
+                borderColor: item.checked ? colors.accent : colors.border,
+              }}
             >
               {item.checked && <Check size={12} color={colors.accentInk} strokeWidth={3} />}
             </Pressable>
 
             <Text
-              className={`flex-1 font-sans text-sm ${
-                item.checked
-                  ? 'text-fg-muted line-through'
-                  : 'text-fg'
-              }`}
+              className={`flex-1 font-sans text-sm ${item.checked ? 'line-through' : ''}`}
+              style={{ color: item.checked ? colors.fgTertiary : colors.fg }}
             >
               {item.text}
             </Text>
