@@ -190,6 +190,11 @@ export async function deleteItemRow(id: string): Promise<void> {
   await deleteEmbedding(id);
 }
 
+/** Wipes every item and embedding. Used by "Clear all data" in Settings. */
+export async function deleteAllItems(): Promise<void> {
+  await db.execAsync('DELETE FROM items; DELETE FROM embeddings;');
+}
+
 // ─── Embeddings ─────────────────────────────────────────────────
 // One vector per item, stored as a raw BLOB (Float32Array bytes) rather
 // than JSON — a fraction of the size and no parse cost. `model`/`dims` are

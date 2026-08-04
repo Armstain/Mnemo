@@ -130,6 +130,15 @@ export async function saveVoiceRecording(params: {
  * lives in a cache dir the OS reclaims anyway, so failures here are fine
  * to ignore.
  */
+/** Deletes the whole recordings directory. Used by "Clear all data" in Settings. */
+export function deleteAllRecordings(): void {
+  try {
+    new Directory(Paths.document, 'recordings').delete();
+  } catch {
+    // Never existed, or already gone — nothing to do.
+  }
+}
+
 export function discardRecordingFile(tempUri?: string | null): void {
   if (!tempUri) return;
   try {

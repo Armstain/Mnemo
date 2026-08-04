@@ -4,7 +4,8 @@ import * as SecureStore from 'expo-secure-store';
 import { Platform } from 'react-native';
 import type { MnemoItem, Category, ItemStatus } from '@/types/mnemo';
 import { migrateStoredData } from '@/utils/migration';
-import { initDb, countItems, getAllItems, insertItem, insertItems, updatePartialItem, deleteItemRow } from '@/lib/db';
+import { initDb, countItems, getAllItems, insertItem, insertItems, updatePartialItem, deleteItemRow, deleteAllItems } from '@/lib/db';
+import { deleteAllRecordings } from '@/lib/capture';
 import { UNDO_WINDOW_MS } from '@/hooks/use-undo-toast';
 
 // ─── Legacy storage keys ────────────────────────────────────────
@@ -25,6 +26,8 @@ interface MnemoStoreType {
   deleteItem: (id: string) => void;
   /** Restores an item removed by deleteItem, as long as its grace window hasn't lapsed. */
   undoDelete: (id: string) => void;
+  /** Irreversibly wipes every item, embedding, and voice recording on disk. */
+  clearAllData: () => Promise<void>;
 
   // Status transitions
   resumeItem: (id: string) => void;
@@ -227,6 +230,19 @@ export function MnemoStoreProvider({ children }: { children: React.ReactNode }) 
     setItems((prev) => (prev.some((item) => item.id === id) ? prev : [restored, ...prev]));
   }, []);
 
+  const clearAllData = useCallback(async () => {
+    // Cancel every in-flight undo-delete timer first — otherwise one could
+    // still fire after the wipe and try to persist a delete for a row
+    // that's already gone.
+    Object.values(deleteTimersRef.current).forEach(clearTimeout);
+    deleteTimersRef.current = {};
+    removedItemsRef.current = {};
+
+    await deleteAllItems();
+    deleteAllRecordings();
+    setItems([]);
+  }, []);
+
   // ─── Status transitions ─────────────────────────────────────
   const resumeItem = useCallback(
     (id: string) => {
@@ -306,6 +322,7 @@ export function MnemoStoreProvider({ children }: { children: React.ReactNode }) 
       updateItem,
       deleteItem,
       undoDelete,
+      clearAllData,
       resumeItem,
       pauseItem,
       completeItem,
@@ -323,6 +340,7 @@ export function MnemoStoreProvider({ children }: { children: React.ReactNode }) 
       updateItem,
       deleteItem,
       undoDelete,
+      clearAllData,
       resumeItem,
       pauseItem,
       completeItem,

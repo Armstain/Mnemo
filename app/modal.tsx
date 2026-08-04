@@ -1,5 +1,5 @@
 import { StatusBar } from 'expo-status-bar';
-import { View, Text, ScrollView, Pressable, TextInput, ActivityIndicator } from 'react-native';
+import { View, Text, ScrollView, Pressable, TextInput, ActivityIndicator, Alert } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { MotiView } from 'moti';
 import {
@@ -20,6 +20,7 @@ import {
 } from 'lucide-react-native';
 import Constants from 'expo-constants';
 import * as WebBrowser from 'expo-web-browser';
+import * as Haptics from 'expo-haptics';
 import { useEffect, useState } from 'react';
 import { AmbientGlow } from '@/components/ui/AmbientGlow';
 import {
@@ -28,6 +29,7 @@ import {
   useThemePreference,
   type ThemePreference,
 } from '@/hooks/use-theme';
+import { useMnemoStore } from '@/hooks/use-mnemo-store';
 import {
   getActiveApiKey,
   getApiKeySource,
@@ -477,6 +479,37 @@ export default function ModalScreen() {
   const colors = useThemeColors();
   const theme = useThemeName();
   const { preference, setPreference } = useThemePreference();
+  const { clearAllData } = useMnemoStore();
+  const [isClearing, setIsClearing] = useState(false);
+
+  // No undo here, unlike a single-item delete — wiping every note and
+  // recording at once needs a real confirmation, not a grace window.
+  const handleClearAllData = () => {
+    Alert.alert(
+      'Clear all data',
+      'This permanently deletes every note, checklist, and voice recording on this device. This cannot be undone.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete everything',
+          style: 'destructive',
+          onPress: async () => {
+            setIsClearing(true);
+            try {
+              await clearAllData();
+              Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+            } catch (e) {
+              console.error('Failed to clear all data', e);
+              Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+              Alert.alert('Something went wrong', 'Not everything could be deleted. Please try again.');
+            } finally {
+              setIsClearing(false);
+            }
+          },
+        },
+      ],
+    );
+  };
 
   return (
     <AmbientGlow>
@@ -592,6 +625,25 @@ export default function ModalScreen() {
                 on any server.
               </Text>
             </View>
+
+            <Pressable
+              onPress={handleClearAllData}
+              disabled={isClearing}
+              accessibilityRole="button"
+              accessibilityLabel="Clear all data"
+              className={`bg-surface rounded-2xl p-5 border border-error/30 flex-row items-center ${
+                isClearing ? 'opacity-60' : 'active:opacity-80'
+              }`}
+            >
+              <Trash2 size={15} color={colors.error} />
+              <View className="ml-2 flex-1">
+                <Text className="font-sans-semi text-sm text-error">Clear all data</Text>
+                <Text className="font-sans text-xs text-fg-tertiary mt-0.5">
+                  Permanently deletes every note and recording on this device
+                </Text>
+              </View>
+              {isClearing && <ActivityIndicator size="small" color={colors.error} />}
+            </Pressable>
           </MotiView>
 
           {/* About */}
