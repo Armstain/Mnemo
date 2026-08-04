@@ -2,6 +2,8 @@ import React from 'react';
 import { View, Text, Pressable } from 'react-native';
 import { MotiView } from 'moti';
 
+import { useThemeColors } from '@/hooks/use-theme';
+
 interface ZenCardProps {
   children: React.ReactNode;
   title?: string;
@@ -25,26 +27,32 @@ export const ZenCard = ({
   delay = 0,
   compact = false,
 }: ZenCardProps) => {
-  const getVariantStyles = () => {
+  const colors = useThemeColors();
+
+  // Variant color is conditional at runtime — uniwind's className pipeline
+  // only resolves *static* class strings (see the doc comment on
+  // useThemeColors), so the background has to go through inline `style`,
+  // matching every other themed component in the app (CategoryPill, NoteRow).
+  const backgroundColor = (() => {
     switch (variant) {
       case 'warm':
-        return 'bg-surface-warm';
+        return colors.surfaceWarm;
       case 'accent':
-        return 'bg-accent/10';
+        return `${colors.accent}1A`; // ~10% alpha, matches bg-accent/10
       case 'surface':
       default:
-        return 'bg-surface';
+        return colors.surface;
     }
-  };
+  })();
 
   const CardContent = (
     <View
       className={`
         rounded-[18px] shadow-soft border border-border/40
         ${compact ? 'p-4' : 'p-6'}
-        ${getVariantStyles()}
         ${className}
       `}
+      style={{ backgroundColor }}
     >
       {label && (
         <Text className="font-sans-medium text-[10px] text-fg-muted mb-1.5 tracking-wider uppercase">

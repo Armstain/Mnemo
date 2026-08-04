@@ -103,27 +103,43 @@ export default function CaptureScreen() {
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
       <View className="flex-1 px-6">
-        {/* Header */}
+        {/* Header — carries Cancel/Save directly (not a bottom footer) so
+            they stay above the keyboard instead of getting covered by it. */}
         <MotiView
           from={{ opacity: 0, translateY: 12 }}
           animate={{ opacity: 1, translateY: 0 }}
           transition={{ type: 'timing', duration: 500 }}
-          className="mb-6"
+          className="flex-row items-center justify-between mb-4"
           style={{ paddingTop: Math.max(insets.top, 16) }}
         >
-          <Text className="font-sans text-xs text-fg-muted mb-2 tracking-wide uppercase">
-            Capture
-          </Text>
-          <Text className="text-3xl font-sans-medium text-fg">
+          <Pressable
+            onPress={() => router.back()}
+            hitSlop={8}
+            className="w-9 h-9 items-center justify-center rounded-full active:opacity-70 -ml-1.5"
+          >
+            <X size={20} color={colors.fg} />
+          </Pressable>
+
+          <Text className="font-sans-medium text-sm text-fg-secondary tracking-wide">
             New thought
           </Text>
+
+          <ZenButton
+            onPress={handleSave}
+            disabled={!canSave}
+            title="Save"
+            variant="primary"
+            size="sm"
+            hapticIntensity="medium"
+            icon={<Check size={15} color={colors.accentInk} />}
+          />
         </MotiView>
 
         <ScrollView
           className="flex-1"
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
-          contentContainerStyle={{ paddingBottom: 40 }}
+          contentContainerStyle={{ paddingBottom: Math.max(insets.bottom, 24) + 24 }}
         >
           {/* Category selector */}
           <MotiView
@@ -278,37 +294,6 @@ export default function CaptureScreen() {
             )}
           </MotiView>
         </ScrollView>
-
-        {/* Actions */}
-        <MotiView
-          from={{ opacity: 0, translateY: 12 }}
-          animate={{ opacity: 1, translateY: 0 }}
-          transition={{ type: 'timing', duration: 400, delay: 300 }}
-          className="gap-3 border-t border-border/40"
-          style={{
-            paddingTop: 16,
-            paddingBottom: Math.max(insets.bottom, 24) + 8,
-          }}
-        >
-          <ZenButton
-            onPress={handleSave}
-            disabled={!canSave}
-            title="Save"
-            variant="primary"
-            size="lg"
-            fullWidth
-            hapticIntensity="medium"
-            icon={<Check size={22} color={colors.accentInk} />}
-          />
-          <ZenButton
-            onPress={() => router.back()}
-            title="Cancel"
-            variant="ghost"
-            size="md"
-            fullWidth
-            icon={<X size={18} color={colors.fg} />}
-          />
-        </MotiView>
       </View>
     </KeyboardAvoidingView>
     </AmbientGlow>

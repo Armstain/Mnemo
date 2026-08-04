@@ -1,11 +1,8 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { Pressable, Text, View } from 'react-native';
 import * as Haptics from 'expo-haptics';
-import { MotiView } from 'moti';
 
 import { useThemeColors } from '@/hooks/use-theme';
-import { useReduceMotion } from '@/hooks/use-accessibility-motion';
-import { SPRING_PRESS, motion } from '@/utils/motion';
 
 interface ZenButtonProps {
   onPress: () => void;
@@ -31,8 +28,6 @@ export const ZenButton = ({
   className = '',
 }: ZenButtonProps) => {
   const colors = useThemeColors();
-  const reduceMotion = useReduceMotion();
-  const [pressed, setPressed] = useState(false);
 
   const handlePress = () => {
     if (disabled) return;
@@ -53,22 +48,43 @@ export const ZenButton = ({
     onPress();
   };
 
-  const getVariantStyles = () => {
+  // Variant/size colors are conditional at runtime — uniwind's className
+  // pipeline only resolves *static* class strings (see the doc comment on
+  // useThemeColors), so anything that varies per-prop has to go through
+  // inline `style`, matching every other themed component in the app
+  // (CategoryPill, NoteRow, FloatingTabBar).
+  const backgroundColor = (() => {
     switch (variant) {
       case 'primary':
-        return 'bg-accent';
+        return colors.accent;
+      // Same tonal fill as the Settings screen's secondary actions
+      // ("Test Key", theme picker) — filled, not a transparent outline.
       case 'secondary':
-        return 'bg-surface-high';
       case 'outline':
-        return 'bg-transparent border border-outline';
-      case 'ghost':
-        return 'bg-transparent';
+        return colors.surfaceWarm;
       case 'danger':
-        return 'bg-error';
+        return colors.error;
+      case 'ghost':
       default:
-        return 'bg-accent';
+        return 'transparent';
     }
-  };
+  })();
+
+  const textColor = (() => {
+    switch (variant) {
+      // Ink tokens pair with the fill per theme (dark ink on the bright
+      // dark-theme fills, white on the deep light-theme fills).
+      case 'primary':
+        return colors.accentInk;
+      case 'danger':
+        return colors.errorInk;
+      case 'outline':
+      case 'ghost':
+      case 'secondary':
+      default:
+        return colors.fg;
+    }
+  })();
 
   // Material ripple: light-on-dark for solid fills, ink-on-light elsewhere.
   const rippleColor =
@@ -76,85 +92,44 @@ export const ZenButton = ({
       ? 'rgba(255,255,255,0.18)'
       : colors.border;
 
-  const getTextColor = () => {
-    switch (variant) {
-      // Ink tokens pair with the fill per theme (dark ink on the bright
-      // dark-theme fills, white on the deep light-theme fills).
-      case 'primary':
-        return 'text-accent-ink';
-      case 'danger':
-        return 'text-error-ink';
-      case 'outline':
-      case 'ghost':
-        return 'text-fg';
-      case 'secondary':
-        return 'text-fg';
-      default:
-        return 'text-accent-ink';
-    }
-  };
+  // Matches the Settings screen's own button recipe (app/modal.tsx's
+  // "Save Key" / theme-picker buttons): rounded-xl, tight padding, no
+  // shadow, plain opacity press — not a tall shadowed pill.
+  const sizeClasses = {
+    lg: 'px-5 py-3.5 rounded-xl min-h-[48px]',
+    md: 'px-4 py-3 rounded-xl min-h-[42px]',
+    sm: 'px-3 py-2 rounded-xl min-h-[36px]',
+  }[size];
 
-  const getSizeStyles = () => {
-    switch (size) {
-      case 'lg':
-        return 'px-8 py-5 min-h-[64px]';
-      case 'sm':
-        return 'px-4 py-2.5 min-h-[40px]';
-      case 'md':
-      default:
-        return 'px-6 py-4 min-h-[52px]';
-    }
-  };
-
-  const getTextSize = () => {
-    switch (size) {
-      case 'lg':
-        return 'text-lg';
-      case 'sm':
-        return 'text-sm';
-      default:
-        return 'text-base';
-    }
-  };
-
-  const getShadowStyle = () => {
-    if (disabled || variant === 'ghost' || variant === 'outline') return '';
-    return 'shadow-sm shadow-black/20 elevation-2';
-  };
+  const textSizeClasses = {
+    lg: 'text-base',
+    md: 'text-sm',
+    sm: 'text-xs',
+  }[size];
 
   return (
     <Pressable
       onPress={handlePress}
-      onPressIn={() => setPressed(true)}
-      onPressOut={() => setPressed(false)}
       disabled={disabled}
       android_ripple={disabled ? undefined : { color: rippleColor }}
-      className={fullWidth ? 'w-full' : ''}
+      className={`
+        flex-row items-center justify-center overflow-hidden
+        ${sizeClasses}
+        ${fullWidth ? 'w-full' : ''}
+        ${disabled ? '' : 'active:opacity-80'}
+        ${className}
+      `}
+      style={{
+        backgroundColor,
+        opacity: disabled ? 0.55 : 1,
+        borderWidth: variant === 'outline' ? 1 : 0,
+        borderColor: variant === 'outline' ? `${colors.border}99` : undefined,
+      }}
     >
-      {/* Same spring-scale press vocabulary as the tab bar (utils/motion
-          SPRING_PRESS) — a subtle settle instead of an instant CSS snap,
-          so every tap target in the app shares one tactile feel. */}
-      <MotiView
-        animate={{ scale: reduceMotion ? 1 : pressed ? 0.985 : 1 }}
-        transition={motion(SPRING_PRESS, reduceMotion)}
-        className={`
-          flex-row items-center justify-center overflow-hidden
-          rounded-full
-          ${getVariantStyles()}
-          ${getSizeStyles()}
-          ${getShadowStyle()}
-          ${fullWidth ? 'w-full' : ''}
-          ${disabled ? 'opacity-55' : ''}
-          ${className}
-        `}
-      >
-        {icon && <View className="mr-3">{icon}</View>}
-        <Text
-          className={`font-sans-semi ${getTextColor()} ${getTextSize()}`}
-        >
-          {title}
-        </Text>
-      </MotiView>
+      {icon && <View className="mr-2">{icon}</View>}
+      <Text className={`font-sans-semi ${textSizeClasses}`} style={{ color: textColor }}>
+        {title}
+      </Text>
     </Pressable>
   );
 };

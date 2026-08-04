@@ -6,7 +6,7 @@ import * as SecureStore from 'expo-secure-store';
 import { MotiView } from 'moti';
 import { AmbientGlow } from '@/components/ui/AmbientGlow';
 import { ZenButton } from '@/components/ZenButton';
-import { useThemeColors } from '@/hooks/use-theme';
+import { useThemeColors, useThemeName } from '@/hooks/use-theme';
 import { PenLine, RefreshCw, Sparkles } from 'lucide-react-native';
 
 export const ONBOARDING_KEY = 'mnemo-onboarded';
@@ -35,6 +35,7 @@ const features = [
 export default function OnboardingScreen() {
   const insets = useSafeAreaInsets();
   const colors = useThemeColors();
+  const theme = useThemeName();
   const { width, height } = useWindowDimensions();
   // Compact = short phones (SE-class, ~667pt) where generous fixed margins
   // push the CTA below the fold; narrow = small-width phones (~320-360pt)
@@ -80,7 +81,11 @@ export default function OnboardingScreen() {
             className={heroSpacing}
           >
             <Image
-              source={require('@/assets/Mnemo_logo_dark.png')}
+              source={
+                theme === 'dark'
+                  ? require('@/assets/Mnemo_logo_dark.png')
+                  : require('@/assets/Mnemo_logo_light.png')
+              }
               style={{ width: logoSize, height: logoSize, marginBottom: isCompact ? 14 : 20 }}
               resizeMode="contain"
               accessibilityLabel="Mnemo logo"
