@@ -8,14 +8,6 @@
     "scheme": "mnemo",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
-    "splash": {
-      "image": "./assets/images/splash-icon.png",
-      "resizeMode": "contain",
-      "backgroundColor": "#F7FAF7",
-      "dark": {
-        "backgroundColor": "#101410"
-      }
-    },
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.mnemo.app"
@@ -23,7 +15,8 @@
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/adaptive-icon.png",
-        "backgroundColor": "#0A0B0F"
+        "monochromeImage": "./assets/images/adaptive-icon-monochrome.png",
+        "backgroundColor": "#FAF8F3"
       },
       "edgeToEdgeEnabled": true,
       "package": "com.mnemo.app",
@@ -38,6 +31,19 @@
     },
     "plugins": [
       "expo-router",
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/images/splash-icon.png",
+          "imageWidth": 120,
+          "resizeMode": "contain",
+          "backgroundColor": "#FAF8F3",
+          "dark": {
+            "image": "./assets/images/splash-icon-dark.png",
+            "backgroundColor": "#121310"
+          }
+        }
+      ],
       [
         "expo-audio",
         {
