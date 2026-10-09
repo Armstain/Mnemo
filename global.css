@@ -2,49 +2,52 @@
 @import "uniwind";
 
 /*
- * Mnemo — Material Design 3 tokens (green-seed tonal palette).
+ * Mnemo — design tokens ("Mnemo Design System": Paper / Ink).
  *
- * Light is the base (:root); dark overrides via prefers-color-scheme.
- * uniwind registers both as themes, follows the system by default, and
- * Uniwind.setTheme('light'|'dark'|'system') provides the manual override
- * (see hooks/use-theme.tsx).
+ * Light ("Paper") is the base (:root); dark ("Ink") overrides via
+ * prefers-color-scheme. uniwind registers both as themes, follows the
+ * system by default, and Uniwind.setTheme('light'|'dark'|'system')
+ * provides the manual override (see hooks/use-theme.tsx).
  *
- * Names are mapped to Material 3 roles so the whole app shifts to the
- * Material system at once:
- *   fg           = on-surface (primary text)
- *   fg-secondary = on-surface-variant (supporting copy / secondary icons)
- *   fg-tertiary  = outline (small labels, timestamps)
- *   accent       = primary,  accent-ink = on-primary
- *   surface      = surface-container (the default card tone, SOLID — M3
- *                  uses tonal elevation, not translucency)
- *   surface-warm = surface-container-high
- *   border       = outline-variant
- * Extra Material tiers (primary-container, the surface-container ramp,
- * the true outline) are exposed as their own tokens below.
+ * One warm axis runs through both themes: ivory paper against deep emerald
+ * in light, warm-black ink against a raised emerald in dark. Every surface
+ * is a solid tone rather than a translucency (no glass/glow), so text
+ * contrast is the same wherever a card lands. Token NAMES are unchanged
+ * from the prior Material palette so this is a restyle, not a rewrite.
  */
 :root {
-  --bg: #f7faf7; /* M3 surface */
-  --fg: #191c1a; /* on-surface */
-  --fg-secondary: #404943; /* on-surface-variant */
-  --fg-tertiary: #707972; /* outline */
-  --fg-muted: #707972; /* legacy alias for fg-tertiary */
-  --accent: #0b7a52; /* primary */
-  --accent-ink: #ffffff; /* on-primary */
-  --accent-warm: #7d5260; /* tertiary */
-  --error: #ba1a1a;
+  --bg: #faf8f3;
+  --fg: #1c1a15;
+  --fg-secondary: #4d4940;
+  --fg-tertiary: #7d786c;
+  --fg-muted: #7d786c; /* alias for fg-tertiary */
+  --accent: #0d6b4a;
+  --accent-ink: #ffffff;
+  --accent-warm: #a4552f; /* == hue-clay */
+  --accent-soft: rgba(13, 107, 74, 0.09);
+  --error: #a52b25;
   --error-ink: #ffffff;
-  --surface: #ebf0eb; /* surface-container */
-  --surface-warm: #e5eae5; /* surface-container-high */
-  --border: #c0c9c0; /* outline-variant */
+  --error-soft: rgba(165, 43, 37, 0.09);
+  --surface: #f1ede4;
+  --surface-warm: #eae5da;
+  --border: #e0dacc;
 
-  /* Material 3 tonal ramp + containers */
-  --primary-container: #a7f3d0;
-  --on-primary-container: #002114;
+  --primary-container: #cbe9d8;
+  --on-primary-container: #06301f;
   --surface-lowest: #ffffff;
-  --surface-low: #f1f5f1;
-  --surface-high: #e5eae5;
-  --surface-highest: #dfe4df;
-  --outline: #707972;
+  --surface-low: #f6f3ec;
+  --surface-raised: #ffffff;
+  --surface-high: #eae5da;
+  --surface-highest: #e2dccf;
+  --outline: #b3ac9c;
+
+  /* Category hues — share a lightness so no category shouts louder. */
+  --hue-sage: #3f7a5a;
+  --hue-clay: #a4552f;
+  --hue-indigo: #4a5c9e;
+  --hue-amber: #8a6314;
+  --hue-plum: #8a4a6e;
+  --hue-teal: #1f6f76;
 }
 
 /*
@@ -57,52 +60,72 @@
  *      ("system" preference)
  */
 :where(.dark, .dark *) {
-  --bg: #101410; /* M3 surface (dark) */
-  --fg: #e1e3de;
-  --fg-secondary: #c0c9c0;
-  --fg-tertiary: #8a938b;
-  --fg-muted: #8a938b;
-  --accent: #34d399; /* primary (light tone, per M3 dark) */
-  --accent-ink: #003824; /* on-primary */
-  --accent-warm: #efb8c8;
-  --error: #ffb4ab;
-  --error-ink: #690005;
-  --surface: #1c211c; /* surface-container */
-  --surface-warm: #262b26; /* surface-container-high */
-  --border: #404943; /* outline-variant */
+  --bg: #121310;
+  --fg: #ece9e0;
+  --fg-secondary: #bdbab0;
+  --fg-tertiary: #8b887e;
+  --fg-muted: #8b887e;
+  --accent: #5ddba0;
+  --accent-ink: #00301c;
+  --accent-warm: #e0a17c; /* == hue-clay */
+  --accent-soft: rgba(93, 219, 160, 0.12);
+  --error: #ff9d92;
+  --error-ink: #4a0b07;
+  --error-soft: rgba(255, 157, 146, 0.12);
+  --surface: #1d1f1a;
+  --surface-warm: #262822;
+  --border: #333630;
 
-  --primary-container: #005138;
-  --on-primary-container: #a7f3d0;
-  --surface-lowest: #0b0f0b;
-  --surface-low: #181d18;
-  --surface-high: #262b26;
-  --surface-highest: #313631;
-  --outline: #8a938b;
+  --primary-container: #0d4a33;
+  --on-primary-container: #a8f0cc;
+  --surface-lowest: #0b0c09;
+  --surface-low: #17180f;
+  --surface-raised: #272a23;
+  --surface-high: #262822;
+  --surface-highest: #31332c;
+  --outline: #6e6b62;
+
+  --hue-sage: #7fc79c;
+  --hue-clay: #e0a17c;
+  --hue-indigo: #9aa9e8;
+  --hue-amber: #d7b263;
+  --hue-plum: #d99ec0;
+  --hue-teal: #77c3c9;
 }
 
 @media (prefers-color-scheme: dark) {
   :root:not(:where(.light, .light *, .dark, .dark *)) {
-    --bg: #101410; /* M3 surface (dark) */
-    --fg: #e1e3de;
-    --fg-secondary: #c0c9c0;
-    --fg-tertiary: #8a938b;
-    --fg-muted: #8a938b;
-    --accent: #34d399; /* primary (light tone, per M3 dark) */
-    --accent-ink: #003824; /* on-primary */
-    --accent-warm: #efb8c8;
-    --error: #ffb4ab;
-    --error-ink: #690005;
-    --surface: #1c211c; /* surface-container */
-    --surface-warm: #262b26; /* surface-container-high */
-    --border: #404943; /* outline-variant */
+    --bg: #121310;
+    --fg: #ece9e0;
+    --fg-secondary: #bdbab0;
+    --fg-tertiary: #8b887e;
+    --fg-muted: #8b887e;
+    --accent: #5ddba0;
+    --accent-ink: #00301c;
+    --accent-warm: #e0a17c;
+    --accent-soft: rgba(93, 219, 160, 0.12);
+    --error: #ff9d92;
+    --error-ink: #4a0b07;
+    --error-soft: rgba(255, 157, 146, 0.12);
+    --surface: #1d1f1a;
+    --surface-warm: #262822;
+    --border: #333630;
 
-    --primary-container: #005138;
-    --on-primary-container: #a7f3d0;
-    --surface-lowest: #0b0f0b;
-    --surface-low: #181d18;
-    --surface-high: #262b26;
-    --surface-highest: #313631;
-    --outline: #8a938b;
+    --primary-container: #0d4a33;
+    --on-primary-container: #a8f0cc;
+    --surface-lowest: #0b0c09;
+    --surface-low: #17180f;
+    --surface-raised: #272a23;
+    --surface-high: #262822;
+    --surface-highest: #31332c;
+    --outline: #6e6b62;
+
+    --hue-sage: #7fc79c;
+    --hue-clay: #e0a17c;
+    --hue-indigo: #9aa9e8;
+    --hue-amber: #d7b263;
+    --hue-plum: #d99ec0;
+    --hue-teal: #77c3c9;
   }
 }
 
@@ -115,44 +138,67 @@
   --color-accent: var(--accent);
   --color-accent-ink: var(--accent-ink);
   --color-accent-warm: var(--accent-warm);
+  --color-accent-soft: var(--accent-soft);
   --color-surface: var(--surface);
   --color-surface-warm: var(--surface-warm);
   --color-border: var(--border);
   --color-error: var(--error);
   --color-error-ink: var(--error-ink);
+  --color-error-soft: var(--error-soft);
   --color-primary-container: var(--primary-container);
   --color-on-primary-container: var(--on-primary-container);
   --color-surface-lowest: var(--surface-lowest);
   --color-surface-low: var(--surface-low);
+  --color-surface-raised: var(--surface-raised);
   --color-surface-high: var(--surface-high);
   --color-surface-highest: var(--surface-highest);
   --color-outline: var(--outline);
 
-  /* Typography — Inter for UI chrome, Lora for editorial hero moments
-     (loaded via expo-google-fonts in _layout.tsx). Pairing a serif display
-     face on titles/headlines against the clean grotesk body is the one
-     typographic move that makes a memory/journal app feel considered
-     instead of templated — use font-display sparingly, on headlines only. */
-  --font-display: "Lora_700Bold", "Lora", serif;
-  --font-serif: "Lora_700Bold", "Lora", serif;
-  --font-sans: "Inter_400Regular", "Inter", sans-serif;
-  --font-sans-medium: "Inter_500Medium", "Inter", sans-serif;
-  --font-sans-semi: "Inter_600SemiBold", "Inter", sans-serif;
+  --color-hue-sage: var(--hue-sage);
+  --color-hue-clay: var(--hue-clay);
+  --color-hue-indigo: var(--hue-indigo);
+  --color-hue-amber: var(--hue-amber);
+  --color-hue-plum: var(--hue-plum);
+  --color-hue-teal: var(--hue-teal);
 
-  /* Border Radius — Squircle feel */
-  --radius-sm: 10px;
-  --radius-md: 16px;
-  --radius-lg: 24px;
+  /* Typography — Instrument Sans for UI chrome, Literata for titles and
+     anything the app says back to you (AI paraphrases). Keeping the serif
+     to those two jobs is what makes a captured thought read as writing
+     rather than as a database record (loaded via expo-google-fonts in
+     _layout.tsx). */
+  --font-display: "Literata_500Medium", "Literata_400Regular", serif;
+  --font-serif: "Literata_400Regular", serif;
+  --font-quote: "Literata_400Regular_Italic", serif;
+  --font-sans: "InstrumentSans_400Regular", sans-serif;
+  --font-sans-medium: "InstrumentSans_500Medium", sans-serif;
+  --font-sans-semi: "InstrumentSans_600SemiBold", sans-serif;
+
+  --text-display: 34px;
+  --text-title: 26px;
+  --text-heading: 19px;
+  --text-body: 15px;
+  --text-sm: 13px;
+  --text-xs: 11px;
+  --text-micro: 10px;
+
+  /* Border Radius — squircle family */
+  --radius-xs: 8px;
+  --radius-sm: 12px;
+  --radius-md: 18px;
+  --radius-lg: 26px;
+  --radius-xl: 34px;
   --radius-full: 9999px;
 
-  /* Shadows — diffused lift */
-  --shadow-soft: 0 20px 40px -15px rgba(10, 15, 20, 0.18);
-  --shadow-soft-sm: 0 10px 20px -5px rgba(10, 15, 20, 0.1);
-  --shadow-soft-lg: 0 30px 60px -20px rgba(10, 15, 20, 0.25);
+  /* Shadows — low, wide, warm. Only lightly used (RN elevation for the
+     rest lives in JS, see utils/elevation.ts); values match the design
+     system's light-mode recipe. */
+  --shadow-soft-sm: 0 1px 2px rgba(28, 26, 21, 0.05), 0 4px 10px -6px rgba(28, 26, 21, 0.1);
+  --shadow-soft: 0 2px 4px rgba(28, 26, 21, 0.04), 0 14px 28px -18px rgba(28, 26, 21, 0.2);
+  --shadow-soft-lg: 0 4px 8px rgba(28, 26, 21, 0.05), 0 30px 60px -28px rgba(28, 26, 21, 0.28);
 
-  /* Spacing */
   --tracking-normal: 0em;
   --tracking-wide: 0.02em;
+  --tracking-caps: 0.09em;
 }
 
 @layer base {

@@ -1,8 +1,10 @@
 import React, { useState } from 'react';
 import { View, Text, Pressable, Platform } from 'react-native';
-import { Calendar, X } from 'lucide-react-native';
+import { Calendar } from 'lucide-react-native';
 import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
 import { useThemeColors } from '@/hooks/use-theme';
+import { Icon } from '@/components/ui/Icon';
+import { Button } from '@/components/ui/Button';
 
 interface DueDatePickerProps {
   value?: number; // timestamp
@@ -56,7 +58,7 @@ export function DueDatePicker({ value, onChange }: DueDatePickerProps) {
     <View className="flex-row items-center flex-wrap gap-2">
       <Pressable
         onPress={() => setShowPicker(true)}
-        className="flex-row items-center px-4 py-2.5 rounded-xl border active:opacity-70"
+        className="flex-row items-center px-4 py-2.5 rounded-full border active:opacity-70"
         style={{
           backgroundColor: value
             ? isOverdue
@@ -90,7 +92,7 @@ export function DueDatePicker({ value, onChange }: DueDatePickerProps) {
           onPress={() => onChange(undefined)}
           className="w-9 h-9 rounded-full bg-surface-warm items-center justify-center border border-border/30 active:opacity-60"
         >
-          <X size={14} color={colors.fgTertiary} />
+          <Icon name="x" size={14} color={colors.fgTertiary} />
         </Pressable>
       )}
 
@@ -109,14 +111,9 @@ export function DueDatePicker({ value, onChange }: DueDatePickerProps) {
                 onChange={onDateChange}
                 accentColor={colors.accent}
               />
-              <ZenButton 
-                title="Done" 
-                size="sm" 
-                variant="outline" 
-                fullWidth 
-                onPress={() => setShowPicker(false)} 
-                className="mt-2"
-              />
+              <Button size="sm" variant="quiet" fullWidth onPress={() => setShowPicker(false)} className="mt-2">
+                Done
+              </Button>
             </View>
           ) : (
             <DateTimePicker
@@ -131,10 +128,6 @@ export function DueDatePicker({ value, onChange }: DueDatePickerProps) {
     </View>
   );
 }
-
-/** Import ZenButton inside the component file to avoid circular dependency if needed, 
- * but it's already used in capture.tsx. */
-import { ZenButton } from '@/components/ZenButton';
 
 /** Compact inline display of a due date, for use in cards. */
 export function DueDateLabel({ dueDate }: { dueDate: number }) {

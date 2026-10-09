@@ -25,8 +25,10 @@ interface DualColor {
   darkTint: string;
 }
 
-// Dark colors are tuned for legibility on dark glass (L ≥ 0.65); light
-// colors are their deep counterparts, ≥4.5:1 on the light bg (#F7FAF7).
+// Colors are the design system's six category hues (global.css --hue-*),
+// paired up where two categories share a hue family. Dark values are the
+// light-tone variant for legibility on Ink surfaces; light values are the
+// deep counterpart, ≥4.5:1 on the Paper bg (#FAF8F3).
 const CATEGORY_META: Record<
   Category,
   { label: string; icon: typeof Briefcase; colors: DualColor }
@@ -35,80 +37,88 @@ const CATEGORY_META: Record<
     label: 'Work',
     icon: Briefcase,
     colors: {
-      dark: '#85B3E3',
-      light: '#3F6FA8',
-      darkTint: 'rgba(133,179,227,0.14)',
-      lightTint: 'rgba(63,111,168,0.12)',
+      // hue-indigo
+      dark: '#9AA9E8',
+      light: '#4A5C9E',
+      darkTint: 'rgba(154,169,232,0.14)',
+      lightTint: 'rgba(74,92,158,0.12)',
     },
   },
   personal: {
     label: 'Personal',
     icon: Heart,
     colors: {
-      dark: '#EBA98C',
-      light: '#A8542D',
-      darkTint: 'rgba(235,169,140,0.14)',
-      lightTint: 'rgba(168,84,45,0.12)',
+      // hue-clay
+      dark: '#E0A17C',
+      light: '#A4552F',
+      darkTint: 'rgba(224,161,124,0.14)',
+      lightTint: 'rgba(164,85,47,0.12)',
     },
   },
   study: {
     label: 'Study',
     icon: BookOpen,
     colors: {
-      dark: '#B3A5F0',
-      light: '#6A55B8',
-      darkTint: 'rgba(179,165,240,0.14)',
-      lightTint: 'rgba(106,85,184,0.12)',
+      // hue-plum
+      dark: '#D99EC0',
+      light: '#8A4A6E',
+      darkTint: 'rgba(217,158,192,0.14)',
+      lightTint: 'rgba(138,74,110,0.12)',
     },
   },
   shopping: {
     label: 'Shopping',
     icon: ShoppingCart,
     colors: {
-      dark: '#8FD0B2',
-      light: '#2E7D5B',
-      darkTint: 'rgba(143,208,178,0.14)',
-      lightTint: 'rgba(46,125,91,0.12)',
+      // hue-sage
+      dark: '#7FC79C',
+      light: '#3F7A5A',
+      darkTint: 'rgba(127,199,156,0.14)',
+      lightTint: 'rgba(63,122,90,0.12)',
     },
   },
   health: {
     label: 'Health',
     icon: Activity,
     colors: {
-      dark: '#F2A57E',
-      light: '#AD5526',
-      darkTint: 'rgba(242,165,126,0.14)',
-      lightTint: 'rgba(173,85,38,0.12)',
+      // hue-clay (shares with personal — both warm oranges)
+      dark: '#E0A17C',
+      light: '#A4552F',
+      darkTint: 'rgba(224,161,124,0.14)',
+      lightTint: 'rgba(164,85,47,0.12)',
     },
   },
   ideas: {
     label: 'Ideas',
     icon: Lightbulb,
     colors: {
-      dark: '#E8CB70',
-      light: '#84671C',
-      darkTint: 'rgba(232,203,112,0.14)',
-      lightTint: 'rgba(132,103,28,0.12)',
+      // hue-amber
+      dark: '#D7B263',
+      light: '#8A6314',
+      darkTint: 'rgba(215,178,99,0.14)',
+      lightTint: 'rgba(138,99,20,0.12)',
     },
   },
   errands: {
     label: 'Errands',
     icon: MapPin,
     colors: {
-      dark: '#A9C394',
-      light: '#54713C',
-      darkTint: 'rgba(169,195,148,0.14)',
-      lightTint: 'rgba(84,113,60,0.12)',
+      // hue-teal
+      dark: '#77C3C9',
+      light: '#1F6F76',
+      darkTint: 'rgba(119,195,201,0.14)',
+      lightTint: 'rgba(31,111,118,0.12)',
     },
   },
   general: {
     label: 'General',
     icon: Inbox,
     colors: {
-      dark: '#BCB8B2',
-      light: '#66625C',
-      darkTint: 'rgba(188,184,178,0.14)',
-      lightTint: 'rgba(102,98,92,0.12)',
+      // neutral — catch-all, not a hue
+      dark: '#BDBAB0',
+      light: '#4D4940',
+      darkTint: 'rgba(189,186,176,0.14)',
+      lightTint: 'rgba(77,73,64,0.12)',
     },
   },
 };
@@ -156,37 +166,41 @@ const STATUS_META: Record<ItemStatus, { label: string; colors: DualColor }> = {
   active: {
     label: 'Active',
     colors: {
-      dark: '#34d399',
-      light: '#0B7A52',
-      darkTint: 'rgba(52,211,153,0.14)',
-      lightTint: 'rgba(11,122,82,0.12)',
+      // --accent
+      dark: '#5DDBA0',
+      light: '#0D6B4A',
+      darkTint: 'rgba(93,219,160,0.14)',
+      lightTint: 'rgba(13,107,74,0.12)',
     },
   },
   paused: {
     label: 'Paused',
     colors: {
-      dark: '#E8CB70',
-      light: '#84671C',
-      darkTint: 'rgba(232,203,112,0.14)',
-      lightTint: 'rgba(132,103,28,0.12)',
+      // hue-amber — a warm, non-alarming "needs a look" cue
+      dark: '#D7B263',
+      light: '#8A6314',
+      darkTint: 'rgba(215,178,99,0.14)',
+      lightTint: 'rgba(138,99,20,0.12)',
     },
   },
   completed: {
     label: 'Done',
     colors: {
-      dark: '#85B3E3',
-      light: '#3F6FA8',
-      darkTint: 'rgba(133,179,227,0.14)',
-      lightTint: 'rgba(63,111,168,0.12)',
+      // neutral — done means it no longer needs attention
+      dark: '#BDBAB0',
+      light: '#4D4940',
+      darkTint: 'rgba(189,186,176,0.14)',
+      lightTint: 'rgba(77,73,64,0.12)',
     },
   },
   archived: {
     label: 'Archived',
     colors: {
-      dark: '#A3A7B3',
-      light: '#6E7280',
-      darkTint: 'rgba(163,167,179,0.14)',
-      lightTint: 'rgba(110,114,128,0.12)',
+      // fg-tertiary — quieter than completed
+      dark: '#8B887E',
+      light: '#7D786C',
+      darkTint: 'rgba(139,136,126,0.14)',
+      lightTint: 'rgba(125,120,108,0.12)',
     },
   },
 };

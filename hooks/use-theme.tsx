@@ -10,52 +10,70 @@ export const THEME_PREF_KEY = 'mnemo-theme-preference';
 /**
  * JS mirror of the CSS tokens in global.css, for the places uniwind
  * classes can't reach: icon `color=` props, inline styles, navigation
- * themes, and the Glass/AmbientGlow material recipes. Keep in sync with
- * global.css.
+ * themes, and any surface that needs a runtime-conditional color. Keep in
+ * sync with global.css.
  */
 export const PALETTE = {
   light: {
-    bg: '#F7FAF7', // M3 surface
-    fg: '#191C1A', // on-surface
-    fgSecondary: '#404943', // on-surface-variant
-    fgTertiary: '#707972', // outline
-    accent: '#0B7A52', // primary
-    accentInk: '#FFFFFF', // on-primary
-    accentWarm: '#7D5260', // tertiary
-    surface: '#EBF0EB', // surface-container
-    surfaceWarm: '#E5EAE5', // surface-container-high
-    border: '#C0C9C0', // outline-variant
-    error: '#BA1A1A',
+    bg: '#FAF8F3',
+    fg: '#1C1A15',
+    fgSecondary: '#4D4940',
+    fgTertiary: '#7D786C',
+    accent: '#0D6B4A',
+    accentInk: '#FFFFFF',
+    accentWarm: '#A4552F', // == hueClay
+    accentSoft: 'rgba(13, 107, 74, 0.09)',
+    surface: '#F1EDE4',
+    surfaceWarm: '#EAE5DA',
+    border: '#E0DACC',
+    error: '#A52B25',
     errorInk: '#FFFFFF',
-    // Material 3 tonal ramp + containers
-    primaryContainer: '#A7F3D0',
-    onPrimaryContainer: '#002114',
+    errorSoft: 'rgba(165, 43, 37, 0.09)',
+    // Tonal ramp + containers
+    primaryContainer: '#CBE9D8',
+    onPrimaryContainer: '#06301F',
     surfaceLowest: '#FFFFFF',
-    surfaceLow: '#F1F5F1',
-    surfaceHigh: '#E5EAE5',
-    surfaceHighest: '#DFE4DF',
-    outline: '#707972',
+    surfaceLow: '#F6F3EC',
+    surfaceRaised: '#FFFFFF',
+    surfaceHigh: '#EAE5DA',
+    surfaceHighest: '#E2DCCF',
+    outline: '#B3AC9C',
+    hueSage: '#3F7A5A',
+    hueClay: '#A4552F',
+    hueIndigo: '#4A5C9E',
+    hueAmber: '#8A6314',
+    huePlum: '#8A4A6E',
+    hueTeal: '#1F6F76',
   },
   dark: {
-    bg: '#101410', // M3 surface (dark)
-    fg: '#E1E3DE',
-    fgSecondary: '#C0C9C0',
-    fgTertiary: '#8A938B',
-    accent: '#34d399', // primary (light tone)
-    accentInk: '#003824', // on-primary
-    accentWarm: '#EFB8C8',
-    surface: '#1C211C', // surface-container
-    surfaceWarm: '#262B26', // surface-container-high
-    border: '#404943', // outline-variant
-    error: '#FFB4AB',
-    errorInk: '#690005',
-    primaryContainer: '#005138',
-    onPrimaryContainer: '#A7F3D0',
-    surfaceLowest: '#0B0F0B',
-    surfaceLow: '#181D18',
-    surfaceHigh: '#262B26',
-    surfaceHighest: '#313631',
-    outline: '#8A938B',
+    bg: '#121310',
+    fg: '#ECE9E0',
+    fgSecondary: '#BDBAB0',
+    fgTertiary: '#8B887E',
+    accent: '#5DDBA0',
+    accentInk: '#00301C',
+    accentWarm: '#E0A17C', // == hueClay
+    accentSoft: 'rgba(93, 219, 160, 0.12)',
+    surface: '#1D1F1A',
+    surfaceWarm: '#262822',
+    border: '#333630',
+    error: '#FF9D92',
+    errorInk: '#4A0B07',
+    errorSoft: 'rgba(255, 157, 146, 0.12)',
+    primaryContainer: '#0D4A33',
+    onPrimaryContainer: '#A8F0CC',
+    surfaceLowest: '#0B0C09',
+    surfaceLow: '#17180F',
+    surfaceRaised: '#272A23',
+    surfaceHigh: '#262822',
+    surfaceHighest: '#31332C',
+    outline: '#6E6B62',
+    hueSage: '#7FC79C',
+    hueClay: '#E0A17C',
+    hueIndigo: '#9AA9E8',
+    hueAmber: '#D7B263',
+    huePlum: '#D99EC0',
+    hueTeal: '#77C3C9',
   },
 } as const;
 

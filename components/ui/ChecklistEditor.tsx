@@ -1,9 +1,9 @@
 import React, { useState, useRef } from 'react';
 import { View, Text, TextInput, Pressable } from 'react-native';
-import { Check, Plus, X } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
 import { useThemeColors } from '@/hooks/use-theme';
 import { useStatusConfig } from '@/utils/categories';
+import { Icon } from '@/components/ui/Icon';
 import type { ChecklistItem } from '@/types/mnemo';
 
 interface ChecklistEditorProps {
@@ -104,7 +104,7 @@ export function ChecklistEditor({
                 borderColor: item.checked ? colors.accent : colors.border,
               }}
             >
-              {item.checked && <Check size={12} color={colors.accentInk} strokeWidth={3} />}
+              {item.checked && <Icon name="check" size={12} color={colors.accentInk} stroke={3} />}
             </Pressable>
 
             <Text
@@ -120,7 +120,7 @@ export function ChecklistEditor({
                 className="p-1 ml-2 active:opacity-50"
                 hitSlop={8}
               >
-                <X size={14} color={colors.fgTertiary} />
+                <Icon name="x" size={14} color={colors.fgTertiary} />
               </Pressable>
             )}
           </View>
@@ -131,7 +131,7 @@ export function ChecklistEditor({
       {editable && (
         <View className="flex-row items-center mt-3 border-t border-border/30 pt-3">
           <View className="w-5 h-5 rounded-md border border-dashed border-border/60 items-center justify-center mr-3">
-            <Plus size={11} color={colors.fgTertiary} />
+            <Icon name="plus" size={11} color={colors.fgTertiary} />
           </View>
           <TextInput
             ref={inputRef}
@@ -151,7 +151,7 @@ export function ChecklistEditor({
               className="ml-2 w-7 h-7 rounded-full bg-accent items-center justify-center active:opacity-70"
               style={{ backgroundColor: colors.accent }}
             >
-              <Plus size={14} color={colors.accentInk} strokeWidth={2.5} />
+              <Icon name="plus" size={14} color={colors.accentInk} stroke={2.5} />
             </Pressable>
           )}
         </View>

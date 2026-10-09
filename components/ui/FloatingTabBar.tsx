@@ -1,25 +1,25 @@
 import React, { useState, useCallback } from 'react';
 import { View, Pressable, StyleSheet, Text, type LayoutChangeEvent } from 'react-native';
-import { Home, Search, Library } from 'lucide-react-native';
 import { MotiView } from 'moti';
 import * as Haptics from 'expo-haptics';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router, usePathname } from 'expo-router';
 
-import { useThemeColors } from '@/hooks/use-theme';
+import { useThemeColors, useThemeName } from '@/hooks/use-theme';
 import { useReduceMotion } from '@/hooks/use-accessibility-motion';
-import { SPRING_NAV, SPRING_PRESS, motion } from '@/utils/motion';
+import { PRESS_SCALE, SPRING_NAV, SPRING_PRESS, motion } from '@/utils/motion';
+import { Icon, type IconName } from '@/components/ui/Icon';
 
 const TABS = [
-  { name: 'Home', icon: Home, route: '/' },
-  { name: 'Search', icon: Search, route: '/(tabs)/search' },
-  { name: 'Library', icon: Library, route: '/(tabs)/library' },
+  { name: 'Home', icon: 'home' as IconName, route: '/' },
+  { name: 'Search', icon: 'search' as IconName, route: '/(tabs)/search' },
+  { name: 'Library', icon: 'layers' as IconName, route: '/(tabs)/library' },
 ] as const;
 
-// Material 3 navigation bar container height (excludes the bottom safe
-// inset, which is added on top). Exported so the FAB and screens can
-// reserve clearance without magic numbers.
-export const NAV_BAR_HEIGHT = 64;
+// Navigation bar container height (excludes the bottom safe inset, which
+// is added on top). Exported so the FAB and screens can reserve clearance
+// without magic numbers.
+export const NAV_BAR_HEIGHT = 66;
 
 // Scroll-content bottom padding that clears the floating nav bar + FAB stack.
 // Only use on screens that render ActionCluster (Home tab).
@@ -59,6 +59,7 @@ export function FloatingTabBar() {
   const insets = useSafeAreaInsets();
   const pathname = usePathname();
   const colors = useThemeColors();
+  const themeName = useThemeName();
   const reduceMotion = useReduceMotion();
 
   // Measured per-tab geometry, so the pill's travel needs no assumptions
@@ -83,10 +84,11 @@ export function FloatingTabBar() {
       className="absolute left-6 right-6 z-40"
       style={[
         styles.bar,
+        themeName === 'dark' ? styles.barShadowDark : styles.barShadowLight,
         {
           bottom: Math.max(insets.bottom, 16),
           height: NAV_BAR_HEIGHT,
-          backgroundColor: colors.surface,
+          backgroundColor: colors.surfaceLowest,
           borderColor: colors.border,
         },
       ]}
@@ -132,13 +134,13 @@ export function FloatingTabBar() {
 
 function NavItem({
   name,
-  icon: Icon,
+  icon,
   isActive,
   onPress,
   onLayout,
 }: {
   name: string;
-  icon: typeof Home;
+  icon: IconName;
   isActive: boolean;
   onPress: () => void;
   onLayout: (e: LayoutChangeEvent) => void;
@@ -152,6 +154,7 @@ function NavItem({
       onPress={onPress}
       onPressIn={() => setPressed(true)}
       onPressOut={() => setPressed(false)}
+      pressRetentionOffset={16}
       onLayout={onLayout}
       accessibilityRole="button"
       accessibilityState={{ selected: isActive }}
@@ -163,14 +166,15 @@ function NavItem({
           the tap is confirmed even if navigation takes a frame to land. */}
       <MotiView
         style={styles.itemInner}
-        animate={{ scale: reduceMotion ? 1 : pressed ? 0.9 : 1 }}
+        animate={{ scale: reduceMotion ? 1 : pressed ? PRESS_SCALE : 1 }}
         transition={motion(SPRING_PRESS, reduceMotion)}
       >
         <View style={styles.indicatorWrap}>
           <Icon
+            name={icon}
             size={20}
             color={isActive ? colors.onPrimaryContainer : colors.fgSecondary}
-            strokeWidth={isActive ? 2.2 : 1.8}
+            stroke={isActive ? 2.1 : 1.7}
           />
         </View>
         <Text
@@ -193,14 +197,24 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-around',
-    borderRadius: 32,
+    borderRadius: 34,
     borderWidth: 1,
     paddingHorizontal: 12,
-    // Soft floating shadow lift
+  },
+  // Soft floating shadow lift — split by theme since the design system's
+  // shadow recipe uses a darker/heavier shadow on Ink than on Paper.
+  barShadowLight: {
     shadowColor: '#000000',
-    shadowOffset: { width: 0, height: 6 },
-    shadowRadius: 16,
-    shadowOpacity: 0.14,
+    shadowOffset: { width: 0, height: 10 },
+    shadowRadius: 24,
+    shadowOpacity: 0.12,
+    elevation: 10,
+  },
+  barShadowDark: {
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 10 },
+    shadowRadius: 24,
+    shadowOpacity: 0.45,
     elevation: 10,
   },
   item: {
@@ -228,7 +242,7 @@ const styles = StyleSheet.create({
     borderRadius: 14,
   },
   label: {
-    fontSize: 11,
+    fontSize: 10,
     letterSpacing: 0.1,
   },
 });

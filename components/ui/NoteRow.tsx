@@ -1,13 +1,13 @@
 import React from 'react';
-import { Pressable, Text, View } from 'react-native';
-import { Trash2 } from 'lucide-react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { MotiView } from 'moti';
 import * as Haptics from 'expo-haptics';
 
 import { useCategories, useStatusConfig } from '@/utils/categories';
 import { useThemeColors } from '@/hooks/use-theme';
 import { formatCompactDistance } from '@/utils/time';
-import { enterUp } from '@/utils/motion';
+import { useEnter } from '@/utils/motion';
+import { Icon } from '@/components/ui/Icon';
 import type { MnemoItem } from '@/types/mnemo';
 
 interface NoteRowProps {
@@ -18,6 +18,12 @@ interface NoteRowProps {
   onDelete?: () => void;
   /** Show the item's status next to the category (used by Library). */
   showStatus?: boolean;
+  /**
+   * Stagger this row behind the ones above it. False for query-driven
+   * results (Search), where the set changes on every keystroke and a
+   * row arriving after the result count reads as lag, not polish.
+   */
+  stagger?: boolean;
 }
 
 /**
@@ -25,10 +31,18 @@ interface NoteRowProps {
  *
  * Deliberately NOT a glass card: glass is reserved for hero surfaces
  * (resume card, mic, tab bar). Rows sit flat on the ambient field with a
- * hairline separator, which keeps long lists calm and makes the few
- * glass surfaces read as special.
+ * hairline separator and a left category-tick, which keeps long lists calm
+ * and makes the few glass surfaces read as special.
  */
-export function NoteRow({ item, index, onPress, onDelete, showStatus = false }: NoteRowProps) {
+export function NoteRow({
+  item,
+  index,
+  onPress,
+  onDelete,
+  showStatus = false,
+  stagger = true,
+}: NoteRowProps) {
+  const enter = useEnter();
   const categories = useCategories();
   const statusConfig = useStatusConfig();
   const colors = useThemeColors();
@@ -36,62 +50,77 @@ export function NoteRow({ item, index, onPress, onDelete, showStatus = false }: 
   const status = statusConfig[item.status];
 
   return (
-    <MotiView {...enterUp(index)}>
+    <MotiView {...enter.row(index, { stagger })} {...enter.rowExit()}>
       <Pressable
         onPress={onPress}
-        className="py-3.5 border-b border-border/60 active:bg-surface rounded-md"
+        className="rounded-sm"
+        style={({ pressed }) => [
+          styles.row,
+          {
+            borderBottomColor: colors.border,
+            backgroundColor: pressed ? colors.surfaceLow : 'transparent',
+          },
+        ]}
       >
+        {/* Left category-color tick */}
+        <View style={[styles.tick, { backgroundColor: config.color }]} />
+
         {/* Top line: category + optional status, timestamp right */}
-        <View className="flex-row items-center justify-between mb-1.5">
-          <View className="flex-row items-center gap-2">
-            <View
-              className="w-1.5 h-1.5 rounded-full"
-              style={{ backgroundColor: config.color }}
-            />
+        <View className="flex-row items-center justify-between gap-3 mb-1.25">
+          <View className="flex-row items-center gap-2 shrink" style={{ minWidth: 0 }}>
             <Text
-              className="font-sans-medium text-[10px] uppercase tracking-wider"
+              className="font-sans-semi text-micro uppercase tracking-caps"
               style={{ color: config.color }}
+              numberOfLines={1}
             >
               {config.label}
             </Text>
             {showStatus && (
               <Text
-                className="font-sans-medium text-[10px] uppercase tracking-wider"
-                style={{ color: status.color }}
+                className="font-sans-semi text-micro uppercase tracking-caps"
+                style={{ color: colors.fgTertiary }}
+                numberOfLines={1}
               >
-                · {status.label}
+                {status.label}
               </Text>
             )}
           </View>
-          <Text className="font-sans text-[11px] text-fg-tertiary">
+          <Text className="font-sans text-xs" style={{ color: colors.fgTertiary }}>
             {formatCompactDistance(item.updatedAt)}
           </Text>
         </View>
 
         {/* Title */}
-        <Text className="font-sans-medium text-[15px] text-fg mb-0.5" numberOfLines={1}>
+        <Text
+          className="font-sans-medium text-body mb-0.5"
+          style={{ color: colors.fg }}
+          numberOfLines={1}
+        >
           {item.title}
         </Text>
 
         {/* Preview + optional delete */}
-        <View className="flex-row items-center">
+        <View className="flex-row items-center gap-2">
           <Text
-            className="flex-1 font-sans text-[13px] leading-snug text-fg-secondary"
+            className="flex-1 font-sans text-sm"
+            style={{ color: colors.fgSecondary }}
             numberOfLines={1}
           >
             {item.content?.trim() || 'No content.'}
           </Text>
           {onDelete && (
             <Pressable
-              onPress={() => {
+              onPress={(e) => {
+                e.stopPropagation();
                 Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
                 onDelete();
               }}
               accessibilityLabel="Delete item"
-              className="w-11 h-11 ml-2 items-center justify-center rounded-full active:bg-surface-warm"
-              hitSlop={4}
+              className="items-center justify-center rounded-full"
+              style={{ width: 32, height: 32 }}
+              hitSlop={8}
             >
-              <Trash2 size={15} color={colors.error} />
+              <Icon name="trash" size={15} color={colors.fgTertiary} />
             </Pressable>
           )}
         </View>
@@ -99,3 +128,21 @@ export function NoteRow({ item, index, onPress, onDelete, showStatus = false }: 
     </MotiView>
   );
 }
+
+const styles = StyleSheet.create({
+  row: {
+    position: 'relative',
+    paddingVertical: 14,
+    paddingRight: 12,
+    paddingLeft: 14,
+    borderBottomWidth: 1,
+  },
+  tick: {
+    position: 'absolute',
+    left: 0,
+    top: 16,
+    bottom: 16,
+    width: 2,
+    borderRadius: 9999,
+  },
+});

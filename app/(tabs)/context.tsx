@@ -22,24 +22,9 @@ import { useRebrief } from '@/hooks/use-rebrief';
 import { summarizeContext } from '@/lib/gemini';
 import { structurePendingItem } from '@/lib/capture';
 import {
-  ChevronLeft,
-  Trash2,
-  Sparkles,
   ExternalLink as ExternalLinkIcon,
-  Share2,
-  Clock,
-  Pencil,
-  Check,
-  X,
-  Copy,
   RefreshCw,
-  Play,
-  Pause,
-  CheckCircle,
-  Archive,
   MapPin,
-  ArrowRight,
-  Volume2,
   FileQuestion,
 } from 'lucide-react-native';
 import { ExternalLink } from '@/components/ExternalLink';
@@ -50,18 +35,20 @@ import { formatDistanceToNow } from 'date-fns';
 import { MotiView } from 'moti';
 import * as Haptics from 'expo-haptics';
 import { useUndoToast } from '@/hooks/use-undo-toast';
-import { ZenButton } from '@/components/ZenButton';
-import { ZenCard } from '@/components/ZenCard';
-import { CategoryPill } from '@/components/ui/CategoryPill';
-import { StatusBadge } from '@/components/ui/StatusBadge';
+import { Button, IconButton } from '@/components/ui/Button';
+import { Card } from '@/components/ui/Card';
+import { Pill } from '@/components/ui/Pill';
+import { Icon } from '@/components/ui/Icon';
 import { ChecklistEditor } from '@/components/ui/ChecklistEditor';
 import { DueDatePicker } from '@/components/ui/DueDatePicker';
 import { DueDateLabel } from '@/components/ui/DueDatePicker';
-import { CATEGORY_LIST, useStatusConfig } from '@/utils/categories';
+import { CATEGORY_LIST, useCategories, useStatusConfig } from '@/utils/categories';
 import { useThemeColors } from '@/hooks/use-theme';
 import type { MnemoItem } from '@/types/mnemo';
+import { EASE_IN_OUT, useEnter } from '@/utils/motion';
 
 export default function ItemDetailScreen() {
+  const enter = useEnter();
   const insets = useSafeAreaInsets();
   const { id } = useLocalSearchParams();
   const {
@@ -87,6 +74,7 @@ export default function ItemDetailScreen() {
   const rebrief = useRebrief();
   const colors = useThemeColors();
   const statusColors = useStatusConfig();
+  const categories = useCategories();
 
   const markdownStyles = React.useMemo(
     () => ({
@@ -181,12 +169,9 @@ export default function ItemDetailScreen() {
         <Text className="font-sans text-sm text-fg-muted mb-8 text-center">
           This item may have drifted away.
         </Text>
-        <ZenButton
-          onPress={() => router.back()}
-          title="Go back"
-          variant="outline"
-          size="md"
-        />
+        <Button onPress={() => router.back()} variant="quiet" size="md">
+          Go back
+        </Button>
       </View>
     );
   }
@@ -297,56 +282,27 @@ export default function ItemDetailScreen() {
           className="flex-row justify-between items-center px-6 py-4"
           style={{ paddingTop: Math.max(insets.top, 12) }}
         >
-          <Pressable
+          <IconButton
+            icon={isEditing ? 'x' : 'chevronLeft'}
+            label={isEditing ? 'Cancel' : 'Back'}
             onPress={isEditing ? handleCancelEdit : () => router.back()}
-            className="w-11 h-11 rounded-full bg-surface items-center justify-center border border-border/50 active:opacity-70"
-          >
-            {isEditing ? (
-              <X size={20} color={colors.fg} />
-            ) : (
-              <ChevronLeft size={20} color={colors.accent} />
-            )}
-          </Pressable>
+          />
 
           <View className="flex-row gap-2">
             {isEditing ? (
-              <ZenButton
-                onPress={handleSaveEdit}
-                title="Save"
-                variant="primary"
-                size="sm"
-                icon={<Check size={16} color={colors.accentInk} />}
-              />
+              <Button onPress={handleSaveEdit} variant="primary" size="sm" icon="check">
+                Save
+              </Button>
             ) : (
               <>
-                <Pressable
+                <IconButton
+                  icon={isCopied ? 'check' : 'copy'}
+                  label="Copy"
                   onPress={onCopy}
-                  className="w-11 h-11 rounded-full bg-surface items-center justify-center border border-border/50 active:opacity-70"
-                >
-                  {isCopied ? (
-                    <Check size={16} color={colors.accent} />
-                  ) : (
-                    <Copy size={16} color={colors.fgTertiary} />
-                  )}
-                </Pressable>
-                <Pressable
-                  onPress={onShare}
-                  className="w-11 h-11 rounded-full bg-surface items-center justify-center border border-border/50 active:opacity-70"
-                >
-                  <Share2 size={17} color={colors.fg} />
-                </Pressable>
-                <Pressable
-                  onPress={() => setIsEditing(true)}
-                  className="w-11 h-11 rounded-full bg-surface items-center justify-center border border-border/50 active:opacity-70"
-                >
-                  <Pencil size={16} color={colors.fgTertiary} />
-                </Pressable>
-                <Pressable
-                  onPress={handleDelete}
-                  className="w-11 h-11 rounded-full bg-error/10 items-center justify-center active:opacity-70"
-                >
-                  <Trash2 size={17} color={colors.error} />
-                </Pressable>
+                />
+                <IconButton icon="share" label="Share" onPress={onShare} />
+                <IconButton icon="pencil" label="Edit" onPress={() => setIsEditing(true)} />
+                <IconButton icon="trash" label="Delete" variant="danger" onPress={handleDelete} />
               </>
             )}
           </View>
@@ -359,10 +315,7 @@ export default function ItemDetailScreen() {
         >
           {/* Pending banner */}
           {item.pending && (
-            <MotiView
-              from={{ opacity: 0, translateY: -8 }}
-              animate={{ opacity: 1, translateY: 0 }}
-              transition={{ type: 'timing', duration: 400 }}
+            <MotiView {...enter.rise(0, -8)}
               className="mx-6 mb-2 rounded-[12px] bg-accent-warm/10 border border-accent-warm/30 p-4 flex-row items-center justify-between"
             >
               <View className="flex-1 mr-3">
@@ -388,18 +341,19 @@ export default function ItemDetailScreen() {
           )}
 
           {/* Title, Category & Metadata */}
-          <MotiView
-            from={{ opacity: 0, translateY: 16 }}
-            animate={{ opacity: 1, translateY: 0 }}
-            transition={{ type: 'timing', duration: 500 }}
+          <MotiView {...enter.rise(0)}
             className="px-6 py-6"
           >
             {/* Category & Status */}
             <View className="flex-row items-center gap-2 mb-3">
-              <CategoryPill category={item.category} size="md" />
-              <StatusBadge status={item.status} size="md" />
+              <Pill tone={categories[item.category].color} size="md">
+                {categories[item.category].label}
+              </Pill>
+              <Pill tone={statusColors[item.status].color} size="md">
+                {statusColors[item.status].label}
+              </Pill>
               <View className="flex-row items-center ml-auto">
-                <Clock size={13} color={colors.accent} />
+                <Icon name="clock" size={13} color={colors.accent} />
                 <Text className="font-sans-medium text-xs text-accent ml-1.5">
                   {formatDistanceToNow(item.updatedAt)} ago
                 </Text>
@@ -418,13 +372,17 @@ export default function ItemDetailScreen() {
                   contentContainerStyle={{ gap: 6 }}
                 >
                   {CATEGORY_LIST.map((cat) => (
-                    <CategoryPill
+                    <Pill
                       key={cat}
-                      category={cat}
+                      tone={categories[cat].color}
                       size="md"
+                      dot={false}
+                      outline={item.category !== cat}
                       selected={item.category === cat}
                       onPress={() => updateItem(item.id, { category: cat })}
-                    />
+                    >
+                      {categories[cat].label}
+                    </Pill>
                   ))}
                 </ScrollView>
               </View>
@@ -489,67 +447,43 @@ export default function ItemDetailScreen() {
             const hasAnyAction = hasResume || hasPause || hasDone || hasArchive;
             if (!hasAnyAction) return null;
             return (
-              <MotiView
-                from={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                transition={{ type: 'timing', duration: 400, delay: 100 }}
+              <MotiView {...enter.fade(1)}
                 className="px-6 mb-4"
               >
                 <View className="flex-row gap-2">
                   {hasResume && (
-                    <Pressable
+                    <Button
+                      variant="tonal"
+                      size="sm"
+                      icon="play"
+                      className="flex-1"
                       onPress={() => {
                         // Speak the re-brief before flipping status, so the
                         // script reflects how long the item sat untouched.
                         rebrief.start(item);
                         resumeItem(item.id);
                       }}
-                      className="flex-1 flex-row items-center justify-center py-2.5 rounded-xl bg-accent/10 active:bg-accent/20"
                     >
-                      <Play size={14} color={colors.accent} strokeWidth={2} />
-                      <Text className="font-sans-medium text-xs text-accent ml-1.5">
-                        Resume
-                      </Text>
-                    </Pressable>
+                      Resume
+                    </Button>
                   )}
                   {hasPause && (
-                    <Pressable
-                      onPress={() => pauseItem(item.id)}
-                      className="flex-1 flex-row items-center justify-center py-2.5 rounded-xl bg-surface-warm active:opacity-70"
-                    >
-                      <Pause size={14} color={statusColors.paused.color} strokeWidth={2} />
-                      <Text className="font-sans-medium text-xs text-fg-muted ml-1.5">
-                        Pause
-                      </Text>
-                    </Pressable>
+                    <Button variant="quiet" size="sm" icon="pause" className="flex-1" onPress={() => pauseItem(item.id)}>
+                      Pause
+                    </Button>
                   )}
                   {hasDone && (
-                    <Pressable
-                      onPress={() => completeItem(item.id)}
-                      className="flex-1 flex-row items-center justify-center py-2.5 rounded-xl bg-surface-warm active:opacity-70"
-                    >
-                      <CheckCircle size={14} color={statusColors.completed.color} strokeWidth={2} />
-                      <Text className="font-sans-medium text-xs text-fg-muted ml-1.5">
-                        Done
-                      </Text>
-                    </Pressable>
+                    <Button variant="quiet" size="sm" icon="check" className="flex-1" onPress={() => completeItem(item.id)}>
+                      Done
+                    </Button>
                   )}
-                  <Pressable
-                    onPress={() =>
-                      rebrief.state === 'idle' ? rebrief.start(item) : rebrief.stop()
-                    }
-                    accessibilityLabel="Play spoken re-brief"
-                    className="flex-row items-center justify-center py-2.5 px-4 rounded-xl bg-accent/10 active:opacity-70"
-                  >
-                    <Volume2 size={14} color={colors.accent} strokeWidth={2} />
-                  </Pressable>
+                  <IconButton
+                    icon="volume"
+                    label="Play spoken re-brief"
+                    onPress={() => (rebrief.state === 'idle' ? rebrief.start(item) : rebrief.stop())}
+                  />
                   {hasArchive && (
-                    <Pressable
-                      onPress={() => archiveItem(item.id)}
-                      className="flex-row items-center justify-center py-2.5 px-4 rounded-xl active:opacity-70"
-                    >
-                      <Archive size={14} color={colors.fgTertiary} strokeWidth={2} />
-                    </Pressable>
+                    <IconButton icon="archive" label="Archive" variant="bare" onPress={() => archiveItem(item.id)} />
                   )}
                 </View>
               </MotiView>
@@ -558,10 +492,7 @@ export default function ItemDetailScreen() {
 
           {/* ─── Re-brief player pill ─────────────────── */}
           {rebrief.state !== 'idle' && (
-            <MotiView
-              from={{ opacity: 0, translateY: -6 }}
-              animate={{ opacity: 1, translateY: 0 }}
-              transition={{ type: 'timing', duration: 300 }}
+            <MotiView {...enter.rise(0, -6)}
               className="px-6 mb-4"
             >
               <Pressable
@@ -574,9 +505,9 @@ export default function ItemDetailScreen() {
                 ) : (
                   <MotiView
                     animate={{ opacity: [0.4, 1, 0.4] }}
-                    transition={{ type: 'timing', duration: 1400, loop: true }}
+                    transition={{ type: 'timing', duration: 1400, loop: true, easing: EASE_IN_OUT }}
                   >
-                    <Volume2 size={16} color={colors.accent} />
+                    <Icon name="volume" size={16} color={colors.accent} />
                   </MotiView>
                 )}
                 <Text className="flex-1 font-sans-medium text-xs text-accent ml-3">
@@ -584,16 +515,13 @@ export default function ItemDetailScreen() {
                     ? 'Preparing your re-brief…'
                     : 'Briefing you back in — tap to stop'}
                 </Text>
-                <X size={14} color={colors.accent} />
+                <Icon name="x" size={14} color={colors.accent} />
               </Pressable>
             </MotiView>
           )}
 
           {/* ─── Where Left Off & Next Step ──────────── */}
-          <MotiView
-            from={{ opacity: 0, translateY: 12 }}
-            animate={{ opacity: 1, translateY: 0 }}
-            transition={{ type: 'timing', duration: 400, delay: 150 }}
+          <MotiView {...enter.rise(1)}
             className="px-6 mb-4"
           >
             {isEditing ? (
@@ -607,7 +535,7 @@ export default function ItemDetailScreen() {
                     onChangeText={setEditWhereLeftOff}
                     placeholder="e.g. Halfway through chapter 3..."
                     placeholderTextColor={colors.fgTertiary}
-                    className="font-sans text-sm text-fg py-2.5 px-3.5 rounded-xl bg-surface-warm/50 border border-border/30"
+                    className="font-sans text-sm text-fg py-2.5 px-3.5 rounded-md bg-surface-warm/50 border border-border/30"
                     selectionColor={colors.accent}
                   />
                 </View>
@@ -620,7 +548,7 @@ export default function ItemDetailScreen() {
                     onChangeText={setEditNextStep}
                     placeholder="e.g. Call the plumber..."
                     placeholderTextColor={colors.fgTertiary}
-                    className="font-sans text-sm text-fg py-2.5 px-3.5 rounded-xl bg-surface-warm/50 border border-border/30"
+                    className="font-sans text-sm text-fg py-2.5 px-3.5 rounded-md bg-surface-warm/50 border border-border/30"
                     selectionColor={colors.accent}
                   />
                 </View>
@@ -642,7 +570,7 @@ export default function ItemDetailScreen() {
                 )}
                 {item.nextStep && (
                   <View className="flex-row items-start bg-accent/5 rounded-2xl p-4 border border-accent/10">
-                    <ArrowRight size={14} color={colors.accent} style={{ marginTop: 2 }} />
+                    <Icon name="arrowRight" size={14} color={colors.accent} />
                     <View className="flex-1 ml-2.5">
                       <Text className="font-sans-medium text-[10px] text-accent tracking-wider uppercase mb-1">
                         Next step
@@ -659,10 +587,7 @@ export default function ItemDetailScreen() {
 
           {/* ─── Checklist ────────────────────────────── */}
           {item.type === 'checklist' && item.checklistItems && (
-            <MotiView
-              from={{ opacity: 0, translateY: 12 }}
-              animate={{ opacity: 1, translateY: 0 }}
-              transition={{ type: 'timing', duration: 400, delay: 200 }}
+            <MotiView {...enter.rise(1)}
               className="px-6 mb-4"
             >
               <Text className="font-sans-medium text-lg text-fg mb-4">Checklist</Text>
@@ -679,31 +604,19 @@ export default function ItemDetailScreen() {
           )}
 
           {/* ─── Smart Digest Section ──────────────────── */}
-          <MotiView
-            from={{ opacity: 0, translateY: 16 }}
-            animate={{ opacity: 1, translateY: 0 }}
-            transition={{ type: 'timing', duration: 500, delay: 250 }}
+          <MotiView {...enter.rise(2)}
             className="px-6 py-6"
           >
             <View className="flex-row justify-between items-center mb-6">
               <View className="flex-row items-center">
-                <Sparkles size={18} color={colors.accent} />
+                <Icon name="sparkles" size={18} color={colors.accent} />
                 <Text className="text-lg font-sans-medium text-fg ml-2">Smart Digest</Text>
               </View>
 
               {!item.aiSummary && !item.pending && (
-                <ZenButton
-                  onPress={handleGenerateReport}
-                  disabled={isGenerating}
-                  title={isGenerating ? 'Thinking...' : 'Generate'}
-                  variant="primary"
-                  size="sm"
-                  icon={
-                    isGenerating ? (
-                      <ActivityIndicator color={colors.accentInk} size="small" />
-                    ) : undefined
-                  }
-                />
+                <Button onPress={handleGenerateReport} disabled={isGenerating} variant="primary" size="sm">
+                  {isGenerating ? 'Thinking...' : 'Generate'}
+                </Button>
               )}
             </View>
 
@@ -712,7 +625,13 @@ export default function ItemDetailScreen() {
                 <MotiView
                   from={{ opacity: 0.4 }}
                   animate={{ opacity: 1 }}
-                  transition={{ type: 'timing', duration: 1200, loop: true }}
+                  transition={{
+                    type: 'timing',
+                    duration: 1200,
+                    loop: true,
+                    repeatReverse: true,
+                    easing: EASE_IN_OUT,
+                  }}
                 >
                   <Text className="text-3xl mb-4">✨</Text>
                 </MotiView>
@@ -724,7 +643,7 @@ export default function ItemDetailScreen() {
 
             {!isGenerating && !item.aiSummary && (
               <View className="py-12 items-center rounded-[16px] border border-dashed border-border bg-surface/50">
-                <Sparkles size={28} color={colors.fgTertiary} strokeWidth={1.5} />
+                <Icon name="sparkles" size={28} color={colors.fgTertiary} stroke={1.5} />
                 <Text className="font-sans text-sm text-fg-muted text-center px-8 mt-3">
                   {item.pending
                     ? 'Digest will be generated once this note is processed.'
@@ -734,21 +653,18 @@ export default function ItemDetailScreen() {
             )}
 
             {item.aiSummary && (
-              <MotiView
-                from={{ opacity: 0, translateY: 16 }}
-                animate={{ opacity: 1, translateY: 0 }}
-                transition={{ type: 'timing', duration: 500 }}
+              <MotiView {...enter.rise(0)}
                 className="gap-5"
               >
                 {/* Where you left off (AI) */}
-                <ZenCard variant="warm" animated={false}>
+                <Card variant="tinted" animated={false}>
                   <Text className="font-sans-medium text-xs text-accent mb-3 tracking-wide">
                     AI analysis
                   </Text>
-                  <Text className="font-sans-medium text-xl text-fg leading-relaxed">
+                  <Text className="font-display text-heading text-fg leading-relaxed">
                     “{item.aiSummary.leftOff ?? 'No summary available.'}”
                   </Text>
-                </ZenCard>
+                </Card>
 
                 {/* Next Steps */}
                 <View>
@@ -798,10 +714,7 @@ export default function ItemDetailScreen() {
           </MotiView>
 
           {/* ─── Raw Content ─────────────────────────── */}
-          <MotiView
-            from={{ opacity: 0, translateY: 16 }}
-            animate={{ opacity: 1, translateY: 0 }}
-            transition={{ type: 'timing', duration: 500, delay: 300 }}
+          <MotiView {...enter.rise(2)}
             className="px-6 pb-24 mt-4"
           >
             <Text className="font-sans-medium text-lg text-fg mb-4">Your notes</Text>

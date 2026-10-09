@@ -4,7 +4,7 @@ import { Bold, ListChecks, Type } from 'lucide-react-native';
 import { MotiView } from 'moti';
 
 import { useThemeColors } from '@/hooks/use-theme';
-import { EASE_OUT } from '@/utils/motion';
+import { useEnter } from '@/utils/motion';
 
 export interface TextSelection {
   start: number;
@@ -102,6 +102,7 @@ export function EditorToolbar({
   onToggleChecklist,
 }: EditorToolbarProps) {
   const colors = useThemeColors();
+  const enter = useEnter();
   const [showFormat, setShowFormat] = React.useState(false);
 
   const activeBg = colors.primaryContainer;
@@ -110,10 +111,7 @@ export function EditorToolbar({
   return (
     <View>
       {showFormat && (
-        <MotiView
-          from={{ opacity: 0, translateY: 6 }}
-          animate={{ opacity: 1, translateY: 0 }}
-          transition={{ type: 'timing', duration: 180, easing: EASE_OUT }}
+        <MotiView {...enter.rise(0, 6)}
           style={styles.formatRow}
         >
           <Pressable

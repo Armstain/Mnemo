@@ -6,6 +6,7 @@ import type { MnemoItem, Category, ItemStatus } from '@/types/mnemo';
 import { migrateStoredData } from '@/utils/migration';
 import { initDb, countItems, getAllItems, insertItem, insertItems, updatePartialItem, deleteItemRow, deleteAllItems } from '@/lib/db';
 import { deleteAllRecordings } from '@/lib/capture';
+import { syncReminderForItem, cancelReminder, cancelAllReminders } from '@/lib/reminders';
 import { UNDO_WINDOW_MS } from '@/hooks/use-undo-toast';
 
 // ─── Legacy storage keys ────────────────────────────────────────
@@ -167,6 +168,15 @@ export function MnemoStoreProvider({ children }: { children: React.ReactNode }) 
     load();
   }, []);
 
+  // Mirrors `items` for CRUD callbacks that need to read the current list
+  // without depending on it (which would break their stable `[]` identity)
+  // — e.g. updateItem needs the pre-update item to decide whether to
+  // (re)schedule a reminder, but only receives a partial update.
+  const itemsRef = useRef<MnemoItem[]>(items);
+  useEffect(() => {
+    itemsRef.current = items;
+  }, [items]);
+
   // ─── CRUD ───────────────────────────────────────────────────
   const addItem = useCallback(
     (item: Omit<MnemoItem, 'id' | 'createdAt' | 'updatedAt'>): MnemoItem => {
@@ -179,6 +189,7 @@ export function MnemoStoreProvider({ children }: { children: React.ReactNode }) 
       };
       setItems((prev) => [newItem, ...prev]);
       insertItem(newItem).catch((e) => console.error('Failed to persist new item', e));
+      syncReminderForItem(newItem);
       return newItem;
     },
     [],
@@ -194,6 +205,14 @@ export function MnemoStoreProvider({ children }: { children: React.ReactNode }) 
     updatePartialItem(id, { ...updates, updatedAt }).catch((e) =>
       console.error('Failed to persist item update', e),
     );
+
+    // Only re-sync the reminder when a field it actually depends on
+    // changed — avoids a redundant cancel+reschedule round trip on every
+    // unrelated edit (title tweak, category change, etc).
+    if ('dueDate' in updates || 'status' in updates || 'title' in updates) {
+      const current = itemsRef.current.find((item) => item.id === id);
+      if (current) syncReminderForItem({ ...current, ...updates });
+    }
   }, []);
 
   // Snapshots of items pulled out of view by deleteItem, keyed by id, so
@@ -210,6 +229,9 @@ export function MnemoStoreProvider({ children }: { children: React.ReactNode }) 
       if (found) removedItemsRef.current[id] = found;
       return prev.filter((item) => item.id !== id);
     });
+    // Cancel immediately, matching "removed from view" — undoDelete
+    // reschedules it if the item comes back within the grace window.
+    cancelReminder(id);
 
     deleteTimersRef.current[id] = setTimeout(() => {
       delete removedItemsRef.current[id];
@@ -228,6 +250,7 @@ export function MnemoStoreProvider({ children }: { children: React.ReactNode }) 
     delete removedItemsRef.current[id];
 
     setItems((prev) => (prev.some((item) => item.id === id) ? prev : [restored, ...prev]));
+    syncReminderForItem(restored);
   }, []);
 
   const clearAllData = useCallback(async () => {
@@ -240,6 +263,7 @@ export function MnemoStoreProvider({ children }: { children: React.ReactNode }) 
 
     await deleteAllItems();
     deleteAllRecordings();
+    await cancelAllReminders();
     setItems([]);
   }, []);
 

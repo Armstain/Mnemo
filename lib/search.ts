@@ -14,9 +14,24 @@ const RRF_K = 60;
 // that keyword search found precisely.
 const VECTOR_TOP_K = 30;
 
+// Query-to-document cosine similarity has a high floor — it is NOT close
+// to 0 for unrelated content, because query/document embeddings share
+// general language structure regardless of topic. Calibrated against
+// gemini-embedding-2 (768 dims, RETRIEVAL_QUERY vs RETRIEVAL_DOCUMENT):
+// clearly unrelated notes scored 0.56-0.62, a strongly relevant note
+// scored 0.75. Below this floor, *everything* embedded scores as a
+// "match" regardless of topic — which is exactly the bug where searching
+// "software" surfaced unrelated notes: with no threshold, `vectorRank`
+// returned its top 30 by score no matter how low that score was, and
+// those all entered the RRF fusion below. Biased toward precision (fewer
+// false positives) since BM25 already catches literal keyword matches
+// that this filters out — nothing is lost, only the weak semantic boost.
+const QUERY_MIN_SIMILARITY = 0.65;
+
 /**
- * Ranks items by embedding similarity to the query, best first. Returns
- * `[]` — never throws — if there are no vectors yet or the query embed
+ * Ranks items by embedding similarity to the query, best first, excluding
+ * anything below `QUERY_MIN_SIMILARITY`. Returns `[]` — never throws — if
+ * there are no vectors yet, nothing clears the bar, or the query embed
  * fails (offline, rate-limited); `hybridSearch` degrades to pure BM25 in
  * that case, same as the rest of the AI layer's contract.
  */
@@ -32,7 +47,7 @@ async function vectorRank(query: string, items: MnemoItem[]): Promise<MnemoItem[
       const item = byId.get(row.itemId);
       return item ? { doc: item, score: dot(queryVector, fromBlob(row.vector)) } : null;
     })
-    .filter((x): x is { doc: MnemoItem; score: number } => x !== null)
+    .filter((x): x is { doc: MnemoItem; score: number } => x !== null && x.score >= QUERY_MIN_SIMILARITY)
     .sort((a, b) => b.score - a.score)
     .slice(0, VECTOR_TOP_K)
     .map(({ doc }) => doc);
@@ -83,6 +98,17 @@ export async function hybridSearch(query: string, items: MnemoItem[]): Promise<M
   return reciprocalRankFusion([keywordRanking, semanticRanking]);
 }
 
+// Note-to-note (document-document) similarity is noisier than
+// query-to-document: calibrated samples showed a genuinely related pair
+// scoring as low as 0.60 while an unrelated pair scored 0.61 — the two
+// distributions overlap, so no single cutoff cleanly separates them for
+// short, topically-varied notes. 0.75 (the original value here) was
+// higher than every related sample observed, meaning this almost never
+// matched anything. Set low enough to admit real matches; `limit` below
+// is what actually keeps this useful — ranking (closest few notes) is
+// more reliable than an absolute quality gate in this embedding space.
+const DOC_MIN_SIMILARITY = 0.6;
+
 /**
  * Related notes for the detail screen: nearest neighbors by embedding
  * similarity, excluding the note itself. Returns `[]` if the note has no
@@ -94,7 +120,7 @@ export async function relatedItems(
   itemId: string,
   items: MnemoItem[],
   limit = 5,
-  minSimilarity = 0.75,
+  minSimilarity = DOC_MIN_SIMILARITY,
 ): Promise<MnemoItem[]> {
   try {
     const rows = await getAllEmbeddings();

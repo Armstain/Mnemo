@@ -1,5 +1,13 @@
-import { Inter_400Regular, Inter_500Medium, Inter_600SemiBold } from '@expo-google-fonts/inter';
-import { Lora_700Bold } from '@expo-google-fonts/lora';
+import {
+  InstrumentSans_400Regular,
+  InstrumentSans_500Medium,
+  InstrumentSans_600SemiBold,
+} from '@expo-google-fonts/instrument-sans';
+import {
+  Literata_400Regular,
+  Literata_400Regular_Italic,
+  Literata_500Medium,
+} from '@expo-google-fonts/literata';
 import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native';
 import { useFonts } from 'expo-font';
 import { router, Stack } from 'expo-router';
@@ -10,6 +18,7 @@ import { LogBox, Platform } from 'react-native';
 import 'react-native-reanimated';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
+import * as Notifications from 'expo-notifications';
 import "../global.css";
 
 // moti still bundles an unused MotiSafeAreaView built on RN's deprecated
@@ -29,6 +38,19 @@ import { loadStoredApiKey } from '@/lib/api-key';
 
 // Load stored API key early on app start
 loadStoredApiKey();
+
+// Reminders (lib/reminders.ts) are scheduled local notifications — this
+// controls how one is presented if it fires while the app is already
+// open in the foreground (otherwise, on some platforms, it would be
+// silently swallowed instead of shown).
+Notifications.setNotificationHandler({
+  handleNotification: async () => ({
+    shouldShowBanner: true,
+    shouldShowList: true,
+    shouldPlaySound: true,
+    shouldSetBadge: false,
+  }),
+});
 
 export {
   // Catch any errors thrown by the Layout component.
@@ -76,10 +98,12 @@ export const NavThemes = {
 
 export default function RootLayout() {
   const [loaded, error] = useFonts({
-    Lora_700Bold,
-    Inter_400Regular,
-    Inter_500Medium,
-    Inter_600SemiBold,
+    Literata_400Regular,
+    Literata_400Regular_Italic,
+    Literata_500Medium,
+    InstrumentSans_400Regular,
+    InstrumentSans_500Medium,
+    InstrumentSans_600SemiBold,
   });
 
   useEffect(() => {
@@ -117,6 +141,17 @@ function RootLayoutNav() {
         // Fail open — show main app if storage unavailable.
       }
     })();
+  }, []);
+
+  // Tapping a reminder opens the note it was set for — the scheduled
+  // notification's identifier is always the item's id (see
+  // syncReminderForItem in lib/reminders.ts), so no lookup table is needed.
+  useEffect(() => {
+    const subscription = Notifications.addNotificationResponseReceivedListener((response) => {
+      const itemId = response.notification.request.identifier;
+      if (itemId) router.push(`/(tabs)/context?id=${itemId}` as any);
+    });
+    return () => subscription.remove();
   }, []);
 
   return (

@@ -1,16 +1,27 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Alert, View, Pressable, StyleSheet, Text, GestureResponderEvent } from 'react-native';
-import { Mic, SquarePen, X, Trash2, Check } from 'lucide-react-native';
+import { SquarePen } from 'lucide-react-native';
 import { MotiView, AnimatePresence } from 'moti';
+import { Easing } from 'react-native-reanimated';
 import * as Haptics from 'expo-haptics';
 import { useAudioRecorderState, type AudioRecorder } from 'expo-audio';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 
 import { useThemeColors } from '@/hooks/use-theme';
+import { Icon } from '@/components/ui/Icon';
 import { useReduceMotion } from '@/hooks/use-accessibility-motion';
 import { useQuickRecording } from '@/hooks/use-quick-recording';
-import { EASE_OUT } from '@/utils/motion';
+import {
+  DUR_BASE,
+  DUR_FAST,
+  EASE_IN_OUT,
+  EASE_OUT,
+  EXIT_QUICK,
+  PRESS_SCALE,
+  REDUCED,
+  SPRING_NAV,
+} from '@/utils/motion';
 import { formatDuration } from '@/utils/time';
 import { NAV_BAR_HEIGHT } from '@/components/ui/FloatingTabBar';
 
@@ -29,7 +40,6 @@ const CANCEL_EXIT_PX = 40;
 // before it disappears on its own.
 const TAIL_MS = 650;
 
-const SPRING = { type: 'spring' as const, damping: 20, stiffness: 260, mass: 0.6 };
 
 type HoldPhase = 'idle' | 'charging' | 'recording' | 'cancelling';
 type OverlayTail = 'finishing' | 'saved' | 'discarded' | null;
@@ -45,7 +55,7 @@ type OverlayTail = 'finishing' | 'saved' | 'discarded' | null;
  * messages. Sliding up while held arms "release to cancel", same as those
  * apps' slide-to-cancel gesture.
  */
-export function ActionCluster() {
+export function ActionCluster({ visible = true }: { visible?: boolean }) {
   const insets = useSafeAreaInsets();
   const colors = useThemeColors();
   const reduceMotion = useReduceMotion();
@@ -86,17 +96,30 @@ export function ActionCluster() {
     setHoldPhase(phase);
   };
 
+  // Hidden rather than unmounted (see the `visible` prop on the call site in
+  // app/(tabs)/_layout.tsx): unmounting replayed the whole entrance every
+  // time you came back from a detail screen, which is a navigation the user
+  // makes dozens of times a session.
   const entrance = reduceMotion
     ? {
         from: { opacity: 0 },
-        animate: { opacity: 1 },
-        transition: { type: 'timing' as const, duration: 200, easing: EASE_OUT },
+        animate: { opacity: visible ? 1 : 0 },
+        transition: REDUCED,
       }
     : {
         from: { opacity: 0, translateY: 24, scale: 0.9 },
-        animate: { opacity: 1, translateY: 0, scale: 1 },
-        transition: { type: 'timing' as const, duration: 300, delay: 80, easing: EASE_OUT },
+        animate: {
+          opacity: visible ? 1 : 0,
+          translateY: visible ? 0 : 24,
+          scale: visible ? 1 : 0.9,
+        },
+        transition: { type: 'timing' as const, duration: DUR_BASE, easing: EASE_OUT },
       };
+
+  // A hidden cluster must not keep an open menu (or a live hold) behind it.
+  useEffect(() => {
+    if (!visible) setExpanded(false);
+  }, [visible]);
 
   const closeMenu = () => setExpanded(false);
 
@@ -270,11 +293,13 @@ export function ActionCluster() {
       )}
 
       <View
-        pointerEvents="box-none"
+        pointerEvents={visible ? 'box-none' : 'none'}
+        accessibilityElementsHidden={!visible}
+        importantForAccessibility={visible ? 'auto' : 'no-hide-descendants'}
         className="absolute bottom-0 right-0 z-50 items-end"
         style={{
           paddingRight: 16,
-          paddingBottom: insets.bottom + NAV_BAR_HEIGHT + 16,
+          paddingBottom: insets.bottom + NAV_BAR_HEIGHT + 28,
         }}
       >
         <MotiView {...entrance} style={styles.stack}>
@@ -295,7 +320,7 @@ export function ActionCluster() {
               <MiniAction
                 key="record"
                 label="Record"
-                icon={<Mic size={20} color={colors.onPrimaryContainer} strokeWidth={2.2} />}
+                icon={<Icon name="mic" size={20} color={colors.onPrimaryContainer} stroke={2.2} />}
                 bg={colors.primaryContainer}
                 delay={60}
                 reduceMotion={reduceMotion}
@@ -361,35 +386,38 @@ export function ActionCluster() {
               style={styles.mainFabTouchable}
             >
               <MotiView
-                animate={{ backgroundColor: fabTint, scale: holdPhase === 'idle' ? 1 : 0.94 }}
-                transition={{ type: 'timing', duration: 180 }}
+                animate={{ backgroundColor: fabTint, scale: holdPhase === 'idle' ? 1 : PRESS_SCALE }}
+                transition={{ type: 'timing', duration: DUR_FAST, easing: EASE_OUT }}
                 style={styles.mainFab}
               >
                 <MotiView
                   animate={{ opacity: iconMode === 'mic' ? 1 : 0, scale: iconMode === 'mic' ? 1 : 0.5 }}
-                  transition={reduceMotion ? { type: 'timing', duration: 150 } : SPRING}
+                  transition={reduceMotion ? REDUCED : SPRING_NAV}
                   style={StyleSheet.absoluteFillObject}
                 >
                   <View style={styles.iconCenter}>
-                    <Mic size={26} color={fabInk} strokeWidth={2.2} />
+                    {/* Plus, not mic — the closed FAB leads to both a Record
+                        and a Note option, so its resting icon shouldn't
+                        imply audio-only. */}
+                    <Icon name="plus" size={26} color={fabInk} stroke={2.4} />
                   </View>
                 </MotiView>
                 <MotiView
                   animate={{ opacity: iconMode === 'close' ? 1 : 0, scale: iconMode === 'close' ? 1 : 0.5 }}
-                  transition={reduceMotion ? { type: 'timing', duration: 150 } : SPRING}
+                  transition={reduceMotion ? REDUCED : SPRING_NAV}
                   style={StyleSheet.absoluteFillObject}
                 >
                   <View style={styles.iconCenter}>
-                    <X size={26} color={fabInk} strokeWidth={2.4} />
+                    <Icon name="x" size={26} color={fabInk} stroke={2.4} />
                   </View>
                 </MotiView>
                 <MotiView
                   animate={{ opacity: iconMode === 'cancel' ? 1 : 0, scale: iconMode === 'cancel' ? 1 : 0.5 }}
-                  transition={reduceMotion ? { type: 'timing', duration: 150 } : SPRING}
+                  transition={reduceMotion ? REDUCED : SPRING_NAV}
                   style={StyleSheet.absoluteFillObject}
                 >
                   <View style={styles.iconCenter}>
-                    <Trash2 size={24} color={fabInk} strokeWidth={2.2} />
+                    <Icon name="trash" size={24} color={fabInk} stroke={2.2} />
                   </View>
                 </MotiView>
               </MotiView>
@@ -453,13 +481,13 @@ function RecordingOverlay({
         from: { opacity: 0 },
         animate: { opacity: 1 },
         exit: { opacity: 0 },
-        transition: { type: 'timing' as const, duration: 150 },
+        transition: REDUCED,
       }
     : {
         from: { opacity: 0, translateY: 6, scale: 0.9 },
         animate: { opacity: 1, translateY: 0, scale: 1 },
         exit: { opacity: 0, translateY: 4, scale: 0.94 },
-        transition: SPRING,
+        transition: SPRING_NAV,
       };
 
   return (
@@ -473,15 +501,21 @@ function RecordingOverlay({
                 animate={{ opacity: reduceMotion ? 0.9 : 1 }}
                 transition={
                   reduceMotion
-                    ? { type: 'timing', duration: 200 }
-                    : { type: 'timing', duration: 650, loop: true }
+                    ? REDUCED
+                    : {
+                        type: 'timing',
+                        duration: 650,
+                        loop: true,
+                        repeatReverse: true,
+                        easing: EASE_IN_OUT,
+                      }
                 }
                 style={[styles.recDot, { backgroundColor: tint }]}
               />
             )}
-            {tail === 'saved' && <Check size={12} color={tint} strokeWidth={2.6} />}
+            {tail === 'saved' && <Icon name="check" size={12} color={tint} stroke={2.6} />}
             {(tail === 'discarded' || cancelling) && (
-              <Trash2 size={11} color={tint} strokeWidth={2.4} />
+              <Icon name="trash" size={11} color={tint} stroke={2.4} />
             )}
             <Text
               className="font-sans-semi text-[10px] uppercase tracking-wider"
@@ -505,7 +539,7 @@ function RecordingOverlay({
                 <MotiView
                   key={i}
                   animate={{ scaleY: level }}
-                  transition={{ type: 'timing', duration: 80 }}
+                  transition={{ type: 'timing', duration: 80, easing: Easing.linear }}
                   style={[styles.bar, { backgroundColor: tint, transformOrigin: 'bottom' } as any]}
                 />
               );
@@ -543,13 +577,14 @@ function MiniAction({
         from: { opacity: 0 },
         animate: { opacity: 1 },
         exit: { opacity: 0 },
-        transition: { type: 'timing' as const, duration: 150 },
+        transition: REDUCED,
       }
     : {
-        from: { opacity: 0, translateY: 12, scale: 0.7 },
+        from: { opacity: 0, translateY: 12, scale: 0.92 },
         animate: { opacity: 1, translateY: 0, scale: 1 },
-        exit: { opacity: 0, translateY: 8, scale: 0.7 },
-        transition: { ...SPRING, delay },
+        exit: { opacity: 0, translateY: 8, scale: 0.94 },
+        transition: { ...SPRING_NAV, delay },
+        exitTransition: { ...EXIT_QUICK, delay: 0 },
       };
 
   return (

@@ -1,19 +1,19 @@
 import React, { useState, useMemo, useCallback, useEffect } from 'react';
 import { View, Text, ScrollView } from 'react-native';
 import { router } from 'expo-router';
-import { Clock, Sparkles } from 'lucide-react-native';
 import { MotiView } from 'moti';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { NoteRow } from '@/components/ui/NoteRow';
 import { NoteListSkeleton } from '@/components/ui/NoteListSkeleton';
 import { SearchBar } from '@/components/SearchBar';
+import { Icon } from '@/components/ui/Icon';
 import { NAV_CLEARANCE } from '@/components/ui/FloatingTabBar';
 import { useMnemoStore } from '@/hooks/use-mnemo-store';
 import { useThemeColors } from '@/hooks/use-theme';
 import { bm25Search } from '@/lib/bm25';
 import { hybridSearch } from '@/lib/search';
-import { EASE_OUT } from '@/utils/motion';
+import { useEnter } from '@/utils/motion';
 import type { MnemoItem } from '@/types/mnemo';
 
 // Debounce before the semantic (network) half of search fires.
@@ -24,6 +24,7 @@ const SEMANTIC_DEBOUNCE_MS = 300;
  * Distinct from Library's browse/filter approach — this is pure search-first.
  */
 export default function SearchScreen() {
+  const enter = useEnter();
   const { items, isLoaded } = useMnemoStore();
   const [query, setQuery] = useState('');
   const insets = useSafeAreaInsets();
@@ -84,20 +85,14 @@ export default function SearchScreen() {
   return (
     <View className="flex-1" style={{ paddingTop: insets.top + 16 }}>
       {/* Header */}
-      <MotiView
-        from={{ opacity: 0, translateY: 12 }}
-        animate={{ opacity: 1, translateY: 0 }}
-        transition={{ type: 'timing', duration: 400, easing: EASE_OUT }}
+      <MotiView {...enter.rise(0)}
         className="px-6 mb-4"
       >
-        <Text className="text-3xl font-serif text-fg">Search</Text>
+        <Text className="text-display font-display text-fg">Search</Text>
       </MotiView>
 
       {/* Search Input */}
-      <MotiView
-        from={{ opacity: 0, scale: 0.98 }}
-        animate={{ opacity: 1, scale: 1 }}
-        transition={{ type: 'timing', duration: 400, delay: 80, easing: EASE_OUT }}
+      <MotiView {...enter.pop(1)}
         className="px-6 mb-4"
       >
         <SearchBar
@@ -122,13 +117,10 @@ export default function SearchScreen() {
             </Text>
 
             {results.length === 0 ? (
-              <MotiView
-                from={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                transition={{ type: 'timing', duration: 250, easing: EASE_OUT }}
+              <MotiView {...enter.fade(0)}
                 className="py-20 items-center"
               >
-                <Sparkles size={32} color={colors.fgTertiary} strokeWidth={1.5} />
+                <Icon name="sparkles" size={32} color={colors.fgTertiary} stroke={1.5} />
                 <Text className="font-sans text-sm mt-4 text-center text-fg-secondary">
                   No matches found for "{query}"
                 </Text>
@@ -142,6 +134,7 @@ export default function SearchScreen() {
                   key={item.id}
                   item={item}
                   index={index}
+                  stagger={false}
                   onPress={() => openItem(item)}
                 />
               ))
@@ -149,13 +142,10 @@ export default function SearchScreen() {
           </>
         ) : (
           /* ── Recent Activity ───────────────────────────── */
-          <MotiView
-            from={{ opacity: 0, translateY: 8 }}
-            animate={{ opacity: 1, translateY: 0 }}
-            transition={{ type: 'timing', duration: 400, delay: 150, easing: EASE_OUT }}
+          <MotiView {...enter.rise(2)}
           >
             <View className="flex-row items-center mb-2">
-              <Clock size={14} color={colors.fgTertiary} strokeWidth={2} />
+              <Icon name="clock" size={14} color={colors.fgTertiary} stroke={2} />
               <Text className="font-sans-medium text-xs ml-2 text-fg-tertiary">
                 Recent
               </Text>

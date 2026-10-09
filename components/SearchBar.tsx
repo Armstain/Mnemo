@@ -1,9 +1,11 @@
-import React from 'react';
-import { View, TextInput, Pressable } from 'react-native';
-import { Search, X } from 'lucide-react-native';
+import React, { useState } from 'react';
+import { TextInput, Pressable } from 'react-native';
+import { MotiView } from 'moti';
 
-import { Glass } from '@/components/ui/Glass';
+import { Icon } from '@/components/ui/Icon';
 import { useThemeColors } from '@/hooks/use-theme';
+import { useReduceMotion } from '@/hooks/use-accessibility-motion';
+import { DUR_TOGGLE, EASE_OUT, motion } from '@/utils/motion';
 
 interface SearchBarProps {
   value: string;
@@ -14,7 +16,7 @@ interface SearchBarProps {
   autoFocus?: boolean;
 }
 
-/** Theme-aware glass search input — one of the few glass chrome surfaces. */
+/** Theme-aware solid pill search input. */
 export const SearchBar = ({
   value,
   onChangeText,
@@ -24,30 +26,49 @@ export const SearchBar = ({
   autoFocus = false,
 }: SearchBarProps) => {
   const colors = useThemeColors();
+  const reduceMotion = useReduceMotion();
+  const [isFocused, setIsFocused] = useState(false);
 
   return (
-    <Glass radius={16} variant="subtle">
-      <View className={`flex-row items-center px-4 py-3 ${className}`}>
-        <Search size={18} color={colors.fgTertiary} strokeWidth={2} />
-        <TextInput
-          value={value}
-          onChangeText={onChangeText}
-          placeholder={placeholder}
-          placeholderTextColor={colors.fgTertiary}
-          className="flex-1 ml-3 font-sans text-[15px] pt-0.5 text-fg"
-          selectionColor={colors.accent}
-          autoFocus={autoFocus}
-        />
-        {value.length > 0 && (
-          <Pressable
-            onPress={onClear || (() => onChangeText(''))}
-            className="p-1"
-            hitSlop={8}
-          >
-            <X size={16} color={colors.fgSecondary} />
-          </Pressable>
-        )}
-      </View>
-    </Glass>
+    // Colour only — no travel, no scale — so this stays honest under Reduce
+    // Motion, where a colour change is exactly the kind of feedback the
+    // guidance says to keep. The field reads as waking up rather than
+    // snapping to a different set of colours between frames.
+    <MotiView
+      animate={{
+        backgroundColor: isFocused ? colors.surfaceLowest : colors.surface,
+        borderColor: isFocused ? colors.accent : colors.border,
+      }}
+      transition={motion(
+        { type: 'timing' as const, duration: DUR_TOGGLE, easing: EASE_OUT },
+        reduceMotion,
+      )}
+      className={`flex-row items-center rounded-full ${className}`}
+      style={{
+        gap: 10,
+        height: 48,
+        paddingHorizontal: 16,
+        borderWidth: 1,
+      }}
+    >
+      <Icon name="search" size={18} stroke={2} color={colors.fgTertiary} />
+      <TextInput
+        value={value}
+        onChangeText={onChangeText}
+        onFocus={() => setIsFocused(true)}
+        onBlur={() => setIsFocused(false)}
+        placeholder={placeholder}
+        placeholderTextColor={colors.fgTertiary}
+        className="flex-1 font-sans text-body"
+        style={{ color: colors.fg }}
+        selectionColor={colors.accent}
+        autoFocus={autoFocus}
+      />
+      {value.length > 0 && (
+        <Pressable onPress={onClear || (() => onChangeText(''))} hitSlop={8}>
+          <Icon name="x" size={16} color={colors.fgSecondary} />
+        </Pressable>
+      )}
+    </MotiView>
   );
 };

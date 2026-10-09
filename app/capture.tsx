@@ -10,19 +10,20 @@ import {
 } from 'react-native';
 import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Check, X, ChevronDown, ChevronUp } from 'lucide-react-native';
 import { MotiView } from 'moti';
-import { AmbientGlow } from '@/components/ui/AmbientGlow';
 import { useMnemoStore } from '@/hooks/use-mnemo-store';
 import { resolvePendingItem } from '@/lib/capture';
-import { ZenButton } from '@/components/ZenButton';
-import { CategoryPill } from '@/components/ui/CategoryPill';
+import { Button, IconButton } from '@/components/ui/Button';
+import { Pill } from '@/components/ui/Pill';
+import { Icon } from '@/components/ui/Icon';
 import { ChecklistEditor } from '@/components/ui/ChecklistEditor';
 import { DueDatePicker } from '@/components/ui/DueDatePicker';
 import { EditorToolbar, type TextSelection } from '@/components/ui/EditorToolbar';
-import { CATEGORY_LIST } from '@/utils/categories';
+import { CATEGORY_LIST, useCategories } from '@/utils/categories';
 import { useThemeColors } from '@/hooks/use-theme';
 import type { Category, ChecklistItem } from '@/types/mnemo';
+import { useReduceMotion } from '@/hooks/use-accessibility-motion';
+import { DUR_TOGGLE, EASE_IN_OUT, EASE_OUT, motion, useEnter } from '@/utils/motion';
 
 /**
  * CaptureScreen — one unified surface for a thought: freeform (markdown)
@@ -32,6 +33,8 @@ import type { Category, ChecklistItem } from '@/types/mnemo';
  * is inferred from whether any checklist items were actually added.
  */
 export default function CaptureScreen() {
+  const enter = useEnter();
+  const reduceMotion = useReduceMotion();
   const insets = useSafeAreaInsets();
   const { addItem, updateItem } = useMnemoStore();
 
@@ -49,6 +52,7 @@ export default function CaptureScreen() {
   const [dueDate, setDueDate] = useState<number | undefined>();
 
   const colors = useThemeColors();
+  const categories = useCategories();
 
   const canSave = useMemo(
     () => text.trim().length > 0 || checklistItems.length > 0,
@@ -97,7 +101,7 @@ export default function CaptureScreen() {
   };
 
   return (
-    <AmbientGlow>
+    <View style={{ flex: 1, backgroundColor: colors.bg }}>
     <KeyboardAvoidingView
       className="flex-1"
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
@@ -105,34 +109,19 @@ export default function CaptureScreen() {
       <View className="flex-1 px-6">
         {/* Header — carries Cancel/Save directly (not a bottom footer) so
             they stay above the keyboard instead of getting covered by it. */}
-        <MotiView
-          from={{ opacity: 0, translateY: 12 }}
-          animate={{ opacity: 1, translateY: 0 }}
-          transition={{ type: 'timing', duration: 500 }}
+        <MotiView {...enter.rise(0)}
           className="flex-row items-center justify-between mb-4"
           style={{ paddingTop: Math.max(insets.top, 16) }}
         >
-          <Pressable
-            onPress={() => router.back()}
-            hitSlop={8}
-            className="w-9 h-9 items-center justify-center rounded-full active:opacity-70 -ml-1.5"
-          >
-            <X size={20} color={colors.fg} />
-          </Pressable>
+          <IconButton icon="x" label="Cancel" variant="bare" onPress={() => router.back()} />
 
           <Text className="font-sans-medium text-sm text-fg-secondary tracking-wide">
             New thought
           </Text>
 
-          <ZenButton
-            onPress={handleSave}
-            disabled={!canSave}
-            title="Save"
-            variant="primary"
-            size="sm"
-            hapticIntensity="medium"
-            icon={<Check size={15} color={colors.accentInk} />}
-          />
+          <Button onPress={handleSave} disabled={!canSave} variant="primary" size="sm" icon="check">
+            Save
+          </Button>
         </MotiView>
 
         <ScrollView
@@ -142,10 +131,7 @@ export default function CaptureScreen() {
           contentContainerStyle={{ paddingBottom: Math.max(insets.bottom, 24) + 24 }}
         >
           {/* Category selector */}
-          <MotiView
-            from={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            transition={{ type: 'timing', duration: 400, delay: 100 }}
+          <MotiView {...enter.fade(1)}
             className="mb-5"
           >
             <Text className="font-sans-medium text-[10px] text-fg-muted tracking-wider uppercase mb-2">
@@ -157,25 +143,26 @@ export default function CaptureScreen() {
               contentContainerStyle={{ gap: 6 }}
             >
               {CATEGORY_LIST.map((cat) => (
-                <CategoryPill
+                <Pill
                   key={cat}
-                  category={cat}
+                  tone={categories[cat].color}
                   size="md"
+                  dot={false}
+                  outline={category !== cat}
                   selected={category === cat}
                   onPress={() => setCategory(cat)}
-                />
+                >
+                  {categories[cat].label}
+                </Pill>
               ))}
             </ScrollView>
           </MotiView>
 
           {/* Main content area — freeform text + optional checklist, one surface */}
-          <MotiView
-            from={{ opacity: 0, translateY: 12 }}
-            animate={{ opacity: 1, translateY: 0 }}
-            transition={{ type: 'timing', duration: 500, delay: 150 }}
+          <MotiView {...enter.rise(1)}
           >
             <View
-              className="rounded-[20px] p-5 mb-4"
+              className="rounded-md p-5 mb-4"
               style={{ backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border }}
             >
               <TextInput
@@ -224,31 +211,37 @@ export default function CaptureScreen() {
           </MotiView>
 
           {/* Optional fields toggle */}
-          <MotiView
-            from={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            transition={{ type: 'timing', duration: 400, delay: 250 }}
+          <MotiView {...enter.fade(2)}
           >
             <Pressable
               onPress={() => setShowOptional(!showOptional)}
               android_ripple={{ color: colors.border }}
-              className="flex-row items-center justify-between py-3 mb-2 rounded-xl overflow-hidden"
+              className="flex-row items-center justify-between py-3 mb-2 rounded-md overflow-hidden"
             >
               <Text className="font-sans-medium text-xs text-fg-muted tracking-wide">
                 More details (optional)
               </Text>
-              {showOptional ? (
-                <ChevronUp size={16} color={colors.fgTertiary} />
-              ) : (
-                <ChevronDown size={16} color={colors.fgTertiary} />
-              )}
+              {/* The chevron turns with the disclosure rather than snapping
+                  to its new angle — it's the same 200ms event. */}
+              <MotiView
+                animate={{ rotate: showOptional ? '180deg' : '0deg' }}
+                transition={motion(
+                  { type: 'timing' as const, duration: DUR_TOGGLE, easing: EASE_IN_OUT },
+                  reduceMotion,
+                )}
+              >
+                <Icon name="chevronDown" size={16} color={colors.fgTertiary} />
+              </MotiView>
             </Pressable>
 
             {showOptional && (
               <MotiView
                 from={{ opacity: 0, translateY: -8 }}
                 animate={{ opacity: 1, translateY: 0 }}
-                transition={{ type: 'timing', duration: 300 }}
+                transition={motion(
+                  { type: 'timing' as const, duration: DUR_TOGGLE, easing: EASE_OUT },
+                  reduceMotion,
+                )}
                 className="gap-4 mb-6"
               >
                 {/* Where left off */}
@@ -259,7 +252,7 @@ export default function CaptureScreen() {
                   <TextInput
                     placeholder="e.g. Halfway through chapter 3..."
                     placeholderTextColor={colors.fgTertiary}
-                    className="font-sans text-sm text-fg py-2.5 px-3.5 rounded-xl"
+                    className="font-sans text-sm text-fg py-2.5 px-3.5 rounded-md"
                     style={{ backgroundColor: colors.surfaceHigh }}
                     value={whereLeftOff}
                     onChangeText={setWhereLeftOff}
@@ -275,7 +268,7 @@ export default function CaptureScreen() {
                   <TextInput
                     placeholder="e.g. Call the plumber..."
                     placeholderTextColor={colors.fgTertiary}
-                    className="font-sans text-sm text-fg py-2.5 px-3.5 rounded-xl"
+                    className="font-sans text-sm text-fg py-2.5 px-3.5 rounded-md"
                     style={{ backgroundColor: colors.surfaceHigh }}
                     value={nextStep}
                     onChangeText={setNextStep}
@@ -296,6 +289,6 @@ export default function CaptureScreen() {
         </ScrollView>
       </View>
     </KeyboardAvoidingView>
-    </AmbientGlow>
+    </View>
   );
 }

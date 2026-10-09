@@ -1,24 +1,22 @@
 import { Link, Stack } from 'expo-router';
 import { View, Text } from 'react-native';
 import { MotiView } from 'moti';
-import { Mic } from 'lucide-react-native';
-import { AmbientGlow } from '@/components/ui/AmbientGlow';
+import { Icon } from '@/components/ui/Icon';
 import { useThemeColors } from '@/hooks/use-theme';
+import { useEnter } from '@/utils/motion';
 
 export default function NotFoundScreen() {
+  const enter = useEnter();
   const colors = useThemeColors();
   return (
-    <AmbientGlow>
+    <View style={{ flex: 1, backgroundColor: colors.bg }}>
       <Stack.Screen options={{ title: 'Not found', headerShown: false }} />
       <View className="flex-1 items-center justify-center p-8">
-        <MotiView
-          from={{ opacity: 0, translateY: 16 }}
-          animate={{ opacity: 1, translateY: 0 }}
-          transition={{ type: 'timing', duration: 500 }}
+        <MotiView {...enter.rise(0)}
           className="items-center"
         >
           <View className="mb-6 opacity-60">
-            <Mic size={48} color={colors.accent} strokeWidth={1.5} />
+            <Icon name="mic" size={48} color={colors.accent} stroke={1.5} />
           </View>
           <Text className="text-2xl font-sans-medium text-fg mb-3">
             Page not found
@@ -34,6 +32,6 @@ export default function NotFoundScreen() {
           </Link>
         </MotiView>
       </View>
-    </AmbientGlow>
+    </View>
   );
 }

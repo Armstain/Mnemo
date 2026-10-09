@@ -1,0 +1,119 @@
+import React from 'react';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { MotiView } from 'moti';
+
+import { useThemeColors } from '@/hooks/use-theme';
+import { useReduceMotion } from '@/hooks/use-accessibility-motion';
+import { EASE_IN_OUT, RECORD_HALO_ACTIVE_MS, RECORD_HALO_IDLE_MS } from '@/utils/motion';
+import { Icon } from '@/components/ui/Icon';
+
+interface RecordButtonProps {
+  /** Diameter of the circular button, in px. Default 68. */
+  size?: number;
+  /** Actively recording — speeds up the halo's breathing cadence. */
+  recording?: boolean;
+  /** Caption shown below the button, and the a11y label fallback. */
+  label?: string;
+  /** Plain tap passthrough — callers driving their own gesture (hold-to-record, drag-to-cancel) should leave this unset. */
+  onPress?: () => void;
+}
+
+// 14px halo inset on every side, matching the CSS spec's `inset:-14px`.
+const HALO_INSET = 14;
+
+/**
+ * RecordButton — the circular "hold to record" affordance: a breathing
+ * halo behind a solid mic button. Purely presentational — gesture handling
+ * (long-press, slide-to-cancel, …) lives in the caller (ActionCluster,
+ * app/dump.tsx); this component only renders the look, plus an optional
+ * plain `onPress` for callers that just want a tap target.
+ */
+export function RecordButton({ size = 68, recording = false, label, onPress }: RecordButtonProps) {
+  const colors = useThemeColors();
+  const reduceMotion = useReduceMotion();
+  const haloSize = size + HALO_INSET * 2;
+
+  const cycleMs = recording ? RECORD_HALO_ACTIVE_MS : RECORD_HALO_IDLE_MS;
+
+  const halo = reduceMotion ? (
+    <View
+      style={[
+        styles.halo,
+        { width: haloSize, height: haloSize, backgroundColor: colors.accentSoft, opacity: 0.35 },
+      ]}
+    />
+  ) : (
+    <MotiView
+      from={{ scale: 1, opacity: 0.75 }}
+      animate={{ scale: 1.16, opacity: 0.35 }}
+      transition={{
+        type: 'timing',
+        duration: cycleMs / 2,
+        loop: true,
+        repeatReverse: true,
+        easing: EASE_IN_OUT,
+      }}
+      style={[styles.halo, { width: haloSize, height: haloSize, backgroundColor: colors.accentSoft }]}
+    />
+  );
+
+  const buttonStyle = [
+    styles.button,
+    {
+      width: size,
+      height: size,
+      borderRadius: size / 2,
+      backgroundColor: colors.accent,
+    },
+  ];
+
+  const button = onPress ? (
+    <Pressable
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityLabel={label || 'Hold to record'}
+      style={buttonStyle}
+    >
+      <Icon name="mic" size={Math.round(size * 0.4)} stroke={1.9} color={colors.accentInk} />
+    </Pressable>
+  ) : (
+    <View accessibilityLabel={label || 'Hold to record'} style={buttonStyle}>
+      <Icon name="mic" size={Math.round(size * 0.4)} stroke={1.9} color={colors.accentInk} />
+    </View>
+  );
+
+  return (
+    <View style={styles.wrap}>
+      <View style={{ width: haloSize, height: haloSize, alignItems: 'center', justifyContent: 'center' }}>
+        {halo}
+        {button}
+      </View>
+      {label ? (
+        <Text className="text-xs" style={{ color: colors.fgTertiary }}>
+          {label}
+        </Text>
+      ) : null}
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  wrap: {
+    flexDirection: 'column',
+    alignItems: 'center',
+    gap: 10,
+  },
+  halo: {
+    position: 'absolute',
+    borderRadius: 9999,
+  },
+  button: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.3,
+    shadowRadius: 20,
+    elevation: 10,
+  },
+});

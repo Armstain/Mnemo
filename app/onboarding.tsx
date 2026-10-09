@@ -4,35 +4,78 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import * as SecureStore from 'expo-secure-store';
 import { MotiView } from 'moti';
-import { AmbientGlow } from '@/components/ui/AmbientGlow';
-import { ZenButton } from '@/components/ZenButton';
+
+import { useReduceMotion } from '@/hooks/use-accessibility-motion';
+import { EASE_OUT, REDUCED } from '@/utils/motion';
+import { Button } from '@/components/ui/Button';
+import { Icon, type IconName } from '@/components/ui/Icon';
 import { useThemeColors, useThemeName } from '@/hooks/use-theme';
-import { PenLine, RefreshCw, Sparkles } from 'lucide-react-native';
+import { PenLine, RefreshCw } from 'lucide-react-native';
 
 export const ONBOARDING_KEY = 'mnemo-onboarded';
 
-const features = [
+type LucideIconComponent = typeof PenLine;
+
+type Feature = { title: string; description: string } & (
+  | { kind: 'shared'; icon: IconName }
+  | { kind: 'lucide'; Icon: LucideIconComponent }
+);
+
+// Sparkles is in the shared icon vocabulary; the other two bullets use a
+// lucide glyph (PenLine, RefreshCw) that isn't, so they stay direct imports
+// rather than being forced onto a mismatched shared icon.
+const features: Feature[] = [
   {
+    kind: 'lucide',
     Icon: PenLine,
     title: 'Capture anything',
     description:
       'Notes, checklists, voice memos — one tap. Works completely offline.',
   },
   {
+    kind: 'lucide',
     Icon: RefreshCw,
     title: 'Resume instantly',
     description:
       'See exactly where you left off and what to do next. No more restart friction.',
   },
   {
-    Icon: Sparkles,
+    kind: 'shared',
+    icon: 'sparkles',
     title: 'AI enhances, optionally',
     description:
       'Smart summaries and next steps when you want them. Your notes work perfectly without AI.',
   },
 ];
 
+
+// Onboarding is seen once, so it gets the delight budget: a longer hero
+// and a staged reveal. Reduce Motion keeps the staging (it explains the
+// page) but drops the travel, and shortens everything to REDUCED.
+const ONBOARD_HERO_MS = 600;
+const ONBOARD_FEATURE_MS = 500;
+const ONBOARD_FEATURE_STEP_MS = 150;
+
 export default function OnboardingScreen() {
+  const reduceMotion = useReduceMotion();
+  const ONBOARD_HERO = reduceMotion
+    ? REDUCED
+    : { type: 'timing' as const, duration: ONBOARD_HERO_MS, easing: EASE_OUT };
+  // The CTA lands with the last feature rather than 400ms after it — the
+  // primary action shouldn't be the last thing to arrive on first run.
+  const ONBOARD_CTA = reduceMotion
+    ? { ...REDUCED, delay: 120 }
+    : { type: 'timing' as const, duration: ONBOARD_FEATURE_MS, delay: 750, easing: EASE_OUT };
+  const onboardFeature = (i: number) =>
+    reduceMotion
+      ? { ...REDUCED, delay: 60 + i * 60 }
+      : {
+          type: 'timing' as const,
+          duration: ONBOARD_FEATURE_MS,
+          delay: 300 + i * ONBOARD_FEATURE_STEP_MS,
+          easing: EASE_OUT,
+        };
+
   const insets = useSafeAreaInsets();
   const colors = useThemeColors();
   const theme = useThemeName();
@@ -62,7 +105,7 @@ export default function OnboardingScreen() {
   };
 
   return (
-    <AmbientGlow>
+    <View style={{ flex: 1, backgroundColor: colors.bg }}>
     <View className="flex-1">
         <ScrollView
           className="flex-1"
@@ -77,7 +120,7 @@ export default function OnboardingScreen() {
           <MotiView
             from={{ opacity: 0, translateY: 20 }}
             animate={{ opacity: 1, translateY: 0 }}
-            transition={{ type: 'timing', duration: 600 }}
+            transition={ONBOARD_HERO}
             className={heroSpacing}
           >
             <Image
@@ -101,23 +144,27 @@ export default function OnboardingScreen() {
 
           {/* Feature bullets */}
           <View className={`${featuresGap} ${featuresSpacing}`}>
-            {features.map(({ Icon, title, description }, i) => (
+            {features.map((feature, i) => (
               <MotiView
                 key={i}
                 from={{ opacity: 0, translateX: -16 }}
                 animate={{ opacity: 1, translateX: 0 }}
-                transition={{ type: 'timing', duration: 500, delay: 300 + i * 150 }}
+                transition={onboardFeature(i)}
                 className="flex-row items-start gap-4"
               >
                 <View className="w-12 h-12 rounded-full bg-accent/15 items-center justify-center mt-0.5 flex-shrink-0">
-                  <Icon size={22} color={colors.accent} strokeWidth={1.6} />
+                  {feature.kind === 'shared' ? (
+                    <Icon name={feature.icon} size={22} color={colors.accent} stroke={1.6} />
+                  ) : (
+                    <feature.Icon size={22} color={colors.accent} strokeWidth={1.6} />
+                  )}
                 </View>
                 <View className="flex-1">
                   <Text className="font-sans-semi text-base text-fg mb-1">
-                    {title}
+                    {feature.title}
                   </Text>
                   <Text className="font-sans text-sm text-fg-muted leading-relaxed">
-                    {description}
+                    {feature.description}
                   </Text>
                 </View>
               </MotiView>
@@ -128,19 +175,14 @@ export default function OnboardingScreen() {
           <MotiView
             from={{ opacity: 0, translateY: 16 }}
             animate={{ opacity: 1, translateY: 0 }}
-            transition={{ type: 'timing', duration: 500, delay: 900 }}
+            transition={ONBOARD_CTA}
           >
-            <ZenButton
-              onPress={handleGetStarted}
-              title="Get started"
-              variant="primary"
-              size="lg"
-              fullWidth
-              hapticIntensity="heavy"
-            />
+            <Button onPress={handleGetStarted} variant="primary" size="lg" fullWidth>
+              Get started
+            </Button>
           </MotiView>
         </ScrollView>
     </View>
-    </AmbientGlow>
+    </View>
   );
 }

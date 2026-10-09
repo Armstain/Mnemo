@@ -1,4 +1,5 @@
 import { StatusBar } from 'expo-status-bar';
+import { useEnter } from '@/utils/motion';
 import { View, Text, ScrollView, Pressable, TextInput, ActivityIndicator, Alert, Platform } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
@@ -7,24 +8,21 @@ import { MotiView } from 'moti';
 import {
   Info,
   Key,
-  Mic,
   Moon,
   Shield,
   Smartphone,
   Sun,
   Eye,
   EyeOff,
-  Check,
-  Sparkles,
-  ExternalLink,
-  Trash2,
   AlertCircle,
 } from 'lucide-react-native';
 import Constants from 'expo-constants';
 import * as WebBrowser from 'expo-web-browser';
 import * as Haptics from 'expo-haptics';
 import { useEffect, useState } from 'react';
-import { AmbientGlow } from '@/components/ui/AmbientGlow';
+import { Button, IconButton } from '@/components/ui/Button';
+import { Pill } from '@/components/ui/Pill';
+import { Icon } from '@/components/ui/Icon';
 import {
   useThemeColors,
   useThemeName,
@@ -120,24 +118,13 @@ function ApiKeyConfigCard() {
           <Text className="font-sans-semi text-sm text-fg ml-2">Gemini API Key</Text>
         </View>
 
-        <View
-          className="px-3 py-1 rounded-full"
-          style={{
-            backgroundColor:
-              source === 'none' ? `${colors.error}1A` : source === 'custom' ? `${colors.accent}26` : `${colors.accent}1A`,
-          }}
-        >
-          <Text
-            className="font-sans-medium text-[11px]"
-            style={{ color: source === 'none' ? colors.error : colors.accent }}
-          >
-            {source === 'custom'
-              ? 'Custom Key Active'
-              : source === 'env'
-              ? 'Environment Key'
-              : 'Not Configured'}
-          </Text>
-        </View>
+        <Pill tone={source === 'none' ? colors.error : colors.accent} size="sm">
+          {source === 'custom'
+            ? 'Custom Key Active'
+            : source === 'env'
+            ? 'Environment Key'
+            : 'Not Configured'}
+        </Pill>
       </View>
 
       {/* Input Field */}
@@ -145,7 +132,7 @@ function ApiKeyConfigCard() {
         <Text className="font-sans-medium text-[11px] text-fg-tertiary">
           ENTER YOUR GEMINI API KEY
         </Text>
-        <View className="flex-row items-center bg-surface-warm rounded-xl border border-border/60 px-3.5 py-2">
+        <View className="flex-row items-center bg-surface-warm rounded-md border border-border/60 px-3.5 py-2">
           <TextInput
             value={inputKey}
             onChangeText={(text) => {
@@ -178,16 +165,16 @@ function ApiKeyConfigCard() {
       {/* Test / Feedback Message */}
       {testResult && (
         <View
-          className="p-3 rounded-xl flex-row items-start gap-2 border"
+          className="p-3 rounded-md flex-row items-start gap-2 border"
           style={{
             backgroundColor: testResult.success ? `${colors.accent}1A` : `${colors.error}1A`,
             borderColor: testResult.success ? `${colors.accent}33` : `${colors.error}33`,
           }}
         >
           {testResult.success ? (
-            <Check size={15} color={colors.accent} className="mt-0.5" />
+            <Icon name="check" size={15} color={colors.accent} />
           ) : (
-            <AlertCircle size={15} color={colors.error} className="mt-0.5" />
+            <AlertCircle size={15} color={colors.error} style={{ marginTop: 2 }} />
           )}
           <Text
             className="font-sans text-xs flex-1"
@@ -200,48 +187,22 @@ function ApiKeyConfigCard() {
 
       {/* Action Buttons */}
       <View className="flex-row items-center gap-2 pt-1">
-        <Pressable
-          onPress={handleSave}
-          disabled={isSaving}
-          className="flex-1 flex-row items-center justify-center py-2.5 px-3 rounded-xl bg-accent active:opacity-80"
-        >
-          {isSaving ? (
-            <ActivityIndicator size="small" color={colors.accentInk} />
-          ) : (
-            <>
-              <Check size={14} color={colors.accentInk} strokeWidth={2.2} />
-              <Text className="font-sans-semi text-xs ml-1.5" style={{ color: colors.accentInk }}>
-                Save Key
-              </Text>
-            </>
-          )}
-        </Pressable>
+        <Button onPress={handleSave} disabled={isSaving} variant="primary" size="sm" className="flex-1" icon="check">
+          {isSaving ? 'Saving...' : 'Save Key'}
+        </Button>
 
-        <Pressable
+        <Button
           onPress={handleTest}
           disabled={isTesting || !inputKey.trim()}
-          className={`flex-row items-center justify-center py-2.5 px-3 rounded-xl bg-surface-warm border border-border/60 ${
-            !inputKey.trim() ? 'opacity-40' : 'active:opacity-80'
-          }`}
+          variant="quiet"
+          size="sm"
+          icon="sparkles"
         >
-          {isTesting ? (
-            <ActivityIndicator size="small" color={colors.accent} />
-          ) : (
-            <>
-              <Sparkles size={14} color={colors.accent} strokeWidth={2} />
-              <Text className="font-sans-medium text-xs text-fg ml-1.5">Test Key</Text>
-            </>
-          )}
-        </Pressable>
+          {isTesting ? 'Testing...' : 'Test Key'}
+        </Button>
 
         {source === 'custom' && (
-          <Pressable
-            onPress={handleClear}
-            className="p-2.5 rounded-xl bg-surface-warm border border-border/60 active:opacity-80"
-            accessibilityLabel="Clear custom key"
-          >
-            <Trash2 size={14} color={colors.fgSecondary} />
-          </Pressable>
+          <IconButton icon="trash" label="Clear custom key" onPress={handleClear} />
         )}
       </View>
 
@@ -255,7 +216,7 @@ function ApiKeyConfigCard() {
         </Text>
         <View className="flex-row items-center">
           <Text className="font-sans-medium text-xs text-accent mr-1">Google AI Studio</Text>
-          <ExternalLink size={12} color={colors.accent} />
+          <Icon name="arrowUpRight" size={12} color={colors.accent} />
         </View>
       </Pressable>
     </View>
@@ -327,28 +288,17 @@ function GroqApiKeyConfigCard() {
       {/* Header */}
       <View className="flex-row items-center justify-between">
         <View className="flex-row items-center">
-          <Mic size={16} color={colors.accent} strokeWidth={2} />
+          <Icon name="mic" size={16} color={colors.accent} stroke={2} />
           <Text className="font-sans-semi text-sm text-fg ml-2">Groq API Key (Whisper Voice)</Text>
         </View>
 
-        <View
-          className="px-3 py-1 rounded-full"
-          style={{
-            backgroundColor:
-              source === 'none' ? `${colors.error}1A` : source === 'custom' ? `${colors.accent}26` : `${colors.accent}1A`,
-          }}
-        >
-          <Text
-            className="font-sans-medium text-[11px]"
-            style={{ color: source === 'none' ? colors.error : colors.accent }}
-          >
-            {source === 'custom'
-              ? 'Custom Key Active'
-              : source === 'env'
-              ? 'Environment Key'
-              : 'Not Configured'}
-          </Text>
-        </View>
+        <Pill tone={source === 'none' ? colors.error : colors.accent} size="sm">
+          {source === 'custom'
+            ? 'Custom Key Active'
+            : source === 'env'
+            ? 'Environment Key'
+            : 'Not Configured'}
+        </Pill>
       </View>
 
       {/* Input Field */}
@@ -356,7 +306,7 @@ function GroqApiKeyConfigCard() {
         <Text className="font-sans-medium text-[11px] text-fg-tertiary">
           ENTER YOUR GROQ API KEY
         </Text>
-        <View className="flex-row items-center bg-surface-warm rounded-xl border border-border/60 px-3.5 py-2">
+        <View className="flex-row items-center bg-surface-warm rounded-md border border-border/60 px-3.5 py-2">
           <TextInput
             value={inputKey}
             onChangeText={(text) => {
@@ -389,16 +339,16 @@ function GroqApiKeyConfigCard() {
       {/* Feedback Message */}
       {testResult && (
         <View
-          className="p-3 rounded-xl flex-row items-start gap-2 border"
+          className="p-3 rounded-md flex-row items-start gap-2 border"
           style={{
             backgroundColor: testResult.success ? `${colors.accent}1A` : `${colors.error}1A`,
             borderColor: testResult.success ? `${colors.accent}33` : `${colors.error}33`,
           }}
         >
           {testResult.success ? (
-            <Check size={15} color={colors.accent} className="mt-0.5" />
+            <Icon name="check" size={15} color={colors.accent} />
           ) : (
-            <AlertCircle size={15} color={colors.error} className="mt-0.5" />
+            <AlertCircle size={15} color={colors.error} style={{ marginTop: 2 }} />
           )}
           <Text
             className="font-sans text-xs flex-1"
@@ -411,48 +361,22 @@ function GroqApiKeyConfigCard() {
 
       {/* Action Buttons */}
       <View className="flex-row items-center gap-2 pt-1">
-        <Pressable
-          onPress={handleSave}
-          disabled={isSaving}
-          className="flex-1 flex-row items-center justify-center py-2.5 px-3 rounded-xl bg-accent active:opacity-80"
-        >
-          {isSaving ? (
-            <ActivityIndicator size="small" color={colors.accentInk} />
-          ) : (
-            <>
-              <Check size={14} color={colors.accentInk} strokeWidth={2.2} />
-              <Text className="font-sans-semi text-xs ml-1.5" style={{ color: colors.accentInk }}>
-                Save Key
-              </Text>
-            </>
-          )}
-        </Pressable>
+        <Button onPress={handleSave} disabled={isSaving} variant="primary" size="sm" className="flex-1" icon="check">
+          {isSaving ? 'Saving...' : 'Save Key'}
+        </Button>
 
-        <Pressable
+        <Button
           onPress={handleTest}
           disabled={isTesting || !inputKey.trim()}
-          className={`flex-row items-center justify-center py-2.5 px-3 rounded-xl bg-surface-warm border border-border/60 ${
-            !inputKey.trim() ? 'opacity-40' : 'active:opacity-80'
-          }`}
+          variant="quiet"
+          size="sm"
+          icon="sparkles"
         >
-          {isTesting ? (
-            <ActivityIndicator size="small" color={colors.accent} />
-          ) : (
-            <>
-              <Sparkles size={14} color={colors.accent} strokeWidth={2} />
-              <Text className="font-sans-medium text-xs text-fg ml-1.5">Test Key</Text>
-            </>
-          )}
-        </Pressable>
+          {isTesting ? 'Testing...' : 'Test Key'}
+        </Button>
 
         {source === 'custom' && (
-          <Pressable
-            onPress={handleClear}
-            className="p-2.5 rounded-xl bg-surface-warm border border-border/60 active:opacity-80"
-            accessibilityLabel="Clear custom Groq key"
-          >
-            <Trash2 size={14} color={colors.fgSecondary} />
-          </Pressable>
+          <IconButton icon="trash" label="Clear custom Groq key" onPress={handleClear} />
         )}
       </View>
 
@@ -466,7 +390,7 @@ function GroqApiKeyConfigCard() {
         </Text>
         <View className="flex-row items-center">
           <Text className="font-sans-medium text-xs text-accent mr-1">console.groq.com</Text>
-          <ExternalLink size={12} color={colors.accent} />
+          <Icon name="arrowUpRight" size={12} color={colors.accent} />
         </View>
       </Pressable>
     </View>
@@ -474,6 +398,7 @@ function GroqApiKeyConfigCard() {
 }
 
 export default function ModalScreen() {
+  const enter = useEnter();
   const insets = useSafeAreaInsets();
   const colors = useThemeColors();
   const theme = useThemeName();
@@ -519,7 +444,7 @@ export default function ModalScreen() {
   };
 
   return (
-    <AmbientGlow>
+    <View style={{ flex: 1, backgroundColor: colors.bg }}>
       <View className="flex-1">
         <ScrollView
           className="flex-1"
@@ -530,23 +455,17 @@ export default function ModalScreen() {
           }}
           showsVerticalScrollIndicator={false}
         >
-          <MotiView
-            from={{ opacity: 0, translateY: 12 }}
-            animate={{ opacity: 1, translateY: 0 }}
-            transition={{ type: 'timing', duration: 500 }}
+          <MotiView {...enter.rise(0)}
             className="mb-10"
           >
-            <Text className="text-3xl font-sans-medium text-fg mb-1">Settings</Text>
+            <Text className="text-display font-display text-fg mb-1">Settings</Text>
             <Text className="font-sans text-sm text-fg-tertiary">
               Mnemo v{Constants.expoConfig?.version ?? '1.0.0'}
             </Text>
           </MotiView>
 
           {/* Appearance */}
-          <MotiView
-            from={{ opacity: 0, translateY: 12 }}
-            animate={{ opacity: 1, translateY: 0 }}
-            transition={{ type: 'timing', duration: 500, delay: 50 }}
+          <MotiView {...enter.rise(0)}
             className="gap-3 mb-10"
           >
             <Text className="font-sans-medium text-xs text-fg-tertiary tracking-wide mb-1">
@@ -561,7 +480,7 @@ export default function ModalScreen() {
                     key={key}
                     onPress={() => setPreference(key)}
                     accessibilityLabel={`Use ${label.toLowerCase()} theme`}
-                    className="flex-1 flex-row items-center justify-center py-2.5 rounded-xl active:opacity-70"
+                    className="flex-1 flex-row items-center justify-center py-2.5 rounded-md active:opacity-70"
                     style={{
                       backgroundColor: selected ? colors.surfaceWarm : 'transparent',
                       borderWidth: selected ? 1 : 0,
@@ -586,10 +505,7 @@ export default function ModalScreen() {
           </MotiView>
 
           {/* AI */}
-          <MotiView
-            from={{ opacity: 0, translateY: 12 }}
-            animate={{ opacity: 1, translateY: 0 }}
-            transition={{ type: 'timing', duration: 500, delay: 100 }}
+          <MotiView {...enter.rise(1)}
             className="gap-3 mb-10"
           >
             <Text className="font-sans-medium text-xs text-fg-tertiary tracking-wide mb-1">
@@ -601,7 +517,7 @@ export default function ModalScreen() {
 
             <View className="bg-surface rounded-2xl p-5 border border-border/50">
               <View className="flex-row items-center mb-2">
-                <Mic size={15} color={colors.accent} />
+                <Icon name="mic" size={15} color={colors.accent} />
                 <Text className="font-sans-semi text-sm text-fg ml-2">Offline behaviour</Text>
               </View>
               <Text className="font-sans text-xs text-fg-secondary leading-relaxed">
@@ -613,10 +529,7 @@ export default function ModalScreen() {
           </MotiView>
 
           {/* Privacy */}
-          <MotiView
-            from={{ opacity: 0, translateY: 12 }}
-            animate={{ opacity: 1, translateY: 0 }}
-            transition={{ type: 'timing', duration: 500, delay: 200 }}
+          <MotiView {...enter.rise(2)}
             className="gap-3 mb-10"
           >
             <Text className="font-sans-medium text-xs text-fg-tertiary tracking-wide mb-1">
@@ -644,7 +557,7 @@ export default function ModalScreen() {
                 isClearing ? 'opacity-60' : 'active:opacity-80'
               }`}
             >
-              <Trash2 size={15} color={colors.error} />
+              <Icon name="trash" size={15} color={colors.error} />
               <View className="ml-2 flex-1">
                 <Text className="font-sans-semi text-sm text-error">Clear all data</Text>
                 <Text className="font-sans text-xs text-fg-tertiary mt-0.5">
@@ -656,10 +569,7 @@ export default function ModalScreen() {
           </MotiView>
 
           {/* About */}
-          <MotiView
-            from={{ opacity: 0, translateY: 12 }}
-            animate={{ opacity: 1, translateY: 0 }}
-            transition={{ type: 'timing', duration: 500, delay: 300 }}
+          <MotiView {...enter.rise(2)}
             className="gap-3"
           >
             <Text className="font-sans-medium text-xs text-fg-tertiary tracking-wide mb-1">
@@ -682,6 +592,6 @@ export default function ModalScreen() {
 
       <StatusBar style={theme === 'dark' ? 'light' : 'dark'} />
     </View>
-    </AmbientGlow>
+    </View>
   );
 }

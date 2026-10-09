@@ -4,7 +4,7 @@ import { MotiView } from 'moti';
 
 import { useThemeColors } from '@/hooks/use-theme';
 import { useReduceMotion } from '@/hooks/use-accessibility-motion';
-import { motion, BREATHE_DURATION } from '@/utils/motion';
+import { motion, BREATHE_DURATION, EASE_IN_OUT } from '@/utils/motion';
 
 export function Bone({
   width,
@@ -48,7 +48,13 @@ function Breathe({ children }: { children: React.ReactNode }) {
       from={{ opacity: reduceMotion ? 0.7 : 0.45 }}
       animate={{ opacity: reduceMotion ? 0.7 : 1 }}
       transition={motion(
-        { type: 'timing' as const, duration: BREATHE_DURATION, loop: true, repeatReverse: true },
+        {
+          type: 'timing' as const,
+          duration: BREATHE_DURATION,
+          loop: true,
+          repeatReverse: true,
+          easing: EASE_IN_OUT,
+        },
         reduceMotion,
       )}
     >

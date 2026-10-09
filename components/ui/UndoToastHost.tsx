@@ -7,7 +7,7 @@ import * as Haptics from 'expo-haptics';
 import { useUndoToast } from '@/hooks/use-undo-toast';
 import { useThemeColors } from '@/hooks/use-theme';
 import { useReduceMotion } from '@/hooks/use-accessibility-motion';
-import { SPRING_SHEET, motion } from '@/utils/motion';
+import { EXIT_QUICK, SPRING_SHEET, motion } from '@/utils/motion';
 import { NAV_BAR_HEIGHT } from '@/components/ui/FloatingTabBar';
 
 /**
@@ -30,6 +30,7 @@ export function UndoToastHost() {
           animate={{ opacity: 1, translateY: 0 }}
           exit={{ opacity: 0, translateY: 16 }}
           transition={motion(SPRING_SHEET, reduceMotion)}
+          exitTransition={motion(EXIT_QUICK, reduceMotion)}
           pointerEvents="box-none"
           className="absolute left-6 right-6 z-50 flex-row items-center justify-between rounded-2xl px-4 py-3.5"
           style={{

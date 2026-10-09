@@ -1,42 +1,33 @@
-import { AmbientGlow } from '@/components/ui/AmbientGlow';
 import { FloatingTabBar } from '@/components/ui/FloatingTabBar';
 import { ActionCluster } from '@/components/ui/ActionCluster';
 import { Tabs } from 'expo-router';
 import { usePathname } from 'expo-router';
 import React from 'react';
+import { View } from 'react-native';
 
-import { useReduceMotion } from '@/hooks/use-accessibility-motion';
-import { SPRING_NAV } from '@/utils/motion';
+import { useThemeColors } from '@/hooks/use-theme';
 
 export default function TabLayout() {
   const pathname = usePathname();
-  const reduceMotion = useReduceMotion();
+  const colors = useThemeColors();
   // Hide the FAB on the detail screen — it overlaps the status action row.
   const showFab = !pathname.includes('context');
 
   return (
-    <AmbientGlow>
+    <View style={{ flex: 1, backgroundColor: colors.bg }}>
       <Tabs
         screenOptions={{
           headerShown: false,
           tabBarStyle: { display: 'none' },
-          // Scenes stay transparent so every screen shares the one
-          // ambient field — glass surfaces need it showing through.
+          // Every screen sits on the one solid bg tone — no glass/glow wash.
           sceneStyle: { backgroundColor: 'transparent' },
-          // 'shift' moves the incoming screen in from the side it lives on
-          // relative to the current tab, so the direction of travel matches
-          // the direction the pill indicator moves. Spatial consistency: the
-          // user never has to re-find where they are after a tab change.
-          // Reduced motion gets the same state change with no travel.
-          animation: reduceMotion ? 'fade' : 'shift',
-          transitionSpec: {
-            animation: 'spring',
-            config: {
-              damping: SPRING_NAV.damping,
-              stiffness: SPRING_NAV.stiffness,
-              mass: SPRING_NAV.mass,
-            },
-          },
+          // Tabs are peers, not a hierarchy — a slide implies a depth that
+          // isn't there, and the user pays for it dozens of times a session.
+          // The spatial cue this used to carry still exists, and it's the
+          // one the eye actually tracks: the pill in FloatingTabBar travels
+          // to the tapped tab on SPRING_NAV. The screen underneath doesn't
+          // need to move as well for the change to read.
+          animation: 'none',
         }}>
         <Tabs.Screen name="index" options={{ title: 'Home' }} />
         <Tabs.Screen name="search" options={{ title: 'Search' }} />
@@ -45,7 +36,7 @@ export default function TabLayout() {
       </Tabs>
 
       <FloatingTabBar />
-      {showFab && <ActionCluster />}
-    </AmbientGlow>
+      <ActionCluster visible={showFab} />
+    </View>
   );
 }

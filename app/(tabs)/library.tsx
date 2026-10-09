@@ -1,20 +1,21 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { Pressable, ScrollView, Text, View } from 'react-native';
+import { ScrollView, Text, View } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
-import { MotiView } from 'moti';
+import { AnimatePresence, MotiView } from 'moti';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Layers } from 'lucide-react-native';
 
 import { NoteRow } from '@/components/ui/NoteRow';
 import { NoteListSkeleton } from '@/components/ui/NoteListSkeleton';
 import { SearchBar } from '@/components/SearchBar';
+import { Pill } from '@/components/ui/Pill';
+import { Icon } from '@/components/ui/Icon';
 import { NAV_CLEARANCE } from '@/components/ui/FloatingTabBar';
 import { useMnemoStore } from '@/hooks/use-mnemo-store';
 import { useUndoToast } from '@/hooks/use-undo-toast';
 import { useThemeColors } from '@/hooks/use-theme';
 import { bm25Search } from '@/lib/bm25';
 import { CATEGORY_LIST, useCategories } from '@/utils/categories';
-import { EASE_OUT } from '@/utils/motion';
+import { useEnter } from '@/utils/motion';
 import type { Category, ItemStatus } from '@/types/mnemo';
 
 type FilterStatus = 'all' | ItemStatus;
@@ -28,6 +29,7 @@ const STATUS_FILTERS: { key: FilterStatus; label: string }[] = [
 ];
 
 export default function LibraryScreen() {
+  const enter = useEnter();
   const { items, deleteItem, undoDelete, isLoaded } = useMnemoStore();
   const { showUndoToast } = useUndoToast();
   const [searchQuery, setSearchQuery] = useState('');
@@ -75,23 +77,17 @@ export default function LibraryScreen() {
   return (
     <View className="flex-1 px-5" style={{ paddingTop: insets.top + 16 }}>
       {/* Header */}
-      <MotiView
-        from={{ opacity: 0, translateY: 12 }}
-        animate={{ opacity: 1, translateY: 0 }}
-        transition={{ type: 'timing', duration: 400, easing: EASE_OUT }}
+      <MotiView {...enter.rise(0)}
         className="mb-4 flex-row items-baseline justify-between"
       >
-        <Text className="text-3xl font-serif text-fg">Library</Text>
+        <Text className="text-display font-display text-fg">Library</Text>
         <Text className="font-sans text-xs text-fg-tertiary">
           {filteredItems.length} item{filteredItems.length !== 1 ? 's' : ''}
         </Text>
       </MotiView>
 
       {/* Search */}
-      <MotiView
-        from={{ opacity: 0, scale: 0.98 }}
-        animate={{ opacity: 1, scale: 1 }}
-        transition={{ type: 'timing', duration: 400, delay: 80, easing: EASE_OUT }}
+      <MotiView {...enter.pop(1)}
         className="mb-4"
       >
         <SearchBar
@@ -102,10 +98,7 @@ export default function LibraryScreen() {
       </MotiView>
 
       {/* Category filter */}
-      <MotiView
-        from={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        transition={{ type: 'timing', duration: 400, delay: 140, easing: EASE_OUT }}
+      <MotiView {...enter.fade(2)}
         className="mb-1"
       >
         <Text className="font-sans-medium text-[9px] text-fg-tertiary tracking-widest uppercase mb-0.5 px-0.5">
@@ -114,38 +107,39 @@ export default function LibraryScreen() {
         <ScrollView
           horizontal
           showsHorizontalScrollIndicator={false}
-          contentContainerStyle={{ gap: 18, paddingRight: 20, paddingVertical: 6 }}
+          contentContainerStyle={{ gap: 7, paddingRight: 20, paddingVertical: 6 }}
         >
-          <FilterTab
-            label="All"
-            active={selectedCategory === 'all'}
-            activeColor={colors.fg}
-            inactiveColor={colors.fgTertiary}
+          <Pill
+            tone={colors.fgSecondary}
+            size="sm"
+            dot={false}
+            outline={selectedCategory !== 'all'}
+            selected={selectedCategory === 'all'}
             onPress={() => setSelectedCategory('all')}
-          />
+          >
+            All
+          </Pill>
           {CATEGORY_LIST.map((cat) => {
             const config = categories[cat];
             return (
-              <FilterTab
+              <Pill
                 key={cat}
-                label={config.label}
-                active={selectedCategory === cat}
-                activeColor={config.color}
-                inactiveColor={colors.fgTertiary}
-                onPress={() =>
-                  setSelectedCategory(selectedCategory === cat ? 'all' : cat)
-                }
-              />
+                tone={config.color}
+                size="sm"
+                dot={false}
+                outline={selectedCategory !== cat}
+                selected={selectedCategory === cat}
+                onPress={() => setSelectedCategory(selectedCategory === cat ? 'all' : cat)}
+              >
+                {config.label}
+              </Pill>
             );
           })}
         </ScrollView>
       </MotiView>
 
       {/* Status filter */}
-      <MotiView
-        from={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        transition={{ type: 'timing', duration: 400, delay: 180, easing: EASE_OUT }}
+      <MotiView {...enter.fade(2)}
         className="mb-3"
       >
         <Text className="font-sans-medium text-[9px] text-fg-tertiary tracking-widest uppercase mb-0.5 px-0.5">
@@ -154,17 +148,20 @@ export default function LibraryScreen() {
         <ScrollView
           horizontal
           showsHorizontalScrollIndicator={false}
-          contentContainerStyle={{ gap: 18, paddingVertical: 6 }}
+          contentContainerStyle={{ gap: 7, paddingVertical: 6 }}
         >
           {STATUS_FILTERS.map(({ key, label }) => (
-            <FilterTab
+            <Pill
               key={key}
-              label={label}
-              active={selectedStatus === key}
-              activeColor={colors.accent}
-              inactiveColor={colors.fgTertiary}
+              tone={colors.accent}
+              size="sm"
+              dot={false}
+              outline={selectedStatus !== key}
+              selected={selectedStatus === key}
               onPress={() => setSelectedStatus(key)}
-            />
+            >
+              {label}
+            </Pill>
           ))}
         </ScrollView>
       </MotiView>
@@ -176,67 +173,40 @@ export default function LibraryScreen() {
         contentContainerStyle={{ paddingBottom: insets.bottom + NAV_CLEARANCE }}
       >
         {filteredItems.length === 0 ? (
-          <MotiView
-            from={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            transition={{ type: 'timing', duration: 400, easing: EASE_OUT }}
+          <MotiView {...enter.fade(0)}
             className="py-20 items-center"
           >
-            <Layers size={32} color={colors.fgTertiary} strokeWidth={1.5} />
+            <Icon name="layers" size={32} color={colors.fgTertiary} stroke={1.5} />
             <Text className="font-sans text-sm text-fg-secondary mt-4">
               {searchQuery ? 'No matching items found' : 'No items yet'}
             </Text>
           </MotiView>
         ) : (
           <View>
-            {filteredItems.map((item, index) => (
-              <NoteRow
-                key={item.id}
-                item={item}
-                index={index}
-                showStatus
-                onPress={() =>
-                  router.push(`/(tabs)/context?id=${item.id}` as any)
-                }
-                onDelete={() => {
-                  deleteItem(item.id);
-                  showUndoToast(`"${item.title}" deleted`, () => undoDelete(item.id));
-                }}
-              />
-            ))}
+            {/* AnimatePresence so a deleted row leaves visibly. Without it
+                the row teleported out while the undo toast sprang in — the
+                only thing that animated was the confirmation of something
+                that hadn't. */}
+            <AnimatePresence>
+              {filteredItems.map((item, index) => (
+                <NoteRow
+                  key={item.id}
+                  item={item}
+                  index={index}
+                  showStatus
+                  onPress={() =>
+                    router.push(`/(tabs)/context?id=${item.id}` as any)
+                  }
+                  onDelete={() => {
+                    deleteItem(item.id);
+                    showUndoToast(`"${item.title}" deleted`, () => undoDelete(item.id));
+                  }}
+                />
+              ))}
+            </AnimatePresence>
           </View>
         )}
       </ScrollView>
     </View>
-  );
-}
-
-/** Quiet text filter tab: colored text + 2px underline when active. */
-function FilterTab({
-  label,
-  active,
-  activeColor,
-  inactiveColor,
-  onPress,
-}: {
-  label: string;
-  active: boolean;
-  activeColor: string;
-  inactiveColor: string;
-  onPress: () => void;
-}) {
-  return (
-    <Pressable onPress={onPress} hitSlop={8} className="active:opacity-60">
-      <Text
-        className="font-sans-medium text-[13px]"
-        style={{ color: active ? activeColor : inactiveColor }}
-      >
-        {label}
-      </Text>
-      <View
-        className="h-0.5 rounded-full mt-1"
-        style={{ backgroundColor: active ? activeColor : 'transparent' }}
-      />
-    </Pressable>
   );
 }
