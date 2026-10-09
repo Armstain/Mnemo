@@ -1,11 +1,12 @@
 import { StatusBar } from 'expo-status-bar';
 import { useEnter } from '@/utils/motion';
-import { View, Text, ScrollView, Pressable, TextInput, ActivityIndicator, Alert, Platform } from 'react-native';
+import { View, Text, ScrollView, Pressable, TextInput, ActivityIndicator, Alert, Platform, Switch, Linking } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import * as SecureStore from 'expo-secure-store';
 import { MotiView } from 'moti';
 import {
+  Bell,
   Info,
   Key,
   Moon,
@@ -32,6 +33,16 @@ import {
 import { useMnemoStore } from '@/hooks/use-mnemo-store';
 import { ONBOARDING_KEY } from '@/app/onboarding';
 import {
+  NUDGE_TIMES,
+  hasNudgePermission,
+  loadNudgePrefs,
+  requestNudgePermission,
+  saveNudgePrefs,
+  scheduleNudges,
+  type NudgePrefs,
+  type NudgeTime,
+} from '@/lib/nudges';
+import {
   getActiveApiKey,
   getApiKeySource,
   saveApiKey,
@@ -48,6 +59,101 @@ const THEME_OPTIONS: { key: ThemePreference; label: string; icon: typeof Sun }[]
   { key: 'light', label: 'Light', icon: Sun },
   { key: 'dark', label: 'Dark', icon: Moon },
 ];
+
+const NUDGE_TIME_KEYS = Object.keys(NUDGE_TIMES) as NudgeTime[];
+
+function NudgeSettingsCard() {
+  const colors = useThemeColors();
+  const { items } = useMnemoStore();
+  const [prefs, setPrefs] = useState<NudgePrefs | null>(null);
+  const [granted, setGranted] = useState(false);
+  // Set once a turn-on attempt comes back refused — at that point only
+  // the OS Settings app can change it, so say so instead of silently
+  // leaving the switch off.
+  const [blocked, setBlocked] = useState(false);
+
+  useEffect(() => {
+    loadNudgePrefs().then(setPrefs);
+    hasNudgePermission().then(setGranted);
+  }, []);
+
+  const apply = async (next: NudgePrefs) => {
+    setPrefs(next);
+    await saveNudgePrefs(next);
+    scheduleNudges(items);
+  };
+
+  const handleToggle = async (on: boolean) => {
+    if (!prefs) return;
+    if (!on) {
+      await apply({ ...prefs, enabled: false });
+      return;
+    }
+    const ok = await requestNudgePermission();
+    setGranted(ok);
+    setBlocked(!ok);
+    if (ok) {
+      Haptics.selectionAsync();
+      await apply({ ...prefs, enabled: true });
+    }
+  };
+
+  if (!prefs) return null;
+  const isOn = prefs.enabled && granted;
+
+  return (
+    <View className="bg-surface rounded-2xl p-5 border border-border/50 gap-4">
+      <View className="flex-row items-center justify-between">
+        <View className="flex-row items-center flex-1 mr-3">
+          <Bell size={15} color={colors.accent} strokeWidth={2} />
+          <Text className="font-sans-semi text-sm text-fg ml-2">Gentle nudges</Text>
+        </View>
+        <Switch
+          value={isOn}
+          onValueChange={handleToggle}
+          accessibilityLabel="Gentle nudges"
+          trackColor={{ false: colors.border, true: colors.accent }}
+          thumbColor={Platform.OS === 'android' ? colors.surfaceLowest : undefined}
+          ios_backgroundColor={colors.border}
+        />
+      </View>
+
+      <Text className="font-sans text-xs text-fg-secondary leading-relaxed">
+        When a thread sits untouched for a couple of days, Mnemo reminds you of it once, with
+        its next step. Never more than one a day.
+      </Text>
+
+      {isOn && (
+        <View className="flex-row flex-wrap gap-2">
+          {NUDGE_TIME_KEYS.map((key) => (
+            <Pill
+              key={key}
+              tone={colors.accent}
+              size="md"
+              dot={false}
+              outline={prefs.time !== key}
+              selected={prefs.time === key}
+              onPress={() => apply({ ...prefs, time: key })}
+            >
+              {NUDGE_TIMES[key].label}
+            </Pill>
+          ))}
+        </View>
+      )}
+
+      {blocked && (
+        <View className="flex-row items-center justify-between gap-3">
+          <Text className="font-sans text-xs text-fg-tertiary flex-1">
+            Notifications are off for Mnemo in your phone's settings.
+          </Text>
+          <Button variant="quiet" size="sm" onPress={() => Linking.openSettings()}>
+            Open settings
+          </Button>
+        </View>
+      )}
+    </View>
+  );
+}
 
 function ApiKeyConfigCard() {
   const colors = useThemeColors();
@@ -503,6 +609,19 @@ export default function ModalScreen() {
               })}
             </View>
           </MotiView>
+
+          {/* Nudges — local notifications, so there's nothing to show on web. */}
+          {Platform.OS !== 'web' && (
+            <MotiView {...enter.rise(1)}
+              className="gap-3 mb-10"
+            >
+              <Text className="font-sans-medium text-xs text-fg-tertiary tracking-wide mb-1">
+                NUDGES
+              </Text>
+
+              <NudgeSettingsCard />
+            </MotiView>
+          )}
 
           {/* AI */}
           <MotiView {...enter.rise(1)}

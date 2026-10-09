@@ -8,6 +8,7 @@ import { MotiView } from 'moti';
 import { useReduceMotion } from '@/hooks/use-accessibility-motion';
 import { EASE_OUT, REDUCED } from '@/utils/motion';
 import { Button } from '@/components/ui/Button';
+import { FirstCaptureStep, NudgeStep, RevealStep } from '@/components/OnboardingSteps';
 import { Icon, type IconName } from '@/components/ui/Icon';
 import { useThemeColors, useThemeName } from '@/hooks/use-theme';
 import { PenLine, RefreshCw } from 'lucide-react-native';
@@ -91,7 +92,12 @@ export default function OnboardingScreen() {
   const featuresSpacing = isCompact ? 'mb-10' : 'mb-16';
   const heroTitleSize = isCompact ? 'text-3xl' : 'text-4xl';
   const logoSize = isCompact ? 52 : 64;
-  const handleGetStarted = async () => {
+  // Welcome → first capture → see it structured → nudge opt-in → app.
+  // Web has no local notifications, so it skips the nudge step.
+  const [step, setStep] = React.useState<'welcome' | 'capture' | 'reveal' | 'nudges'>('welcome');
+  const [capturedId, setCapturedId] = React.useState<string | null>(null);
+
+  const finish = async () => {
     try {
       if (Platform.OS === 'web') {
         localStorage.setItem(ONBOARDING_KEY, 'true');
@@ -103,6 +109,28 @@ export default function OnboardingScreen() {
     }
     router.replace('/(tabs)');
   };
+
+  const afterCapture = () => (Platform.OS === 'web' ? finish() : setStep('nudges'));
+
+  if (step !== 'welcome') {
+    return (
+      <View style={{ flex: 1, backgroundColor: colors.bg }}>
+        {step === 'capture' && (
+          <FirstCaptureStep
+            onCaptured={(id) => {
+              setCapturedId(id);
+              setStep('reveal');
+            }}
+            onSkip={afterCapture}
+          />
+        )}
+        {step === 'reveal' && capturedId && (
+          <RevealStep itemId={capturedId} onContinue={afterCapture} />
+        )}
+        {step === 'nudges' && <NudgeStep itemId={capturedId} onDone={finish} />}
+      </View>
+    );
+  }
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.bg }}>
@@ -177,7 +205,7 @@ export default function OnboardingScreen() {
             animate={{ opacity: 1, translateY: 0 }}
             transition={ONBOARD_CTA}
           >
-            <Button onPress={handleGetStarted} variant="primary" size="lg" fullWidth>
+            <Button onPress={() => setStep('capture')} variant="primary" size="lg" fullWidth>
               Get started
             </Button>
           </MotiView>

@@ -29,6 +29,7 @@ import "../global.css";
 LogBox.ignoreLogs(['SafeAreaView has been deprecated']);
 
 import { ONBOARDING_KEY } from '@/app/onboarding';
+import { NudgeScheduler } from '@/components/NudgeScheduler';
 import { PendingProcessor } from '@/components/PendingProcessor';
 import { UndoToastHost } from '@/components/ui/UndoToastHost';
 import { MnemoStoreProvider } from '@/hooks/use-mnemo-store';
@@ -143,12 +144,14 @@ function RootLayoutNav() {
     })();
   }, []);
 
-  // Tapping a reminder opens the note it was set for — the scheduled
-  // notification's identifier is always the item's id (see
-  // syncReminderForItem in lib/reminders.ts), so no lookup table is needed.
+  // Tapping a reminder or a nudge opens the note it's about. Nudges carry
+  // the item id in their data (lib/nudges.ts); a due-date reminder's
+  // identifier is the item id itself (syncReminderForItem in
+  // lib/reminders.ts), so no lookup table is needed.
   useEffect(() => {
     const subscription = Notifications.addNotificationResponseReceivedListener((response) => {
-      const itemId = response.notification.request.identifier;
+      const { identifier, content } = response.notification.request;
+      const itemId = typeof content.data?.itemId === 'string' ? content.data.itemId : identifier;
       if (itemId) router.push(`/(tabs)/context?id=${itemId}` as any);
     });
     return () => subscription.remove();
@@ -194,6 +197,7 @@ function RootLayoutNav() {
             />
           </Stack>
           <PendingProcessor />
+          <NudgeScheduler />
           <UndoToastHost />
         </ThemeProvider>
         </UndoToastProvider>

@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { View, Text, Alert, ScrollView } from 'react-native';
-import { router } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import { MotiView } from 'moti';
 import * as Haptics from 'expo-haptics';
 import {
@@ -97,6 +97,19 @@ export default function DumpScreen() {
       );
     }
   }
+
+  // ?autostart=1 opens straight into listening — the entry point for
+  // capture from outside the app (home-screen quick action, and later
+  // widgets / Siri / Control Center, which all deep-link to
+  // mnemo://dump?autostart=1). Waits for the permission check on mount so
+  // a first-time user gets the OS prompt, not a failed start.
+  const { autostart } = useLocalSearchParams<{ autostart?: string }>();
+  const autostarted = useRef(false);
+  useEffect(() => {
+    if (autostart !== '1' || !hasPermission || autostarted.current) return;
+    autostarted.current = true;
+    startRecording();
+  }, [autostart, hasPermission]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function stopAndSave() {
     setIsProcessing(true);

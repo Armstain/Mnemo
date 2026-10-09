@@ -55,7 +55,9 @@
       ],
       "expo-font",
       "expo-sqlite",
-      "expo-notifications"
+      "expo-notifications",
+      "expo-quick-actions",
+      "./plugins/with-shortcut-icons"
     ],
     "experiments": {
       "typedRoutes": true
