@@ -221,23 +221,16 @@ function ApiKeyConfigCard() {
       <View className="flex-row items-center justify-between">
         <View className="flex-row items-center">
           <Key size={16} color={colors.accent} strokeWidth={2} />
-          <Text className="font-sans-semi text-sm text-fg ml-2">Gemini API Key</Text>
+          <Text className="font-sans-semi text-sm text-fg ml-2">Gemini API key</Text>
         </View>
 
         <Pill tone={source === 'none' ? colors.error : colors.accent} size="sm">
-          {source === 'custom'
-            ? 'Custom Key Active'
-            : source === 'env'
-            ? 'Environment Key'
-            : 'Not Configured'}
+          {source === 'custom' ? 'Your key' : source === 'env' ? 'Built-in key' : 'Not set'}
         </Pill>
       </View>
 
       {/* Input Field */}
       <View className="gap-1.5">
-        <Text className="font-sans-medium text-[11px] text-fg-tertiary">
-          ENTER YOUR GEMINI API KEY
-        </Text>
         <View className="flex-row items-center bg-surface-warm rounded-md border border-border/60 px-3.5 py-2">
           <TextInput
             value={inputKey}
@@ -294,7 +287,7 @@ function ApiKeyConfigCard() {
       {/* Action Buttons */}
       <View className="flex-row items-center gap-2 pt-1">
         <Button onPress={handleSave} disabled={isSaving} variant="primary" size="sm" className="flex-1" icon="check">
-          {isSaving ? 'Saving...' : 'Save Key'}
+          {isSaving ? 'Saving...' : 'Save'}
         </Button>
 
         <Button
@@ -304,7 +297,7 @@ function ApiKeyConfigCard() {
           size="sm"
           icon="sparkles"
         >
-          {isTesting ? 'Testing...' : 'Test Key'}
+          {isTesting ? 'Testing...' : 'Test'}
         </Button>
 
         {source === 'custom' && (
@@ -317,8 +310,8 @@ function ApiKeyConfigCard() {
         onPress={openGoogleAIStudio}
         className="flex-row items-center justify-between pt-2 border-t border-border/40"
       >
-        <Text className="font-sans text-xs text-fg-secondary">
-          Need a key? Get one free in 30 seconds
+        <Text className="flex-1 font-sans text-xs text-fg-secondary mr-3">
+          Need a key? It's free.
         </Text>
         <View className="flex-row items-center">
           <Text className="font-sans-medium text-xs text-accent mr-1">Google AI Studio</Text>
@@ -395,23 +388,16 @@ function GroqApiKeyConfigCard() {
       <View className="flex-row items-center justify-between">
         <View className="flex-row items-center">
           <Icon name="mic" size={16} color={colors.accent} stroke={2} />
-          <Text className="font-sans-semi text-sm text-fg ml-2">Groq API Key (Whisper Voice)</Text>
+          <Text className="font-sans-semi text-sm text-fg ml-2">Groq API key</Text>
         </View>
 
         <Pill tone={source === 'none' ? colors.error : colors.accent} size="sm">
-          {source === 'custom'
-            ? 'Custom Key Active'
-            : source === 'env'
-            ? 'Environment Key'
-            : 'Not Configured'}
+          {source === 'custom' ? 'Your key' : source === 'env' ? 'Built-in key' : 'Not set'}
         </Pill>
       </View>
 
       {/* Input Field */}
       <View className="gap-1.5">
-        <Text className="font-sans-medium text-[11px] text-fg-tertiary">
-          ENTER YOUR GROQ API KEY
-        </Text>
         <View className="flex-row items-center bg-surface-warm rounded-md border border-border/60 px-3.5 py-2">
           <TextInput
             value={inputKey}
@@ -468,7 +454,7 @@ function GroqApiKeyConfigCard() {
       {/* Action Buttons */}
       <View className="flex-row items-center gap-2 pt-1">
         <Button onPress={handleSave} disabled={isSaving} variant="primary" size="sm" className="flex-1" icon="check">
-          {isSaving ? 'Saving...' : 'Save Key'}
+          {isSaving ? 'Saving...' : 'Save'}
         </Button>
 
         <Button
@@ -478,7 +464,7 @@ function GroqApiKeyConfigCard() {
           size="sm"
           icon="sparkles"
         >
-          {isTesting ? 'Testing...' : 'Test Key'}
+          {isTesting ? 'Testing...' : 'Test'}
         </Button>
 
         {source === 'custom' && (
@@ -491,8 +477,8 @@ function GroqApiKeyConfigCard() {
         onPress={openGroqConsole}
         className="flex-row items-center justify-between pt-2 border-t border-border/40"
       >
-        <Text className="font-sans text-xs text-fg-secondary">
-          Need a Groq key? Free Whisper transcription
+        <Text className="flex-1 font-sans text-xs text-fg-secondary mr-3">
+          Backup voice transcription. Free.
         </Text>
         <View className="flex-row items-center">
           <Text className="font-sans-medium text-xs text-accent mr-1">console.groq.com</Text>

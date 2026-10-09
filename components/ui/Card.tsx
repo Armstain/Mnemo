@@ -9,7 +9,7 @@ import { DUR_BASE, EASE_OUT, motion } from '@/utils/motion';
 interface CardProps {
   children: React.ReactNode;
   variant?: 'surface' | 'raised' | 'flat' | 'tinted' | 'dashed';
-  pad?: 'sm' | 'md' | 'lg';
+  pad?: 'none' | 'sm' | 'md' | 'lg';
   interactive?: boolean;
   onPress?: () => void;
   className?: string;
@@ -18,6 +18,7 @@ interface CardProps {
 }
 
 const PAD_CLASSES: Record<NonNullable<CardProps['pad']>, string> = {
+  none: '',
   sm: 'p-4',
   md: 'p-5',
   lg: 'p-6',

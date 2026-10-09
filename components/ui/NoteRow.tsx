@@ -26,13 +26,25 @@ interface NoteRowProps {
   stagger?: boolean;
 }
 
+/** One line of preview: the note body, else its next step, else checklist progress. */
+function previewText(item: MnemoItem): string {
+  const body = item.content?.trim().replace(/\s+/g, ' ');
+  if (body) return body;
+  if (item.nextStep) return `Next: ${item.nextStep}`;
+  const checklist = item.checklistItems ?? [];
+  if (checklist.length > 0) {
+    const done = checklist.filter((c) => c.checked).length;
+    return `${done} of ${checklist.length} done`;
+  }
+  return 'Empty note';
+}
+
 /**
  * NoteRow — the shared flat list row for Search and Library.
  *
- * Deliberately NOT a glass card: glass is reserved for hero surfaces
- * (resume card, mic, tab bar). Rows sit flat on the ambient field with a
- * hairline separator and a left category-tick, which keeps long lists calm
- * and makes the few glass surfaces read as special.
+ * Deliberately not a card: rows sit flat on the page with a hairline
+ * separator and a left category tick, which keeps long lists calm and
+ * leaves raised surfaces for the few things that should stand out.
  */
 export function NoteRow({
   item,
@@ -53,7 +65,6 @@ export function NoteRow({
     <MotiView {...enter.row(index, { stagger })} {...enter.rowExit()}>
       <Pressable
         onPress={onPress}
-        className="rounded-sm"
         style={({ pressed }) => [
           styles.row,
           {
@@ -106,7 +117,7 @@ export function NoteRow({
             style={{ color: colors.fgSecondary }}
             numberOfLines={1}
           >
-            {item.content?.trim() || 'No content.'}
+            {previewText(item)}
           </Text>
           {onDelete && (
             <Pressable

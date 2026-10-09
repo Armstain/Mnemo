@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { ScrollView, Text, View } from 'react-native';
+import { Pressable, ScrollView, Text, View } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { AnimatePresence, MotiView } from 'moti';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -7,7 +7,6 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { NoteRow } from '@/components/ui/NoteRow';
 import { NoteListSkeleton } from '@/components/ui/NoteListSkeleton';
 import { SearchBar } from '@/components/SearchBar';
-import { Pill } from '@/components/ui/Pill';
 import { Icon } from '@/components/ui/Icon';
 import { NAV_CLEARANCE } from '@/components/ui/FloatingTabBar';
 import { useMnemoStore } from '@/hooks/use-mnemo-store';
@@ -78,10 +77,10 @@ export default function LibraryScreen() {
     <View className="flex-1 px-5" style={{ paddingTop: insets.top + 16 }}>
       {/* Header */}
       <MotiView {...enter.rise(0)}
-        className="mb-4 flex-row items-baseline justify-between"
+        className="mb-4 flex-row items-end justify-between"
       >
         <Text className="text-display font-display text-fg">Library</Text>
-        <Text className="font-sans text-xs text-fg-tertiary">
+        <Text className="font-sans text-xs text-fg-tertiary mb-2">
           {filteredItems.length} item{filteredItems.length !== 1 ? 's' : ''}
         </Text>
       </MotiView>
@@ -93,76 +92,70 @@ export default function LibraryScreen() {
         <SearchBar
           value={searchQuery}
           onChangeText={setSearchQuery}
-          placeholder="Search your thoughts..."
+          placeholder="Filter by keyword"
         />
       </MotiView>
 
-      {/* Category filter */}
-      <MotiView {...enter.fade(2)}
-        className="mb-1"
-      >
-        <Text className="font-sans-medium text-[9px] text-fg-tertiary tracking-widest uppercase mb-0.5 px-0.5">
-          Category
-        </Text>
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={{ gap: 7, paddingRight: 20, paddingVertical: 6 }}
+      {/* Status — a segmented control, since exactly one is always on */}
+      <MotiView {...enter.fade(2)} className="mb-3">
+        <View
+          className="flex-row rounded-full p-1"
+          style={{ backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border }}
         >
-          <Pill
-            tone={colors.fgSecondary}
-            size="sm"
-            dot={false}
-            outline={selectedCategory !== 'all'}
-            selected={selectedCategory === 'all'}
-            onPress={() => setSelectedCategory('all')}
-          >
-            All
-          </Pill>
-          {CATEGORY_LIST.map((cat) => {
-            const config = categories[cat];
+          {STATUS_FILTERS.map(({ key, label }) => {
+            const selected = selectedStatus === key;
             return (
-              <Pill
-                key={cat}
-                tone={config.color}
-                size="sm"
-                dot={false}
-                outline={selectedCategory !== cat}
-                selected={selectedCategory === cat}
-                onPress={() => setSelectedCategory(selectedCategory === cat ? 'all' : cat)}
+              <Pressable
+                key={key}
+                onPress={() => setSelectedStatus(key)}
+                accessibilityRole="tab"
+                accessibilityState={{ selected }}
+                className="flex-1 items-center justify-center rounded-full h-8"
+                style={{ backgroundColor: selected ? colors.surfaceRaised : 'transparent' }}
               >
-                {config.label}
-              </Pill>
+                <Text
+                  className="font-sans-semi text-xs"
+                  style={{ color: selected ? colors.fg : colors.fgTertiary }}
+                  numberOfLines={1}
+                >
+                  {label}
+                </Text>
+              </Pressable>
             );
           })}
-        </ScrollView>
+        </View>
       </MotiView>
 
-      {/* Status filter */}
-      <MotiView {...enter.fade(2)}
-        className="mb-3"
-      >
-        <Text className="font-sans-medium text-[9px] text-fg-tertiary tracking-widest uppercase mb-0.5 px-0.5">
-          Status
-        </Text>
+      {/* Category — neutral chips with a color dot, so the row doesn't read as a rainbow */}
+      <MotiView {...enter.fade(2)} className="mb-2 -mx-5">
         <ScrollView
           horizontal
           showsHorizontalScrollIndicator={false}
-          contentContainerStyle={{ gap: 7, paddingVertical: 6 }}
+          contentContainerStyle={{ gap: 6, paddingHorizontal: 20, paddingVertical: 4 }}
         >
-          {STATUS_FILTERS.map(({ key, label }) => (
-            <Pill
-              key={key}
-              tone={colors.accent}
-              size="sm"
-              dot={false}
-              outline={selectedStatus !== key}
-              selected={selectedStatus === key}
-              onPress={() => setSelectedStatus(key)}
-            >
-              {label}
-            </Pill>
-          ))}
+          {(['all', ...CATEGORY_LIST] as const).map((cat) => {
+            const selected = selectedCategory === cat;
+            const dot = cat === 'all' ? null : categories[cat].color;
+            return (
+              <Pressable
+                key={cat}
+                onPress={() => setSelectedCategory(selected && cat !== 'all' ? 'all' : cat)}
+                accessibilityRole="button"
+                accessibilityState={{ selected }}
+                className="flex-row items-center rounded-full px-3 h-8 active:opacity-70"
+                style={{
+                  backgroundColor: selected ? colors.fg : 'transparent',
+                  borderWidth: 1,
+                  borderColor: selected ? colors.fg : colors.border,
+                }}
+              >
+                {dot && <View className="w-1.5 h-1.5 rounded-full mr-1.5" style={{ backgroundColor: dot }} />}
+                <Text className="font-sans-medium text-xs" style={{ color: selected ? colors.bg : colors.fgSecondary }}>
+                  {cat === 'all' ? 'All' : categories[cat].label}
+                </Text>
+              </Pressable>
+            );
+          })}
         </ScrollView>
       </MotiView>
 

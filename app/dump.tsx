@@ -254,8 +254,8 @@ export default function DumpScreen() {
               })}
             </View>
           ) : (
-            <Text className="font-sans-medium text-sm text-fg-muted text-center">
-              Capture audio directly for AI processing
+            <Text className="font-sans text-sm text-fg-muted text-center leading-relaxed">
+              Talk it through. Mnemo writes up the note,{'\n'}where you left off, and what's next.
             </Text>
           )}
         </View>

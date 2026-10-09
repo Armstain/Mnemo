@@ -11,7 +11,7 @@ interface DueDatePickerProps {
   onChange: (timestamp: number | undefined) => void;
 }
 
-function formatDueDate(timestamp: number): string {
+export function formatDueDate(timestamp: number): string {
   const date = new Date(timestamp);
   const now = new Date();
   const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());

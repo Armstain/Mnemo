@@ -47,6 +47,16 @@ import { useThemeColors } from '@/hooks/use-theme';
 import type { MnemoItem } from '@/types/mnemo';
 import { EASE_IN_OUT, useEnter } from '@/utils/motion';
 
+/** Eyebrow heading for a detail-screen section. */
+function SectionLabel({ children }: { children: string }) {
+  const colors = useThemeColors();
+  return (
+    <Text className="font-sans-semi text-micro uppercase tracking-caps mb-2.5" style={{ color: colors.fgTertiary }}>
+      {children}
+    </Text>
+  );
+}
+
 export default function ItemDetailScreen() {
   const enter = useEnter();
   const insets = useSafeAreaInsets();
@@ -288,7 +298,7 @@ export default function ItemDetailScreen() {
             onPress={isEditing ? handleCancelEdit : () => router.back()}
           />
 
-          <View className="flex-row gap-2">
+          <View className="flex-row gap-1">
             {isEditing ? (
               <Button onPress={handleSaveEdit} variant="primary" size="sm" icon="check">
                 Save
@@ -298,11 +308,12 @@ export default function ItemDetailScreen() {
                 <IconButton
                   icon={isCopied ? 'check' : 'copy'}
                   label="Copy"
+                  variant="bare"
                   onPress={onCopy}
                 />
-                <IconButton icon="share" label="Share" onPress={onShare} />
-                <IconButton icon="pencil" label="Edit" onPress={() => setIsEditing(true)} />
-                <IconButton icon="trash" label="Delete" variant="danger" onPress={handleDelete} />
+                <IconButton icon="share" label="Share" variant="bare" onPress={onShare} />
+                <IconButton icon="pencil" label="Edit" variant="bare" onPress={() => setIsEditing(true)} />
+                <IconButton icon="trash" label="Delete" variant="bare" onPress={handleDelete} />
               </>
             )}
           </View>
@@ -344,20 +355,24 @@ export default function ItemDetailScreen() {
           <MotiView {...enter.rise(0)}
             className="px-6 py-6"
           >
-            {/* Category & Status */}
-            <View className="flex-row items-center gap-2 mb-3">
-              <Pill tone={categories[item.category].color} size="md">
+            {/* Category · status · last touched */}
+            <View className="flex-row items-center flex-wrap mb-3">
+              <View
+                className="w-1.5 h-1.5 rounded-full mr-2"
+                style={{ backgroundColor: categories[item.category].color }}
+              />
+              <Text className="font-sans-medium text-xs" style={{ color: categories[item.category].color }}>
                 {categories[item.category].label}
-              </Pill>
-              <Pill tone={statusColors[item.status].color} size="md">
+              </Text>
+              <Text className="font-sans text-xs" style={{ color: colors.fgTertiary }}>
+                {'  ·  '}
+              </Text>
+              <Text className="font-sans-medium text-xs" style={{ color: statusColors[item.status].color }}>
                 {statusColors[item.status].label}
-              </Pill>
-              <View className="flex-row items-center ml-auto">
-                <Icon name="clock" size={13} color={colors.accent} />
-                <Text className="font-sans-medium text-xs text-accent ml-1.5">
-                  {formatDistanceToNow(item.updatedAt)} ago
-                </Text>
-              </View>
+              </Text>
+              <Text className="font-sans text-xs" style={{ color: colors.fgTertiary }}>
+                {'  ·  '}Updated {formatDistanceToNow(item.updatedAt)} ago
+              </Text>
             </View>
 
             {/* Category edit (when editing) */}
@@ -388,23 +403,6 @@ export default function ItemDetailScreen() {
               </View>
             )}
 
-            {/* Tags — AI-generated, read-only */}
-            {item.tags.length > 0 && (
-              <View className="flex-row flex-wrap gap-1.5 mb-4">
-                {item.tags.map((tag) => (
-                  <View
-                    key={tag}
-                    className="rounded-full px-2.5 py-1"
-                    style={{ backgroundColor: colors.surfaceHigh }}
-                  >
-                    <Text className="font-sans-medium text-[11px]" style={{ color: colors.fgSecondary }}>
-                      #{tag}
-                    </Text>
-                  </View>
-                ))}
-              </View>
-            )}
-
             {/* Title */}
             {isEditing ? (
               <TextInput
@@ -417,8 +415,15 @@ export default function ItemDetailScreen() {
                 placeholderTextColor={colors.fgTertiary}
               />
             ) : (
-              <Text className="text-3xl font-serif text-fg leading-snug mb-4">
+              <Text className="text-3xl font-display text-fg leading-snug mb-3">
                 {item.title}
+              </Text>
+            )}
+
+            {/* Tags — AI-generated, read-only */}
+            {!isEditing && item.tags.length > 0 && (
+              <Text className="font-sans text-xs mb-3" style={{ color: colors.fgTertiary }}>
+                {item.tags.map((tag) => `#${tag}`).join('   ')}
               </Text>
             )}
 
@@ -483,7 +488,7 @@ export default function ItemDetailScreen() {
                     onPress={() => (rebrief.state === 'idle' ? rebrief.start(item) : rebrief.stop())}
                   />
                   {hasArchive && (
-                    <IconButton icon="archive" label="Archive" variant="bare" onPress={() => archiveItem(item.id)} />
+                    <IconButton icon="archive" label="Archive" onPress={() => archiveItem(item.id)} />
                   )}
                 </View>
               </MotiView>
@@ -522,7 +527,7 @@ export default function ItemDetailScreen() {
 
           {/* ─── Where Left Off & Next Step ──────────── */}
           <MotiView {...enter.rise(1)}
-            className="px-6 mb-4"
+            className="px-6 mb-8"
           >
             {isEditing ? (
               <View className="gap-4">
@@ -588,10 +593,10 @@ export default function ItemDetailScreen() {
           {/* ─── Checklist ────────────────────────────── */}
           {item.type === 'checklist' && item.checklistItems && (
             <MotiView {...enter.rise(1)}
-              className="px-6 mb-4"
+              className="px-6 mb-8"
             >
-              <Text className="font-sans-medium text-lg text-fg mb-4">Checklist</Text>
-              <View className="rounded-[16px] p-5 bg-surface border border-border/30">
+              <SectionLabel>Checklist</SectionLabel>
+              <View className="rounded-md p-5 bg-surface border border-border/60">
                 <ChecklistEditor
                   items={item.checklistItems}
                   onChange={(updated) =>
@@ -603,25 +608,40 @@ export default function ItemDetailScreen() {
             </MotiView>
           )}
 
+          {/* ─── Notes ───────────────────────────────── */}
+          {(isEditing || item.content.trim().length > 0) && (
+            <MotiView {...enter.rise(2)}
+              className="px-6 mb-8"
+            >
+              <SectionLabel>Notes</SectionLabel>
+              <View className="rounded-md p-5 bg-surface border border-border/60">
+                {isEditing ? (
+                  <TextInput
+                    value={editContent}
+                    onChangeText={setEditContent}
+                    multiline
+                    autoFocus
+                    className="font-sans text-sm leading-7 text-fg/80 min-h-[120px]"
+                    textAlignVertical="top"
+                    selectionColor={colors.accent}
+                    placeholder="Your notes..."
+                    placeholderTextColor={colors.fgTertiary}
+                  />
+                ) : (
+                  <Markdown style={markdownStyles}>{item.content}</Markdown>
+                )}
+              </View>
+            </MotiView>
+          )}
+
           {/* ─── Smart Digest Section ──────────────────── */}
           <MotiView {...enter.rise(2)}
-            className="px-6 py-6"
+            className="px-6 mb-8"
           >
-            <View className="flex-row justify-between items-center mb-6">
-              <View className="flex-row items-center">
-                <Icon name="sparkles" size={18} color={colors.accent} />
-                <Text className="text-lg font-sans-medium text-fg ml-2">Smart Digest</Text>
-              </View>
-
-              {!item.aiSummary && !item.pending && (
-                <Button onPress={handleGenerateReport} disabled={isGenerating} variant="primary" size="sm">
-                  {isGenerating ? 'Thinking...' : 'Generate'}
-                </Button>
-              )}
-            </View>
+            <SectionLabel>Smart digest</SectionLabel>
 
             {isGenerating && (
-              <View className="py-16 items-center rounded-[16px] bg-surface-warm">
+              <View className="py-10 items-center rounded-md bg-surface">
                 <MotiView
                   from={{ opacity: 0.4 }}
                   animate={{ opacity: 1 }}
@@ -633,22 +653,30 @@ export default function ItemDetailScreen() {
                     easing: EASE_IN_OUT,
                   }}
                 >
-                  <Text className="text-3xl mb-4">✨</Text>
+                  <Icon name="sparkles" size={24} color={colors.accent} />
                 </MotiView>
-                <Text className="font-sans text-sm text-fg-muted text-center">
-                  Reflecting on your thoughts...
+                <Text className="font-sans text-sm text-fg-muted text-center mt-3">
+                  Reading your note…
                 </Text>
               </View>
             )}
 
             {!isGenerating && !item.aiSummary && (
-              <View className="py-12 items-center rounded-[16px] border border-dashed border-border bg-surface/50">
-                <Icon name="sparkles" size={28} color={colors.fgTertiary} stroke={1.5} />
-                <Text className="font-sans text-sm text-fg-muted text-center px-8 mt-3">
+              <View
+                className="flex-row items-center rounded-md p-4"
+                style={{ backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border }}
+              >
+                <Icon name="sparkles" size={18} color={colors.accent} />
+                <Text className="flex-1 font-sans text-sm leading-snug mx-3" style={{ color: colors.fgSecondary }}>
                   {item.pending
-                    ? 'Digest will be generated once this note is processed.'
-                    : 'Tap "Generate" to create a Smart Digest.\nThis is optional — your note works without it.'}
+                    ? 'Available once this note finishes processing.'
+                    : 'Suggested next steps and resources for this note.'}
                 </Text>
+                {!item.pending && (
+                  <Button onPress={handleGenerateReport} variant="tonal" size="sm">
+                    Generate
+                  </Button>
+                )}
               </View>
             )}
 
@@ -668,7 +696,7 @@ export default function ItemDetailScreen() {
 
                 {/* Next Steps */}
                 <View>
-                  <Text className="font-sans-medium text-lg text-fg mb-4">Suggested steps</Text>
+                  <SectionLabel>Suggested steps</SectionLabel>
                   <View className="gap-3">
                     {item.aiSummary.nextSteps.map((step, i) => (
                       <View
@@ -689,7 +717,7 @@ export default function ItemDetailScreen() {
                 {/* Resources */}
                 {item.aiSummary.resources.length > 0 && (
                   <View>
-                    <Text className="font-sans-medium text-lg text-fg mb-4">Resources</Text>
+                    <SectionLabel>Resources</SectionLabel>
                     <View className="gap-2">
                       {item.aiSummary.resources.map((res, i) => (
                         <ExternalLink
@@ -713,73 +741,44 @@ export default function ItemDetailScreen() {
             )}
           </MotiView>
 
-          {/* ─── Raw Content ─────────────────────────── */}
-          <MotiView {...enter.rise(2)}
-            className="px-6 pb-24 mt-4"
-          >
-            <Text className="font-sans-medium text-lg text-fg mb-4">Your notes</Text>
-
-            <View className="rounded-[16px] p-6 bg-surface-warm/60 border border-border/30">
-              {isEditing ? (
-                <TextInput
-                  value={editContent}
-                  onChangeText={setEditContent}
-                  multiline
-                  autoFocus
-                  className="font-sans text-sm leading-7 text-fg/80 min-h-[120px]"
-                  textAlignVertical="top"
-                  selectionColor={colors.accent}
-                  placeholder="Your notes..."
-                  placeholderTextColor={colors.fgTertiary}
-                />
-              ) : item.content.trim() ? (
-                <Markdown style={markdownStyles}>{item.content}</Markdown>
-              ) : null}
-
-              {!isEditing && item.links.length > 0 && (
-                <View className="mt-6 pt-6 border-t border-border/40">
-                  <Text className="font-sans-medium text-xs text-fg-muted mb-3 tracking-wide">
-                    Attached links
-                  </Text>
-                  <View className="gap-2">
-                    {item.links.map((link, i) => (
-                      <ExternalLink
-                        key={i}
-                        href={link}
-                        className="flex-row items-center justify-between rounded-[10px] px-4 py-3 bg-surface border border-border/30 active:opacity-70"
-                      >
-                        <Text
-                          className="font-sans text-xs text-fg-muted flex-1 mr-4"
-                          numberOfLines={1}
-                        >
-                          {link}
-                        </Text>
-                        <ExternalLinkIcon size={12} color={colors.fgTertiary} />
-                      </ExternalLink>
-                    ))}
-                  </View>
-                </View>
-              )}
-
-              {!isEditing && related.length > 0 && (
-                <View className="mt-6 pt-6 border-t border-border/40">
-                  <Text className="font-sans-medium text-xs text-fg-muted mb-3 tracking-wide">
-                    Related notes
-                  </Text>
-                  <View className="gap-2">
-                    {related.map((relatedItem, i) => (
-                      <NoteRow
-                        key={relatedItem.id}
-                        item={relatedItem}
-                        index={i}
-                        onPress={() => router.push(`/(tabs)/context?id=${relatedItem.id}` as any)}
-                      />
-                    ))}
-                  </View>
-                </View>
-              )}
+          {/* ─── Links ───────────────────────────────── */}
+          {!isEditing && item.links.length > 0 && (
+            <View className="px-6 mb-8">
+              <SectionLabel>Links</SectionLabel>
+              <View className="gap-2">
+                {item.links.map((link, i) => (
+                  <ExternalLink
+                    key={i}
+                    href={link}
+                    className="flex-row items-center justify-between rounded-sm px-4 py-3 bg-surface border border-border/60 active:opacity-70"
+                  >
+                    <Text
+                      className="font-sans text-xs text-fg-muted flex-1 mr-4"
+                      numberOfLines={1}
+                    >
+                      {link}
+                    </Text>
+                    <ExternalLinkIcon size={12} color={colors.fgTertiary} />
+                  </ExternalLink>
+                ))}
+              </View>
             </View>
-          </MotiView>
+          )}
+
+          {/* ─── Related ─────────────────────────────── */}
+          {!isEditing && related.length > 0 && (
+            <View className="px-6 mb-8">
+              <SectionLabel>Related notes</SectionLabel>
+              {related.map((relatedItem, i) => (
+                <NoteRow
+                  key={relatedItem.id}
+                  item={relatedItem}
+                  index={i}
+                  onPress={() => router.push(`/(tabs)/context?id=${relatedItem.id}` as any)}
+                />
+              ))}
+            </View>
+          )}
         </ScrollView>
       </View>
     </KeyboardAvoidingView>
