@@ -44,6 +44,14 @@ export const PALETTE = {
     hueAmber: '#8A6314',
     huePlum: '#8A4A6E',
     hueTeal: '#1F6F76',
+    // Hero — the one inverted surface (resume card): deep ink-green with
+    // paper text, so the thread you should pick up is the darkest, most
+    // deliberate thing on a light page.
+    hero: '#0E3B2B',
+    onHero: '#F4F1E8',
+    onHeroMuted: 'rgba(244, 241, 232, 0.68)',
+    heroSoft: 'rgba(244, 241, 232, 0.10)',
+    heroAccent: '#9FE2BF',
   },
   dark: {
     bg: '#121310',
@@ -74,6 +82,11 @@ export const PALETTE = {
     hueAmber: '#D7B263',
     huePlum: '#D99EC0',
     hueTeal: '#77C3C9',
+    hero: '#163126',
+    onHero: '#ECE9E0',
+    onHeroMuted: 'rgba(236, 233, 224, 0.66)',
+    heroSoft: 'rgba(236, 233, 224, 0.08)',
+    heroAccent: '#5DDBA0',
   },
 } as const;
 

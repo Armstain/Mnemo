@@ -24,7 +24,6 @@ import { structurePendingItem } from '@/lib/capture';
 import {
   ExternalLink as ExternalLinkIcon,
   RefreshCw,
-  MapPin,
   FileQuestion,
 } from 'lucide-react-native';
 import { ExternalLink } from '@/components/ExternalLink';
@@ -46,6 +45,8 @@ import { CATEGORY_LIST, useCategories, useStatusConfig } from '@/utils/categorie
 import { useThemeColors } from '@/hooks/use-theme';
 import type { MnemoItem } from '@/types/mnemo';
 import { EASE_IN_OUT, useEnter } from '@/utils/motion';
+import { freshness } from '@/utils/time';
+import { ThreadRing } from '@/components/ui/ThreadRing';
 
 /** Eyebrow heading for a detail-screen section. */
 function SectionLabel({ children }: { children: string }) {
@@ -355,24 +356,31 @@ export default function ItemDetailScreen() {
           <MotiView {...enter.rise(0)}
             className="px-6 py-6"
           >
-            {/* Category · status · last touched */}
-            <View className="flex-row items-center flex-wrap mb-3">
-              <View
-                className="w-1.5 h-1.5 rounded-full mr-2"
-                style={{ backgroundColor: categories[item.category].color }}
-              />
-              <Text className="font-sans-medium text-xs" style={{ color: categories[item.category].color }}>
-                {categories[item.category].label}
-              </Text>
-              <Text className="font-sans text-xs" style={{ color: colors.fgTertiary }}>
-                {'  ·  '}
-              </Text>
-              <Text className="font-sans-medium text-xs" style={{ color: statusColors[item.status].color }}>
-                {statusColors[item.status].label}
-              </Text>
-              <Text className="font-sans text-xs" style={{ color: colors.fgTertiary }}>
-                {'  ·  '}Updated {formatDistanceToNow(item.updatedAt)} ago
-              </Text>
+            {/* Category · status · how long it's been — ring shows how warm the thread still is */}
+            <View className="flex-row items-center mb-5">
+              <ThreadRing
+                size={40}
+                progress={freshness(item.updatedAt)}
+                color={categories[item.category].color}
+                trackColor={categories[item.category].bgTint}
+              >
+                {React.createElement(categories[item.category].icon, {
+                  size: 15,
+                  color: categories[item.category].color,
+                  strokeWidth: 2,
+                })}
+              </ThreadRing>
+              <View className="ml-3">
+                <Text className="font-sans-semi text-xs" style={{ color: colors.fg }}>
+                  {categories[item.category].label}
+                  <Text className="font-sans-medium" style={{ color: statusColors[item.status].color }}>
+                    {'  ·  '}{statusColors[item.status].label}
+                  </Text>
+                </Text>
+                <Text className="font-sans text-xs mt-0.5" style={{ color: colors.fgTertiary }}>
+                  Last touched {formatDistanceToNow(item.updatedAt)} ago
+                </Text>
+              </View>
             </View>
 
             {/* Category edit (when editing) */}
@@ -415,7 +423,7 @@ export default function ItemDetailScreen() {
                 placeholderTextColor={colors.fgTertiary}
               />
             ) : (
-              <Text className="text-3xl font-display text-fg leading-snug mb-3">
+              <Text className="font-display text-fg leading-tight mb-3" style={{ fontSize: 34, letterSpacing: -0.4 }}>
                 {item.title}
               </Text>
             )}
@@ -561,26 +569,25 @@ export default function ItemDetailScreen() {
             ) : (
               <View className="gap-3">
                 {item.whereLeftOff && (
-                  <View className="flex-row items-start bg-surface-warm/60 rounded-2xl p-4 border border-border/20">
-                    <MapPin size={14} color={colors.accent} style={{ marginTop: 2 }} />
-                    <View className="flex-1 ml-2.5">
-                      <Text className="font-sans-medium text-[10px] text-fg-muted tracking-wider uppercase mb-1">
-                        Where you left off
-                      </Text>
-                      <Text className="font-sans text-sm text-fg leading-relaxed">
-                        {item.whereLeftOff}
-                      </Text>
-                    </View>
+                  <View className="pl-4 mb-2" style={{ borderLeftWidth: 2, borderLeftColor: categories[item.category].color }}>
+                    <Text className="font-sans-semi text-micro uppercase tracking-caps mb-1.5" style={{ color: colors.fgTertiary }}>
+                      Where you left off
+                    </Text>
+                    <Text className="font-quote text-heading leading-relaxed" style={{ color: colors.fgSecondary }}>
+                      “{item.whereLeftOff}”
+                    </Text>
                   </View>
                 )}
                 {item.nextStep && (
-                  <View className="flex-row items-start bg-accent/5 rounded-2xl p-4 border border-accent/10">
-                    <Icon name="arrowRight" size={14} color={colors.accent} />
-                    <View className="flex-1 ml-2.5">
-                      <Text className="font-sans-medium text-[10px] text-accent tracking-wider uppercase mb-1">
+                  <View className="flex-row items-center rounded-md p-4" style={{ backgroundColor: colors.accentSoft }}>
+                    <View className="w-8 h-8 rounded-full items-center justify-center" style={{ backgroundColor: colors.accent }}>
+                      <Icon name="arrowRight" size={15} stroke={2.2} color={colors.accentInk} />
+                    </View>
+                    <View className="flex-1 ml-3">
+                      <Text className="font-sans-semi text-micro uppercase tracking-caps mb-0.5" style={{ color: colors.accent }}>
                         Next step
                       </Text>
-                      <Text className="font-sans-medium text-sm text-fg leading-relaxed">
+                      <Text className="font-sans-medium text-sm leading-snug" style={{ color: colors.fg }}>
                         {item.nextStep}
                       </Text>
                     </View>

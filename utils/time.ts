@@ -25,3 +25,15 @@ export function formatCompactDistance(date: Date | string | number): string {
     .replace(' years', 'y')
     .replace(' year', 'y');
 }
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * How "warm" a thread still is, from 1 (touched just now) down to 0 at
+ * `horizonDays` — the same 14-day point where nudges stop treating a
+ * thread as paused and start treating it as abandoned (lib/nudges.ts).
+ */
+export function freshness(timestamp: number, horizonDays = 14, now = Date.now()): number {
+  const age = Math.max(0, now - timestamp);
+  return Math.max(0, 1 - age / (horizonDays * DAY_MS));
+}

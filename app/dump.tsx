@@ -210,7 +210,7 @@ export default function DumpScreen() {
 
         {/* Central Mic Area */}
         <View className="flex-1 items-center justify-center">
-          <RecordButton size={112} recording={isRecording} />
+          <RecordButton size={112} recording={isRecording} orbit />
 
           <MotiView {...enter.rise(2)}
             className="mt-10"

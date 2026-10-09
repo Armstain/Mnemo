@@ -48,6 +48,13 @@
   --hue-amber: #8a6314;
   --hue-plum: #8a4a6e;
   --hue-teal: #1f6f76;
+
+  /* Hero — the one inverted surface (resume card). */
+  --hero: #0e3b2b;
+  --on-hero: #f4f1e8;
+  --on-hero-muted: rgba(244, 241, 232, 0.68);
+  --hero-soft: rgba(244, 241, 232, 0.1);
+  --hero-accent: #9fe2bf;
 }
 
 /*
@@ -95,6 +102,12 @@
   --hue-amber: #d7b263;
   --hue-plum: #d99ec0;
   --hue-teal: #77c3c9;
+
+  --hero: #163126;
+  --on-hero: #ece9e0;
+  --on-hero-muted: rgba(236, 233, 224, 0.66);
+  --hero-soft: rgba(236, 233, 224, 0.08);
+  --hero-accent: #5ddba0;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -130,6 +143,12 @@
     --hue-amber: #d7b263;
     --hue-plum: #d99ec0;
     --hue-teal: #77c3c9;
+
+    --hero: #163126;
+    --on-hero: #ece9e0;
+    --on-hero-muted: rgba(236, 233, 224, 0.66);
+    --hero-soft: rgba(236, 233, 224, 0.08);
+    --hero-accent: #5ddba0;
   }
 }
 
@@ -164,6 +183,12 @@
   --color-hue-amber: var(--hue-amber);
   --color-hue-plum: var(--hue-plum);
   --color-hue-teal: var(--hue-teal);
+
+  --color-hero: var(--hero);
+  --color-on-hero: var(--on-hero);
+  --color-on-hero-muted: var(--on-hero-muted);
+  --color-hero-soft: var(--hero-soft);
+  --color-hero-accent: var(--hero-accent);
 
   /* Typography — Instrument Sans for UI chrome, Literata for titles and
      anything the app says back to you (AI paraphrases). Keeping the serif
