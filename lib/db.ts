@@ -1,14 +1,21 @@
 import * as SQLite from 'expo-sqlite';
 import type { MnemoItem } from '@/types/mnemo';
 
-const db = SQLite.openDatabaseSync('mnemo.db');
+// Opened lazily and asynchronously. On web, expo-sqlite runs in a worker,
+// and a synchronous open at import time times out waiting on it ("Sync
+// operation timeout"), crashing the app before the first render.
+let dbPromise: Promise<SQLite.SQLiteDatabase> | null = null;
+function getDb(): Promise<SQLite.SQLiteDatabase> {
+  if (!dbPromise) dbPromise = SQLite.openDatabaseAsync('mnemo.db');
+  return dbPromise;
+}
 
 let initPromise: Promise<void> | null = null;
 
 /** Idempotent schema creation. Safe to call on every app start. */
 export function initDb(): Promise<void> {
   if (!initPromise) {
-    initPromise = db.execAsync(`
+    initPromise = getDb().then((db) => db.execAsync(`
       CREATE TABLE IF NOT EXISTS items (
         id TEXT PRIMARY KEY NOT NULL,
         type TEXT NOT NULL,
@@ -41,7 +48,7 @@ export function initDb(): Promise<void> {
         dims INTEGER NOT NULL,
         updatedAt INTEGER NOT NULL
       );
-    `);
+    `));
   }
   return initPromise;
 }
@@ -119,16 +126,19 @@ function itemToParams(item: MnemoItem) {
 }
 
 export async function getAllItems(): Promise<MnemoItem[]> {
+  const db = await getDb();
   const rows = await db.getAllAsync<ItemRow>('SELECT * FROM items');
   return rows.map(rowToItem);
 }
 
 export async function countItems(): Promise<number> {
+  const db = await getDb();
   const row = await db.getFirstAsync<{ count: number }>('SELECT COUNT(*) as count FROM items', {});
   return row?.count ?? 0;
 }
 
 export async function insertItem(item: MnemoItem): Promise<void> {
+  const db = await getDb();
   await db.runAsync(
     `INSERT INTO items
       (id, type, title, content, checklistItems, links, category, tags, status,
@@ -182,16 +192,19 @@ export async function updatePartialItem(id: string, updates: Partial<MnemoItem>)
     params[`$${k}`] = serializeColumnValue(k, (updates as Record<string, unknown>)[k]);
   }
 
+  const db = await getDb();
   await db.runAsync(`UPDATE items SET ${setClause} WHERE id = $id`, params);
 }
 
 export async function deleteItemRow(id: string): Promise<void> {
+  const db = await getDb();
   await db.runAsync('DELETE FROM items WHERE id = $id', { $id: id });
   await deleteEmbedding(id);
 }
 
 /** Wipes every item and embedding. Used by "Clear all data" in Settings. */
 export async function deleteAllItems(): Promise<void> {
+  const db = await getDb();
   await db.execAsync('DELETE FROM items; DELETE FROM embeddings;');
 }
 
@@ -217,6 +230,7 @@ interface EmbeddingRow {
 }
 
 export async function upsertEmbedding(record: EmbeddingRecord): Promise<void> {
+  const db = await getDb();
   await db.runAsync(
     `INSERT INTO embeddings (itemId, vector, model, dims, updatedAt)
      VALUES ($itemId, $vector, $model, $dims, $updatedAt)
@@ -233,20 +247,24 @@ export async function upsertEmbedding(record: EmbeddingRecord): Promise<void> {
 }
 
 export async function getAllEmbeddings(): Promise<EmbeddingRow[]> {
+  const db = await getDb();
   return db.getAllAsync<EmbeddingRow>('SELECT * FROM embeddings');
 }
 
 /** IDs that already have a vector — used to find what the backfill sweep still needs to embed. */
 export async function getEmbeddedItemIds(): Promise<Set<string>> {
+  const db = await getDb();
   const rows = await db.getAllAsync<{ itemId: string }>('SELECT itemId FROM embeddings');
   return new Set(rows.map((r) => r.itemId));
 }
 
 export async function deleteEmbedding(itemId: string): Promise<void> {
+  const db = await getDb();
   await db.runAsync('DELETE FROM embeddings WHERE itemId = $itemId', { $itemId: itemId });
 }
 
 export async function countEmbeddings(): Promise<number> {
+  const db = await getDb();
   const row = await db.getFirstAsync<{ count: number }>('SELECT COUNT(*) as count FROM embeddings', {});
   return row?.count ?? 0;
 }

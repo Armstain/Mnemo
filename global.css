@@ -58,8 +58,12 @@
  *   1. An explicit .dark ancestor (manual override, any system setting)
  *   2. System prefers dark AND no explicit .light/.dark override is set
  *      ("system" preference)
+ * `:root:where(.dark)` is there for web, where uniwind puts .dark on <html>
+ * itself: a bare :where() has zero specificity and loses to the light
+ * `:root` block on that element, which left text dark-on-dark.
  */
-:where(.dark, .dark *) {
+:root:where(.dark),
+:where(.dark *) {
   --bg: #121310;
   --fg: #ece9e0;
   --fg-secondary: #bdbab0;
