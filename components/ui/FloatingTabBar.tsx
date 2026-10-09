@@ -35,14 +35,20 @@ const PILL_HEIGHT = 28;
 // which is the first child inside that padding.
 const ITEM_PAD_Y = 4;
 
-/** Which tab a pathname belongs to, or 0 when nothing matches. */
+// The last tab a real tab route resolved to. Screens outside the tabs (a
+// note's detail view) keep the tab you came from highlighted, rather than
+// always snapping back to Home.
+let lastTabIndex = 0;
+
+/** Which tab a pathname belongs to; for non-tab routes, the tab you were last on. */
 export function activeTabIndex(pathname: string): number {
   const found = TABS.findIndex(
     (item) =>
       (item.route === '/' && pathname === '/') ||
       (item.route !== '/' && pathname.includes(item.route.replace('/(tabs)/', ''))),
   );
-  return found === -1 ? 0 : found;
+  if (found !== -1) lastTabIndex = found;
+  return lastTabIndex;
 }
 
 type Rect = { x: number; y: number; width: number };

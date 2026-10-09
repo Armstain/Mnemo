@@ -28,7 +28,13 @@ interface NoteRowProps {
 
 /** One line of preview: the note body, else its next step, else checklist progress. */
 function previewText(item: MnemoItem): string {
-  const body = item.content?.trim().replace(/\s+/g, ' ');
+  // Notes are markdown; a one-line preview shows the words, not the markup.
+  const body = item.content
+    ?.replace(/\[([^\]]*)\]\([^)]*\)/g, '$1')
+    .replace(/^\s*(?:[-*+]|\d+\.|#{1,6}|>)\s+/gm, '')
+    .replace(/[*_`~]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
   if (body) return body;
   if (item.nextStep) return `Next: ${item.nextStep}`;
   const checklist = item.checklistItems ?? [];

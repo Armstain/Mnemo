@@ -159,7 +159,7 @@ export default function DumpScreen() {
           style={{ paddingTop: Math.max(insets.top, 16) }}
         >
           <Text className="font-sans-medium text-sm text-fg-muted">
-            {isRecording ? "Listening..." : "Voice capture"}
+            {isRecording ? "Recording" : "Voice capture"}
           </Text>
           {isRecording && (
             <MotiView
