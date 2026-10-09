@@ -13,9 +13,13 @@ import { useMnemoStore } from '@/hooks/use-mnemo-store';
 import { useUndoToast } from '@/hooks/use-undo-toast';
 import { useThemeColors } from '@/hooks/use-theme';
 import { bm25Search } from '@/lib/bm25';
+import { hybridSearch } from '@/lib/search';
 import { CATEGORY_LIST, useCategories } from '@/utils/categories';
 import { useEnter } from '@/utils/motion';
-import type { Category, ItemStatus } from '@/types/mnemo';
+import type { Category, ItemStatus, MnemoItem } from '@/types/mnemo';
+
+// Debounce before the semantic (network) half of search fires.
+const SEMANTIC_DEBOUNCE_MS = 300;
 
 type FilterStatus = 'all' | ItemStatus;
 
@@ -47,23 +51,49 @@ export default function LibraryScreen() {
     }
   }, [categoryParam]);
 
-  const filteredItems = useMemo(() => {
-    let result = items;
+  // Category/status filters first; search (if any) ranks within them.
+  const scopedItems = useMemo(
+    () =>
+      items.filter(
+        (i) =>
+          (selectedCategory === 'all' || i.category === selectedCategory) &&
+          (selectedStatus === 'all' || i.status === selectedStatus),
+      ),
+    [items, selectedCategory, selectedStatus],
+  );
 
-    if (selectedCategory !== 'all') {
-      result = result.filter((i) => i.category === selectedCategory);
-    }
-    if (selectedStatus !== 'all') {
-      result = result.filter((i) => i.status === selectedStatus);
-    }
-    if (searchQuery.trim()) {
-      result = bm25Search(searchQuery, result);
-    } else {
-      result = [...result].sort((a, b) => b.updatedAt - a.updatedAt);
-    }
+  // Instant keyword results on every keystroke, so search never feels
+  // network-gated...
+  const keywordResults = useMemo(
+    () =>
+      searchQuery.trim()
+        ? bm25Search(searchQuery, scopedItems)
+        : [...scopedItems].sort((a, b) => b.updatedAt - a.updatedAt),
+    [searchQuery, scopedItems],
+  );
 
-    return result;
-  }, [items, selectedCategory, selectedStatus, searchQuery]);
+  // ...upgraded to the hybrid keyword + meaning ranking once it resolves,
+  // so "travel documents" still finds the passport note. null = not ready
+  // for this query yet.
+  const [hybridResults, setHybridResults] = useState<MnemoItem[] | null>(null);
+  useEffect(() => {
+    const trimmed = searchQuery.trim();
+    // Clear immediately so a new query never shows the last one's results.
+    setHybridResults(null);
+    if (!trimmed) return;
+
+    let cancelled = false;
+    const handle = setTimeout(async () => {
+      const fused = await hybridSearch(trimmed, scopedItems);
+      if (!cancelled) setHybridResults(fused);
+    }, SEMANTIC_DEBOUNCE_MS);
+    return () => {
+      cancelled = true;
+      clearTimeout(handle);
+    };
+  }, [searchQuery, scopedItems]);
+
+  const filteredItems = hybridResults ?? keywordResults;
 
   if (!isLoaded) {
     return (
@@ -92,7 +122,7 @@ export default function LibraryScreen() {
         <SearchBar
           value={searchQuery}
           onChangeText={setSearchQuery}
-          placeholder="Filter by keyword"
+          placeholder="Search your notes"
         />
       </MotiView>
 

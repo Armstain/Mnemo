@@ -23,7 +23,8 @@ import {
   SPRING_NAV,
 } from '@/utils/motion';
 import { formatDuration } from '@/utils/time';
-import { NAV_BAR_HEIGHT } from '@/components/ui/FloatingTabBar';
+import { CENTER_BUTTON_RISE, NAV_BAR_HEIGHT } from '@/components/ui/FloatingTabBar';
+import { OpenRing } from '@/components/ui/ThreadRing';
 
 // How long a hold must be sustained before it commits to recording. Long
 // enough that a normal tap never triggers it, short enough that intent
@@ -289,17 +290,27 @@ export function ActionCluster({ visible = true }: { visible?: boolean }) {
           className="z-40"
           accessibilityElementsHidden
           importantForAccessibility="no-hide-descendants"
-        />
+        >
+          {/* A soft wash of the page colour, so the menu reads against
+              whatever list happens to be behind it. */}
+          <MotiView
+            from={{ opacity: 0 }}
+            animate={{ opacity: 0.82 }}
+            transition={reduceMotion ? REDUCED : { type: 'timing', duration: DUR_FAST, easing: EASE_OUT }}
+            style={[StyleSheet.absoluteFillObject, { backgroundColor: colors.bg }]}
+          />
+        </Pressable>
       )}
 
       <View
         pointerEvents={visible ? 'box-none' : 'none'}
         accessibilityElementsHidden={!visible}
         importantForAccessibility={visible ? 'auto' : 'no-hide-descendants'}
-        className="absolute bottom-0 right-0 z-50 items-end"
+        className="absolute bottom-0 left-0 right-0 z-50 items-center"
         style={{
-          paddingRight: 16,
-          paddingBottom: insets.bottom + NAV_BAR_HEIGHT + 28,
+          // Same bottom inset as FloatingTabBar, then up so the button rises
+          // CENTER_BUTTON_RISE above the bar's top edge.
+          paddingBottom: Math.max(insets.bottom, 16) + NAV_BAR_HEIGHT + CENTER_BUTTON_RISE - FAB_SIZE,
         }}
       >
         <MotiView {...entrance} style={styles.stack}>
@@ -330,7 +341,7 @@ export function ActionCluster({ visible = true }: { visible?: boolean }) {
             {expanded && (
               <MiniAction
                 key="note"
-                label="Note"
+                label="Write"
                 icon={<SquarePen size={20} color={colors.fg} strokeWidth={1.9} />}
                 bg={colors.surfaceHighest}
                 delay={0}
@@ -342,6 +353,24 @@ export function ActionCluster({ visible = true }: { visible?: boolean }) {
 
           {/* Main FAB — tap to open the menu; hold to record inline. */}
           <View style={styles.mainWrap}>
+            {/* The brand's open ring around the button. Still at rest (no
+                decorative motion on a task surface); it turns while a hold
+                is recording. */}
+            <MotiView
+              pointerEvents="none"
+              style={styles.orbit}
+              animate={{
+                rotate: holdPhase === 'recording' && !reduceMotion ? '360deg' : '0deg',
+                opacity: holdPhase === 'idle' ? 0.55 : 0.9,
+              }}
+              transition={
+                holdPhase === 'recording' && !reduceMotion
+                  ? { type: 'timing', duration: 3000, easing: Easing.linear, loop: true, repeatReverse: false }
+                  : { type: 'timing', duration: DUR_FAST, easing: EASE_OUT }
+              }
+            >
+              <OpenRing size={ORBIT_SIZE} color={fabTint} weight={0.022} core={false} />
+            </MotiView>
             {/* Charging ring — grows continuously while held, so the hold
                 itself reads as "in progress" before it commits. */}
             {holdPhase === 'charging' && !reduceMotion && (
@@ -396,10 +425,9 @@ export function ActionCluster({ visible = true }: { visible?: boolean }) {
                   style={StyleSheet.absoluteFillObject}
                 >
                   <View style={styles.iconCenter}>
-                    {/* Plus, not mic — the closed FAB leads to both a Record
-                        and a Note option, so its resting icon shouldn't
-                        imply audio-only. */}
-                    <Icon name="plus" size={26} color={fabInk} stroke={2.4} />
+                    {/* Mic: the button is the app's voice-first capture.
+                        Tapping still offers Write as well. */}
+                    <Icon name="mic" size={26} color={fabInk} stroke={2.2} />
                   </View>
                 </MotiView>
                 <MotiView
@@ -588,38 +616,45 @@ function MiniAction({
       };
 
   return (
-    <MotiView {...motionProps} style={styles.miniRow}>
-      <View style={[styles.miniLabel, { backgroundColor: colors.surfaceHigh, borderColor: colors.border }]}>
-        <Text className="font-sans-medium text-xs" style={{ color: colors.fg }}>
-          {label}
-        </Text>
-      </View>
+    <MotiView {...motionProps}>
       <Pressable
         accessibilityRole="button"
         accessibilityLabel={label}
-        android_ripple={{ color: colors.border, borderless: false, radius: 24 }}
+        android_ripple={{ color: colors.border, borderless: false }}
         onPress={onPress}
-        style={[styles.miniFab, { backgroundColor: bg }]}
+        style={[styles.miniPill, { backgroundColor: bg, borderColor: colors.border }]}
       >
         {icon}
+        <Text className="font-sans-semi text-sm" style={{ color: colors.fg }}>
+          {label}
+        </Text>
       </Pressable>
     </MotiView>
   );
 }
 
+// Main button diameter, and the brand ring drawn around it.
+const FAB_SIZE = 62;
+const ORBIT_SIZE = FAB_SIZE + 22;
+
 const styles = StyleSheet.create({
   stack: {
-    alignItems: 'flex-end',
-    gap: 16,
+    alignItems: 'center',
+    gap: 12,
   },
   mainWrap: {
     alignItems: 'center',
     justifyContent: 'center',
   },
+  orbit: {
+    position: 'absolute',
+    width: ORBIT_SIZE,
+    height: ORBIT_SIZE,
+  },
   mainFabTouchable: {
-    width: 60,
-    height: 60,
-    borderRadius: 30,
+    width: FAB_SIZE,
+    height: FAB_SIZE,
+    borderRadius: FAB_SIZE / 2,
     overflow: 'hidden',
     // M3 elevation level 3.
     shadowColor: '#000000',
@@ -629,17 +664,17 @@ const styles = StyleSheet.create({
     elevation: 8,
   },
   mainFab: {
-    width: 60,
-    height: 60,
-    borderRadius: 30,
+    width: FAB_SIZE,
+    height: FAB_SIZE,
+    borderRadius: FAB_SIZE / 2,
     alignItems: 'center',
     justifyContent: 'center',
   },
   chargingRing: {
     position: 'absolute',
-    width: 60,
-    height: 60,
-    borderRadius: 30,
+    width: FAB_SIZE,
+    height: FAB_SIZE,
+    borderRadius: FAB_SIZE / 2,
     borderWidth: 2,
   },
   iconCenter: {
@@ -647,26 +682,17 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  miniRow: {
+  miniPill: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'flex-end',
-    gap: 10,
-  },
-  miniLabel: {
+    justifyContent: 'center',
+    minWidth: 136,
+    gap: 8,
+    height: 44,
+    paddingHorizontal: 18,
     borderRadius: 999,
     borderWidth: StyleSheet.hairlineWidth,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-  },
-  miniFab: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    alignItems: 'center',
-    justifyContent: 'center',
     overflow: 'hidden',
-    // M3 elevation level 2.
     shadowColor: '#000000',
     shadowOffset: { width: 0, height: 2 },
     shadowRadius: 6,

@@ -10,24 +10,29 @@ import { useReduceMotion } from '@/hooks/use-accessibility-motion';
 import { PRESS_SCALE, SPRING_NAV, SPRING_PRESS, motion } from '@/utils/motion';
 import { Icon, type IconName } from '@/components/ui/Icon';
 
+// Two tabs either side of the capture button (ActionCluster), which sits
+// in the gap in the middle of the bar. Search lives inside Library.
 const TABS = [
   { name: 'Home', icon: 'home' as IconName, route: '/' },
-  { name: 'Search', icon: 'search' as IconName, route: '/(tabs)/search' },
   { name: 'Library', icon: 'layers' as IconName, route: '/(tabs)/library' },
 ] as const;
+
+/** Width of the gap in the middle of the bar that the capture button sits in. */
+export const CENTER_SLOT_WIDTH = 96;
+/** How far the capture button rises above the bar's top edge. */
+export const CENTER_BUTTON_RISE = 26;
 
 // Navigation bar container height (excludes the bottom safe inset, which
 // is added on top). Exported so the FAB and screens can reserve clearance
 // without magic numbers.
 export const NAV_BAR_HEIGHT = 66;
 
-// Scroll-content bottom padding that clears the floating nav bar + FAB stack.
-// Only use on screens that render ActionCluster (Home tab).
-export const CONTENT_BOTTOM_CLEARANCE = NAV_BAR_HEIGHT + 130;
-
-// Bottom padding for screens WITHOUT the FAB (Library, Search, Context).
-// Clears just the nav bar + standard 16dp M3 margin.
-export const NAV_CLEARANCE = NAV_BAR_HEIGHT + 16;
+// Scroll-content bottom padding that clears the floating nav bar, the
+// capture button rising out of it, and a standard 16dp margin.
+export const NAV_CLEARANCE = NAV_BAR_HEIGHT + CENTER_BUTTON_RISE + 16;
+// Kept as its own name for Home; the capture button no longer floats in a
+// separate stack above the bar, so Home needs no more room than any tab.
+export const CONTENT_BOTTOM_CLEARANCE = NAV_CLEARANCE;
 
 const PILL_WIDTH = 48;
 const PILL_HEIGHT = 28;
@@ -119,8 +124,9 @@ export function FloatingTabBar() {
       )}
 
       {TABS.map((item, index) => (
+        <React.Fragment key={item.name}>
+        {index === 1 && <View style={{ width: CENTER_SLOT_WIDTH }} pointerEvents="none" />}
         <NavItem
-          key={item.name}
           name={item.name}
           icon={item.icon}
           isActive={index === activeIndex}
@@ -133,6 +139,7 @@ export function FloatingTabBar() {
             router.push(item.route as any);
           }}
         />
+        </React.Fragment>
       ))}
     </View>
   );

@@ -1,7 +1,6 @@
 import { FloatingTabBar } from '@/components/ui/FloatingTabBar';
 import { ActionCluster } from '@/components/ui/ActionCluster';
 import { Tabs } from 'expo-router';
-import { usePathname } from 'expo-router';
 import * as QuickActions from 'expo-quick-actions';
 import { useQuickActionRouting, type RouterAction } from 'expo-quick-actions/router';
 import React, { useEffect } from 'react';
@@ -61,10 +60,7 @@ function useCaptureShortcuts() {
 }
 
 export default function TabLayout() {
-  const pathname = usePathname();
   const colors = useThemeColors();
-  // Hide the FAB on the detail screen — it overlaps the status action row.
-  const showFab = !pathname.includes('context');
 
   useCaptureShortcuts();
 
@@ -85,13 +81,13 @@ export default function TabLayout() {
           animation: 'none',
         }}>
         <Tabs.Screen name="index" options={{ title: 'Home' }} />
-        <Tabs.Screen name="search" options={{ title: 'Search' }} />
         <Tabs.Screen name="library" options={{ title: 'Library' }} />
         <Tabs.Screen name="context" options={{ title: 'Detail', href: null }} />
       </Tabs>
 
       <FloatingTabBar />
-      <ActionCluster visible={showFab} />
+      {/* The capture button sits in the middle of the tab bar on every tab. */}
+      <ActionCluster />
     </View>
   );
 }
