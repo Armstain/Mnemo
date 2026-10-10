@@ -3,7 +3,7 @@ import { AudioModule, RecordingPresets, setAudioModeAsync, useAudioRecorder } fr
 
 import { discardRecordingFile, saveVoiceRecording } from '@/lib/capture';
 import { useMnemoStore } from '@/hooks/use-mnemo-store';
-import type { Category, MnemoItem } from '@/types/mnemo';
+import type { Category, Entry } from '@/types/mnemo';
 
 // Metering on, so the floating overlay can drive a real waveform instead
 // of a decorative loop.
@@ -31,7 +31,7 @@ export type StartResult = 'ok' | 'permission-denied' | 'device-error';
  * while it's actually on screen (see RecordingOverlay).
  */
 export function useQuickRecording() {
-  const { addItem, updateItem } = useMnemoStore();
+  const store = useMnemoStore();
   const audioRecorder = useAudioRecorder(QUICK_RECORDER_OPTIONS);
   const audioModeReady = useRef(false);
   const startedAt = useRef(0);
@@ -56,9 +56,16 @@ export function useQuickRecording() {
     }
   }, [audioRecorder]);
 
-  /** Stops the recorder and either saves or discards, based on `save`. */
+  /**
+   * Stops the recorder and either saves or discards, based on `save`. With
+   * a `threadId` the recording joins that thread; otherwise it starts one.
+   */
   const finish = useCallback(
-    async (category: Category, save: boolean): Promise<MnemoItem | null> => {
+    async (
+      category: Category,
+      save: boolean,
+      threadId?: string,
+    ): Promise<{ threadId: string; entry: Entry } | null> => {
       if (phase !== 'recording') return null;
       const tooShort = Date.now() - startedAt.current < MIN_RECORDING_MS;
       setPhase('finishing');
@@ -69,7 +76,7 @@ export function useQuickRecording() {
           discardRecordingFile(tempUri);
           return null;
         }
-        return await saveVoiceRecording({ tempUri, category, addItem, updateItem });
+        return await saveVoiceRecording({ tempUri, category, threadId, store });
       } catch (err) {
         console.error('Failed to finish quick recording', err);
         return null;
@@ -77,7 +84,7 @@ export function useQuickRecording() {
         setPhase('idle');
       }
     },
-    [phase, audioRecorder, addItem, updateItem],
+    [phase, audioRecorder, store],
   );
 
   return {

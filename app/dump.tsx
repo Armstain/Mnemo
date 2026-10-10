@@ -32,7 +32,7 @@ const METERING_BASELINE = -50;
 export default function DumpScreen() {
   const enter = useEnter();
   const insets = useSafeAreaInsets();
-  const { addItem, updateItem } = useMnemoStore();
+  const store = useMnemoStore();
 
   const [isProcessing, setIsProcessing] = useState(false);
   const [hasPermission, setHasPermission] = useState<boolean | null>(null);
@@ -103,7 +103,11 @@ export default function DumpScreen() {
   // widgets / Siri / Control Center, which all deep-link to
   // mnemo://dump?autostart=1). Waits for the permission check on mount so
   // a first-time user gets the OS prompt, not a failed start.
-  const { autostart } = useLocalSearchParams<{ autostart?: string }>();
+  // ?threadId=… records into an existing thread (from a thread screen)
+  // instead of starting a new one, so there's no category to pick.
+  const { autostart, threadId } = useLocalSearchParams<{ autostart?: string; threadId?: string }>();
+  const targetThreadId = typeof threadId === 'string' && threadId ? threadId : undefined;
+  const targetThread = targetThreadId ? store.items.find((i) => i.id === targetThreadId) : undefined;
   const autostarted = useRef(false);
   useEffect(() => {
     if (autostart !== '1' || !hasPermission || autostarted.current) return;
@@ -122,9 +126,9 @@ export default function DumpScreen() {
       // saveVoiceRecording copies the file to a permanent location, adds
       // the pending item, and kicks off background AI structuring — the
       // same path the FAB's quick hold-to-record flow uses.
-      const newItem = await saveVoiceRecording({ tempUri, category, addItem, updateItem });
+      const saved = await saveVoiceRecording({ tempUri, category, threadId: targetThreadId, store });
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      router.replace(`/(tabs)/context?id=${newItem.id}` as any);
+      router.replace(`/(tabs)/context?id=${saved.threadId}` as any);
     } catch (e) {
       console.error('stopAndSave error', e);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
@@ -159,7 +163,7 @@ export default function DumpScreen() {
           style={{ paddingTop: Math.max(insets.top, 16) }}
         >
           <Text className="font-sans-medium text-sm text-fg-muted">
-            {isRecording ? "Recording" : "Voice capture"}
+            {isRecording ? 'Recording' : targetThread ? `Adding to ${targetThread.title}` : 'Voice capture'}
           </Text>
           {isRecording && (
             <MotiView
@@ -178,8 +182,8 @@ export default function DumpScreen() {
           )}
         </MotiView>
 
-        {/* Category selector — horizontal scroll to match capture screen */}
-        {!isRecording && (
+        {/* Category selector — only when starting a new thread */}
+        {!isRecording && !targetThread && (
           <MotiView {...enter.fade(1)}
             className="mb-6"
           >

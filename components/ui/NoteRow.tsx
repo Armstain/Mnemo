@@ -42,7 +42,7 @@ function previewText(item: MnemoItem): string {
     const done = checklist.filter((c) => c.checked).length;
     return `${done} of ${checklist.length} done`;
   }
-  return 'Empty note';
+  return item.pending ? 'Transcribing your recording…' : 'Empty note';
 }
 
 /**

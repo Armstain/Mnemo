@@ -6,9 +6,10 @@ import { Easing } from 'react-native-reanimated';
 import * as Haptics from 'expo-haptics';
 import { useAudioRecorderState, type AudioRecorder } from 'expo-audio';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { router } from 'expo-router';
+import { router, useGlobalSearchParams, usePathname } from 'expo-router';
 
 import { useThemeColors } from '@/hooks/use-theme';
+import { useMnemoStore } from '@/hooks/use-mnemo-store';
 import { Icon } from '@/components/ui/Icon';
 import { useReduceMotion } from '@/hooks/use-accessibility-motion';
 import { useQuickRecording } from '@/hooks/use-quick-recording';
@@ -61,6 +62,17 @@ export function ActionCluster({ visible = true }: { visible?: boolean }) {
   const colors = useThemeColors();
   const reduceMotion = useReduceMotion();
   const { audioRecorder, start, finish } = useQuickRecording();
+
+  // On a thread's screen, everything this button captures joins that
+  // thread; anywhere else it starts a new one.
+  const pathname = usePathname();
+  const { id: routeId } = useGlobalSearchParams<{ id?: string }>();
+  const { items } = useMnemoStore();
+  const currentThread =
+    pathname.includes('context') && typeof routeId === 'string'
+      ? items.find((i) => i.id === routeId)
+      : undefined;
+  const threadQuery = currentThread ? `?threadId=${currentThread.id}` : '';
 
   const [expanded, setExpanded] = useState(false);
   const [holdPhase, setHoldPhase] = useState<HoldPhase>('idle');
@@ -129,13 +141,13 @@ export function ActionCluster({ visible = true }: { visible?: boolean }) {
   const goRecordScreen = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     setExpanded(false);
-    router.push('/dump' as any);
+    router.push(`/dump${threadQuery}` as any);
   };
 
   const goNote = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     setExpanded(false);
-    router.push('/capture' as any);
+    router.push(`/capture${threadQuery}` as any);
   };
 
   const beginHold = async () => {
@@ -175,7 +187,7 @@ export function ActionCluster({ visible = true }: { visible?: boolean }) {
     setTail('finishing');
     if (tailTimeout.current) clearTimeout(tailTimeout.current);
 
-    finish('general', wantsSave).then((item) => {
+    finish('general', wantsSave, currentThread?.id).then((item) => {
       const saved = wantsSave && !!item;
       setTail(saved ? 'saved' : 'discarded');
       if (saved) {

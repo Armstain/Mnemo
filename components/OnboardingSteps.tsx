@@ -11,7 +11,8 @@ import { RecordButton } from '@/components/ui/RecordButton';
 import { useMnemoStore } from '@/hooks/use-mnemo-store';
 import { useQuickRecording } from '@/hooks/use-quick-recording';
 import { useThemeColors } from '@/hooks/use-theme';
-import { resolvePendingItem } from '@/lib/capture';
+import { resolvePendingEntry } from '@/lib/capture';
+import { buildBlocks } from '@/lib/threads';
 import { NUDGE_TIMES, requestNudgePermission, saveNudgePrefs } from '@/lib/nudges';
 import { useEnter } from '@/utils/motion';
 
@@ -72,7 +73,7 @@ export function FirstCaptureStep({
 }) {
   const enter = useEnter();
   const colors = useThemeColors();
-  const { addItem, updateItem } = useMnemoStore();
+  const store = useMnemoStore();
   const recording = useQuickRecording();
   const [mode, setMode] = useState<'voice' | 'type'>('voice');
   const [text, setText] = useState('');
@@ -110,10 +111,10 @@ export function FirstCaptureStep({
       setMode('type');
       return;
     }
-    const item = await recording.finish('general', true);
-    if (item) {
+    const saved = await recording.finish('general', true);
+    if (saved) {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      onCaptured(item.id);
+      onCaptured(saved.threadId);
     } else {
       setHint('That was a little short. Tap and try again, or type it.');
     }
@@ -140,20 +141,25 @@ export function FirstCaptureStep({
     const trimmed = text.trim();
     if (!trimmed) return;
     const firstLine = trimmed.split('\n')[0];
-    const item = addItem({
-      type: 'note',
-      title: firstLine.length > 50 ? `${firstLine.substring(0, 50)}…` : firstLine,
-      content: trimmed,
-      links: [],
-      category: 'general',
-      tags: [],
-      status: 'active',
-      pending: true,
-      pendingRawText: trimmed,
-    });
-    resolvePendingItem(item, updateItem);
+    const { thread, entry } = store.createThread(
+      {
+        title: firstLine.length > 50 ? `${firstLine.substring(0, 50)}…` : firstLine,
+        category: 'general',
+        tags: [],
+        status: 'active',
+        pending: true,
+      },
+      {
+        source: 'text',
+        transcript: trimmed,
+        blocks: buildBlocks({ text: trimmed }),
+        pending: true,
+        pendingRawText: trimmed,
+      },
+    );
+    resolvePendingEntry(entry, store);
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    onCaptured(item.id);
+    onCaptured(thread.id);
   };
 
   const recordLabel =

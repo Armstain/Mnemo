@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { useMnemoStore } from '@/hooks/use-mnemo-store';
-import { resolvePendingItem } from '@/lib/capture';
+import { resolvePendingEntry } from '@/lib/capture';
 import { embedBatch, embeddableText, toBlob, EMBEDDING_MODEL, EMBEDDING_DIMS } from '@/lib/embeddings';
 import { getEmbeddedItemIds, upsertEmbedding } from '@/lib/db';
 import type { MnemoItem } from '@/types/mnemo';
@@ -47,23 +47,23 @@ async function backfillEmbeddings(items: MnemoItem[]): Promise<void> {
 
 /**
  * Invisible component mounted at the app root. On startup it:
- * 1. Retries AI structuring for anything saved while offline or that never
- *    finished (the original sweep).
+ * 1. Retries AI structuring for any entry saved while offline or that
+ *    never finished.
  * 2. Backfills embeddings for already-structured notes that don't have one
  *    yet — covers notes created before this feature shipped, and any that
  *    failed to embed earlier (rate limits, offline).
  */
 export function PendingProcessor() {
-  const { items, isLoaded, updateItem } = useMnemoStore();
+  const store = useMnemoStore();
+  const { items, entries, isLoaded } = store;
   const hasRun = useRef(false);
 
   useEffect(() => {
     if (!isLoaded || hasRun.current) return;
     hasRun.current = true;
 
-    const pending = items.filter((c) => c.pending);
-    for (const item of pending) {
-      resolvePendingItem(item, updateItem);
+    for (const entry of entries.filter((e) => e.pending)) {
+      resolvePendingEntry(entry, store);
     }
 
     backfillEmbeddings(items);

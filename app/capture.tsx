@@ -8,11 +8,12 @@ import {
   KeyboardAvoidingView,
   Platform,
 } from 'react-native';
-import { router } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { MotiView } from 'moti';
 import { useMnemoStore } from '@/hooks/use-mnemo-store';
-import { resolvePendingItem } from '@/lib/capture';
+import { resolvePendingEntry } from '@/lib/capture';
+import { buildBlocks } from '@/lib/threads';
 import { Button, IconButton } from '@/components/ui/Button';
 import { Pill } from '@/components/ui/Pill';
 import { Icon } from '@/components/ui/Icon';
@@ -36,7 +37,11 @@ export default function CaptureScreen() {
   const enter = useEnter();
   const reduceMotion = useReduceMotion();
   const insets = useSafeAreaInsets();
-  const { addItem, updateItem } = useMnemoStore();
+  const store = useMnemoStore();
+  // ?threadId=… adds an entry to that thread instead of starting a new one.
+  const { threadId } = useLocalSearchParams<{ threadId?: string }>();
+  const targetThread =
+    typeof threadId === 'string' && threadId ? store.items.find((i) => i.id === threadId) : undefined;
 
   // Core fields
   const [text, setText] = useState('');
@@ -74,29 +79,45 @@ export default function CaptureScreen() {
         : rawTitle || (hasChecklist ? 'Checklist' : 'Quick note');
     const hasTextToStructure = trimmedText.length > 0;
 
-    // Save instantly with the raw content so the user never waits on the
+    // Save instantly with the raw text so the user never waits on the
     // network — AI structuring (title/summary/links) happens in the
-    // background and patches the item in place when it lands.
-    const newItem = addItem({
-      type: hasChecklist ? 'checklist' : 'note',
-      title: fallbackTitle,
-      content: trimmedText,
-      checklistItems: hasChecklist ? checklistItems : undefined,
-      links: [],
-      category,
-      tags: [],
-      status: 'active',
+    // background and patches the entry (and a new thread's title) in place.
+    const entryInput = {
+      source: 'text' as const,
+      transcript: trimmedText || undefined,
+      blocks: buildBlocks({ text: trimmedText, checklistItems }),
+      leftOff: whereLeftOff.trim() || undefined,
       nextStep: nextStep.trim() || undefined,
-      whereLeftOff: whereLeftOff.trim() || undefined,
-      dueDate,
       pending: hasTextToStructure,
       pendingRawText: hasTextToStructure ? trimmedText : undefined,
-    });
+    };
 
-    router.replace(`/(tabs)/context?id=${newItem.id}` as any);
+    let savedThreadId: string;
+    let entry;
+    if (targetThread) {
+      entry = store.addEntry(targetThread.id, entryInput);
+      savedThreadId = targetThread.id;
+      if (dueDate) store.updateItem(targetThread.id, { dueDate });
+    } else {
+      const created = store.createThread(
+        {
+          title: fallbackTitle,
+          category,
+          tags: [],
+          status: 'active',
+          dueDate,
+          pending: hasTextToStructure,
+        },
+        entryInput,
+      );
+      entry = created.entry;
+      savedThreadId = created.thread.id;
+    }
+
+    router.replace(`/(tabs)/context?id=${savedThreadId}` as any);
 
     if (hasTextToStructure) {
-      resolvePendingItem(newItem, updateItem);
+      resolvePendingEntry(entry, store);
     }
   };
 
@@ -115,8 +136,11 @@ export default function CaptureScreen() {
         >
           <IconButton icon="x" label="Cancel" variant="bare" onPress={() => router.back()} />
 
-          <Text className="font-sans-medium text-sm text-fg-secondary tracking-wide">
-            New thought
+          <Text
+            className="flex-1 text-center font-sans-medium text-sm text-fg-secondary mx-3"
+            numberOfLines={1}
+          >
+            {targetThread ? `Add to ${targetThread.title}` : 'New thought'}
           </Text>
 
           <Button onPress={handleSave} disabled={!canSave} variant="primary" size="sm" icon="check">
@@ -130,7 +154,8 @@ export default function CaptureScreen() {
           keyboardShouldPersistTaps="handled"
           contentContainerStyle={{ paddingBottom: Math.max(insets.bottom, 24) + 24 }}
         >
-          {/* Category selector */}
+          {/* Category selector — only when starting a new thread */}
+          {!targetThread && (
           <MotiView {...enter.fade(1)}
             className="mb-5"
           >
@@ -157,6 +182,7 @@ export default function CaptureScreen() {
               ))}
             </ScrollView>
           </MotiView>
+          )}
 
           {/* Main content area — freeform text + optional checklist, one surface */}
           <MotiView {...enter.rise(1)}
