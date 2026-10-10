@@ -32,7 +32,7 @@ export function UndoToastHost() {
           transition={motion(SPRING_SHEET, reduceMotion)}
           exitTransition={motion(EXIT_QUICK, reduceMotion)}
           pointerEvents="box-none"
-          className="absolute left-6 right-6 z-50 flex-row items-center justify-between rounded-2xl px-4 py-3.5"
+          className="absolute left-6 right-6 z-50 flex-row items-center justify-between rounded-md px-4 py-3.5"
           style={{
             bottom: Math.max(insets.bottom, 16) + NAV_BAR_HEIGHT + CENTER_BUTTON_RISE + 12,
             backgroundColor: colors.surfaceHigh,

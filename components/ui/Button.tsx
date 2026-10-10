@@ -27,9 +27,11 @@ interface ButtonProps {
 const HEIGHT: Record<ButtonSize, number> = { sm: 36, md: 44, lg: 52 };
 const H_PADDING: Record<ButtonSize, number> = { sm: 14, md: 18, lg: 24 };
 const ICON_SIZE: Record<ButtonSize, number> = { sm: 15, md: 17, lg: 19 };
+// One step larger than the surrounding caption text, so a control always
+// reads as clearly as the content beside it.
 const TEXT_CLASS: Record<ButtonSize, string> = {
-  sm: 'text-xs',
-  md: 'text-sm',
+  sm: 'text-sm',
+  md: 'text-body',
   lg: 'text-body',
 };
 

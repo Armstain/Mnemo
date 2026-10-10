@@ -1,20 +1,20 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { Pressable, ScrollView, Text, View } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
-import { AnimatePresence, MotiView } from 'moti';
+import { MotiView } from 'moti';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { NoteRow } from '@/components/ui/NoteRow';
+import { ThreadList, ThreadRow } from '@/components/ui/ThreadRow';
+import { CategoryPicker } from '@/components/ui/CategoryPicker';
 import { NoteListSkeleton } from '@/components/ui/NoteListSkeleton';
 import { SearchBar } from '@/components/SearchBar';
 import { Icon } from '@/components/ui/Icon';
 import { NAV_CLEARANCE } from '@/components/ui/FloatingTabBar';
 import { useMnemoStore } from '@/hooks/use-mnemo-store';
-import { useUndoToast } from '@/hooks/use-undo-toast';
 import { useThemeColors } from '@/hooks/use-theme';
 import { bm25Search } from '@/lib/bm25';
 import { hybridSearch } from '@/lib/search';
-import { CATEGORY_LIST, useCategories } from '@/utils/categories';
+import { CATEGORY_LIST } from '@/utils/categories';
 import { useEnter } from '@/utils/motion';
 import type { Category, ItemStatus, MnemoItem } from '@/types/mnemo';
 
@@ -33,14 +33,12 @@ const STATUS_FILTERS: { key: FilterStatus; label: string }[] = [
 
 export default function LibraryScreen() {
   const enter = useEnter();
-  const { items, deleteItem, undoDelete, isLoaded } = useMnemoStore();
-  const { showUndoToast } = useUndoToast();
+  const { items, isLoaded } = useMnemoStore();
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<Category | 'all'>('all');
   const [selectedStatus, setSelectedStatus] = useState<FilterStatus>('all');
   const insets = useSafeAreaInsets();
   const colors = useThemeColors();
-  const categories = useCategories();
 
   // Allow other screens to open the library pre-filtered (?category=work).
   const { category: categoryParam } = useLocalSearchParams<{ category?: string }>();
@@ -110,7 +108,7 @@ export default function LibraryScreen() {
         className="mb-4 flex-row items-end justify-between"
       >
         <Text className="text-display font-display text-fg">Library</Text>
-        <Text className="font-sans text-xs text-fg-tertiary mb-2">
+        <Text className="font-sans text-sm text-fg-tertiary mb-2">
           {filteredItems.length} item{filteredItems.length !== 1 ? 's' : ''}
         </Text>
       </MotiView>
@@ -140,11 +138,11 @@ export default function LibraryScreen() {
                 onPress={() => setSelectedStatus(key)}
                 accessibilityRole="tab"
                 accessibilityState={{ selected }}
-                className="flex-1 items-center justify-center rounded-full h-8"
+                className="flex-1 items-center justify-center rounded-full h-9"
                 style={{ backgroundColor: selected ? colors.surfaceRaised : 'transparent' }}
               >
                 <Text
-                  className="font-sans-semi text-xs"
+                  className="font-sans-semi text-sm"
                   style={{ color: selected ? colors.fg : colors.fgTertiary }}
                   numberOfLines={1}
                 >
@@ -156,37 +154,14 @@ export default function LibraryScreen() {
         </View>
       </MotiView>
 
-      {/* Category — neutral chips with a color dot, so the row doesn't read as a rainbow */}
-      <MotiView {...enter.fade(2)} className="mb-2 -mx-5">
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={{ gap: 6, paddingHorizontal: 20, paddingVertical: 4 }}
-        >
-          {(['all', ...CATEGORY_LIST] as const).map((cat) => {
-            const selected = selectedCategory === cat;
-            const dot = cat === 'all' ? null : categories[cat].color;
-            return (
-              <Pressable
-                key={cat}
-                onPress={() => setSelectedCategory(selected && cat !== 'all' ? 'all' : cat)}
-                accessibilityRole="button"
-                accessibilityState={{ selected }}
-                className="flex-row items-center rounded-full px-3 h-8 active:opacity-70"
-                style={{
-                  backgroundColor: selected ? colors.fg : 'transparent',
-                  borderWidth: 1,
-                  borderColor: selected ? colors.fg : colors.border,
-                }}
-              >
-                {dot && <View className="w-1.5 h-1.5 rounded-full mr-1.5" style={{ backgroundColor: dot }} />}
-                <Text className="font-sans-medium text-xs" style={{ color: selected ? colors.bg : colors.fgSecondary }}>
-                  {cat === 'all' ? 'All' : categories[cat].label}
-                </Text>
-              </Pressable>
-            );
-          })}
-        </ScrollView>
+      {/* Category */}
+      <MotiView {...enter.fade(2)} className="mb-4">
+        <CategoryPicker
+          value={selectedCategory}
+          onChange={(cat) => setSelectedCategory(cat === selectedCategory ? 'all' : cat)}
+          includeAll
+          inset={20}
+        />
       </MotiView>
 
       {/* Results */}
@@ -196,38 +171,27 @@ export default function LibraryScreen() {
         contentContainerStyle={{ paddingBottom: insets.bottom + NAV_CLEARANCE }}
       >
         {filteredItems.length === 0 ? (
-          <MotiView {...enter.fade(0)}
-            className="py-20 items-center"
-          >
-            <Icon name="layers" size={32} color={colors.fgTertiary} stroke={1.5} />
-            <Text className="font-sans text-sm text-fg-secondary mt-4">
-              {searchQuery ? 'No matching items found' : 'No items yet'}
+          <MotiView {...enter.fade(0)} className="py-20 items-center px-6">
+            <Icon name="layers" size={28} color={colors.fgTertiary} stroke={1.6} />
+            <Text className="font-sans-medium text-body mt-4" style={{ color: colors.fg }}>
+              {searchQuery ? 'Nothing matches that' : 'Nothing here yet'}
+            </Text>
+            <Text className="font-sans text-sm mt-1 text-center" style={{ color: colors.fgTertiary }}>
+              {searchQuery ? 'Try other words, or clear the filters.' : 'Threads you capture show up here.'}
             </Text>
           </MotiView>
         ) : (
-          <View>
-            {/* AnimatePresence so a deleted row leaves visibly. Without it
-                the row teleported out while the undo toast sprang in — the
-                only thing that animated was the confirmation of something
-                that hadn't. */}
-            <AnimatePresence>
-              {filteredItems.map((item, index) => (
-                <NoteRow
-                  key={item.id}
-                  item={item}
-                  index={index}
-                  showStatus
-                  onPress={() =>
-                    router.push(`/(tabs)/context?id=${item.id}` as any)
-                  }
-                  onDelete={() => {
-                    deleteItem(item.id);
-                    showUndoToast(`"${item.title}" deleted`, () => undoDelete(item.id));
-                  }}
-                />
-              ))}
-            </AnimatePresence>
-          </View>
+          <ThreadList>
+            {filteredItems.map((item, index) => (
+              <ThreadRow
+                key={item.id}
+                item={item}
+                index={index}
+                last={index === filteredItems.length - 1}
+                onPress={() => router.push(`/(tabs)/context?id=${item.id}` as any)}
+              />
+            ))}
+          </ThreadList>
         )}
       </ScrollView>
     </View>

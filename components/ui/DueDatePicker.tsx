@@ -103,7 +103,7 @@ export function DueDatePicker({ value, onChange }: DueDatePickerProps) {
             // but native inline/compact usually works well in-situ.
             // Let's use 'spinner' or 'inline' for Zen feel. 
             // 'inline' is beautiful on iOS 14+.
-            <View className="w-full mt-2 p-4 bg-surface rounded-2xl border border-border/30 shadow-soft">
+            <View className="w-full mt-2 p-4 bg-surface rounded-lg border border-border/30 shadow-soft">
               <DateTimePicker
                 value={value ? new Date(value) : new Date()}
                 mode="date"
@@ -137,12 +137,12 @@ export function DueDateLabel({ dueDate }: { dueDate: number }) {
   return (
     <View className="flex-row items-center">
       <Calendar
-        size={10}
+        size={14}
         color={isOverdue ? colors.error : colors.fgTertiary}
         strokeWidth={2}
       />
       <Text
-        className="font-sans text-[10px] ml-1"
+        className="font-sans text-sm ml-1.5"
         style={{ color: isOverdue ? colors.error : colors.fgTertiary }}
       >
         {formatDueDate(dueDate)}

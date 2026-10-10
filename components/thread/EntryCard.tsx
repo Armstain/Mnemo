@@ -9,6 +9,7 @@ import { ExternalLink } from '@/components/ExternalLink';
 import { useMnemoStore } from '@/hooks/use-mnemo-store';
 import { useThemeColors, type ThemeColors } from '@/hooks/use-theme';
 import { formatEntryTime } from '@/utils/time';
+import { noFocusRing } from '@/utils/web';
 import type { Block, Entry } from '@/types/mnemo';
 
 const SOURCE: Record<Entry['source'], { label: string; icon: IconName }> = {
@@ -144,7 +145,7 @@ export function EntryCard({ entry, onRetry }: { entry: Entry; onRetry?: () => vo
   };
 
   return (
-    <View className="rounded-md p-4" style={{ backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border }}>
+    <View className="rounded-lg px-5 py-4" style={{ backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border }}>
       {/* When and how it arrived */}
       <View className="flex-row items-center">
         <Icon name={source.icon} size={14} color={colors.fgTertiary} />
@@ -224,14 +225,17 @@ export function EntryCard({ entry, onRetry }: { entry: Entry; onRetry?: () => vo
               placeholder="What happened?"
               placeholderTextColor={colors.fgTertiary}
               className="font-sans text-body rounded-sm p-3"
-              style={{
-                color: colors.fg,
-                minHeight: 96,
-                lineHeight: 23,
-                backgroundColor: colors.surfaceLowest,
-                borderWidth: 1,
-                borderColor: colors.border,
-              }}
+              style={[
+                {
+                  color: colors.fg,
+                  minHeight: 96,
+                  lineHeight: 23,
+                  backgroundColor: colors.surfaceLowest,
+                  borderWidth: 1,
+                  borderColor: colors.border,
+                },
+                noFocusRing,
+              ]}
             />
             <View className="flex-row justify-end gap-2 mt-3">
               <Button variant="ghost" size="sm" onPress={() => setEditing(false)}>

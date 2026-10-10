@@ -40,7 +40,7 @@ export function Card({
 
   // Variant color/border is conditional at runtime — uniwind's className
   // pipeline only resolves *static* class strings (see useThemeColors), so
-  // it has to go through inline `style`, matching ZenCard/NoteRow.
+  // it has to go through inline `style`, like the other surfaces.
   const variantStyle = (() => {
     switch (variant) {
       case 'raised':

@@ -7,6 +7,8 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Card } from '@/components/ui/Card';
 import { Button, IconButton } from '@/components/ui/Button';
 import { Icon } from '@/components/ui/Icon';
+import { Eyebrow } from '@/components/ui/Eyebrow';
+import { ThreadList, ThreadRow } from '@/components/ui/ThreadRow';
 import { OpenRing, ThreadRing } from '@/components/ui/ThreadRing';
 import { formatDueDate } from '@/components/ui/DueDatePicker';
 import { CONTENT_BOTTOM_CLEARANCE } from '@/components/ui/FloatingTabBar';
@@ -28,25 +30,6 @@ const NUMBER_WORDS = ['Zero', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Sev
 const numberWord = (n: number) => NUMBER_WORDS[n] ?? String(n);
 
 const openItem = (id: string) => router.push(`/(tabs)/context?id=${id}` as any);
-
-/** Small eyebrow label above a home section. */
-function SectionLabel({ title, action, onAction }: { title: string; action?: string; onAction?: () => void }) {
-  const colors = useThemeColors();
-  return (
-    <View className="flex-row items-center justify-between mb-2.5 px-1">
-      <Text className="font-sans-semi text-micro uppercase tracking-caps" style={{ color: colors.fgTertiary }}>
-        {title}
-      </Text>
-      {action ? (
-        <Pressable onPress={onAction} hitSlop={10} accessibilityRole="button">
-          <Text className="font-sans-semi text-xs" style={{ color: colors.accent }}>
-            {action}
-          </Text>
-        </Pressable>
-      ) : null}
-    </View>
-  );
-}
 
 /** ResumeCard — the one inverted surface on the page: the thread to pick back up. */
 function ResumeCard({ item }: { item: MnemoItem }) {
@@ -82,10 +65,10 @@ function ResumeCard({ item }: { item: MnemoItem }) {
             <CategoryIcon size={13} color={colors.onHero} strokeWidth={2} />
           </ThreadRing>
           <View className="ml-3">
-            <Text className="font-sans-semi text-xs" style={{ color: colors.onHero }}>
+            <Text className="font-sans-semi text-sm" style={{ color: colors.onHero }}>
               {category.label}
             </Text>
-            <Text className="font-sans text-xs" style={{ color: colors.onHeroMuted }}>
+            <Text className="font-sans text-sm" style={{ color: colors.onHeroMuted }}>
               {item.status === 'paused' ? 'Paused' : 'Away'} {formatCompactDistance(item.updatedAt)}
             </Text>
           </View>
@@ -103,10 +86,10 @@ function ResumeCard({ item }: { item: MnemoItem }) {
 
         {item.nextStep ? (
           <View className="flex-row items-start pt-4 mb-6" style={{ borderTopWidth: 1, borderTopColor: colors.heroSoft }}>
-            <Text className="font-sans-semi text-micro uppercase tracking-caps mt-0.5 mr-3" style={{ color: colors.heroAccent }}>
+            <Text className="font-sans-semi text-xs uppercase tracking-caps mt-1 mr-3" style={{ color: colors.heroAccent }}>
               Next
             </Text>
-            <Text className="flex-1 font-sans-medium text-sm leading-snug" style={{ color: colors.onHero }} numberOfLines={2}>
+            <Text className="flex-1 font-sans-medium text-body leading-snug" style={{ color: colors.onHero }} numberOfLines={2}>
               {item.nextStep}
             </Text>
           </View>
@@ -132,56 +115,6 @@ function ResumeCard({ item }: { item: MnemoItem }) {
           </View>
         </View>
       </View>
-    </Pressable>
-  );
-}
-
-/** One row inside a grouped list. `detail` sits under the title; `trailing` on the right. */
-function ThreadRow({
-  item,
-  detail,
-  trailing,
-  trailingTone,
-  last,
-}: {
-  item: MnemoItem;
-  detail?: string;
-  trailing: string;
-  trailingTone?: string;
-  last: boolean;
-}) {
-  const colors = useThemeColors();
-  const categories = useCategories();
-  const category = categories[item.category];
-  const CategoryIcon = category.icon;
-
-  return (
-    <Pressable
-      onPress={() => openItem(item.id)}
-      accessibilityRole="button"
-      style={({ pressed }) => ({ backgroundColor: pressed ? colors.surfaceHigh : 'transparent' })}
-    >
-      <View className="flex-row items-center px-4 py-3.5">
-        <View className="mr-3">
-          <ThreadRing size={40} progress={freshness(item.updatedAt)} color={category.color} trackColor={category.bgTint}>
-            <CategoryIcon size={15} color={category.color} strokeWidth={2} />
-          </ThreadRing>
-        </View>
-        <View className="flex-1 mr-3" style={{ minWidth: 0 }}>
-          <Text className="font-sans-medium text-sm" style={{ color: colors.fg }} numberOfLines={1}>
-            {item.title}
-          </Text>
-          {detail ? (
-            <Text className="font-sans text-xs mt-0.5" style={{ color: colors.fgTertiary }} numberOfLines={1}>
-              {detail}
-            </Text>
-          ) : null}
-        </View>
-        <Text className="font-sans-medium text-xs" style={{ color: trailingTone ?? colors.fgTertiary }}>
-          {trailing}
-        </Text>
-      </View>
-      {!last && <View className="mr-4" style={{ marginLeft: 68, height: 1, backgroundColor: colors.border }} />}
     </Pressable>
   );
 }
@@ -243,7 +176,7 @@ export function PulseHome() {
         style={{ paddingTop: Math.max(insets.top + 8, 20) }}
       >
         <View className="flex-row items-center justify-between mb-1">
-          <Text className="font-sans-medium text-xs" style={{ color: colors.fgTertiary }}>
+          <Text className="font-sans-medium text-sm" style={{ color: colors.fgTertiary }}>
             {today}
           </Text>
           <IconButton icon="settings" label="Open settings" variant="bare" onPress={() => router.push('/modal' as any)} />
@@ -262,7 +195,7 @@ export function PulseHome() {
         {/* Hero */}
         {latestItem ? (
           <MotiView {...enter.rise(1)}>
-            <SectionLabel title="Pick up where you left off" />
+            <Eyebrow>Pick up where you left off</Eyebrow>
             <ResumeCard item={latestItem} />
           </MotiView>
         ) : (
@@ -289,54 +222,55 @@ export function PulseHome() {
         {/* Coming up */}
         {comingUp.length > 0 && (
           <MotiView {...enter.rise(2)} className="mb-8">
-            <SectionLabel title="Coming up" />
-            <Card variant="surface" pad="none" animated={false} className="overflow-hidden">
+            <Eyebrow>Coming up</Eyebrow>
+            <ThreadList>
               {comingUp.map((item, i) => {
                 const overdue = (item.dueDate ?? 0) < now;
                 return (
                   <ThreadRow
                     key={item.id}
                     item={item}
-                    detail={item.nextStep || item.whereLeftOff}
+                    index={i}
+                    onPress={() => openItem(item.id)}
                     trailing={formatDueDate(item.dueDate!).replace(/^Due /, '')}
                     trailingTone={overdue ? colors.error : colors.accent}
                     last={i === comingUp.length - 1}
                   />
                 );
               })}
-            </Card>
+            </ThreadList>
           </MotiView>
         )}
 
         {/* Also in progress */}
         {inProgress.length > 0 && (
           <MotiView {...enter.rise(3)} className="mb-8">
-            <SectionLabel
-              title="Also in progress"
+            <Eyebrow
               action={inProgress.length > IN_PROGRESS_LIMIT ? `All ${inProgress.length}` : undefined}
               onAction={() => router.push('/(tabs)/library' as any)}
-            />
-            <Card variant="surface" pad="none" animated={false} className="overflow-hidden">
+            >
+              Also in progress
+            </Eyebrow>
+            <ThreadList>
               {inProgress.slice(0, IN_PROGRESS_LIMIT).map((item, i, shown) => (
                 <ThreadRow
                   key={item.id}
                   item={item}
-                  detail={
-                    (item.status === 'paused' ? 'Paused · ' : '') +
-                    (item.nextStep || item.whereLeftOff || item.content?.trim() || '')
-                  }
-                  trailing={formatCompactDistance(item.updatedAt)}
+                  index={i}
+                  onPress={() => openItem(item.id)}
                   last={i === shown.length - 1}
                 />
               ))}
-            </Card>
+            </ThreadList>
           </MotiView>
         )}
 
         {/* Browse — only categories that hold something */}
         {categoryCounts.length > 0 && (
           <MotiView {...enter.rise(4)}>
-            <SectionLabel title="Browse" action="Library" onAction={() => router.push('/(tabs)/library' as any)} />
+            <Eyebrow action="Library" onAction={() => router.push('/(tabs)/library' as any)}>
+              Browse
+            </Eyebrow>
             <View className="flex-row flex-wrap gap-2">
               {categoryCounts.map(({ key, count }) => {
                 const config = categories[key];

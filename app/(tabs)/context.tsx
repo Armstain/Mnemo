@@ -22,7 +22,10 @@ import { Button, IconButton } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { Eyebrow } from '@/components/ui/Eyebrow';
 import { Icon } from '@/components/ui/Icon';
-import { NoteRow } from '@/components/ui/NoteRow';
+import { ThreadList, ThreadRow } from '@/components/ui/ThreadRow';
+import { CategoryPicker } from '@/components/ui/CategoryPicker';
+import { LabeledInput } from '@/components/ui/LabeledInput';
+import { noFocusRing } from '@/utils/web';
 import { DetailSkeleton } from '@/components/ui/NoteListSkeleton';
 import { DueDatePicker, DueDateLabel } from '@/components/ui/DueDatePicker';
 import { ThreadRing } from '@/components/ui/ThreadRing';
@@ -35,7 +38,7 @@ import { summarizeContext } from '@/lib/gemini';
 import { structurePendingEntry } from '@/lib/capture';
 import { relatedItems } from '@/lib/search';
 import { entryText } from '@/lib/threads';
-import { CATEGORY_LIST, useCategories, useStatusConfig } from '@/utils/categories';
+import { useCategories, useStatusConfig } from '@/utils/categories';
 import { EASE_IN_OUT, useEnter } from '@/utils/motion';
 import { freshness } from '@/utils/time';
 import type { MnemoItem } from '@/types/mnemo';
@@ -289,44 +292,23 @@ export default function ThreadScreen() {
                   placeholder="Title"
                   placeholderTextColor={colors.fgTertiary}
                   className="font-display text-fg pb-2"
-                  style={{ fontSize: 30, lineHeight: 36, borderBottomWidth: 1, borderBottomColor: colors.border }}
+                  style={[{ fontSize: 30, lineHeight: 36, borderBottomWidth: 1, borderBottomColor: colors.border }, noFocusRing]}
                 />
                 <View>
                   <Eyebrow className="mb-2">Category</Eyebrow>
-                  <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
-                    {CATEGORY_LIST.map((cat) => {
-                      const selected = thread.category === cat;
-                      return (
-                        <Pressable
-                          key={cat}
-                          onPress={() => updateItem(thread.id, { category: cat })}
-                          accessibilityRole="button"
-                          accessibilityState={{ selected }}
-                          className="flex-row items-center rounded-full px-3.5 h-9 active:opacity-70"
-                          style={{
-                            backgroundColor: selected ? colors.fg : 'transparent',
-                            borderWidth: 1,
-                            borderColor: selected ? colors.fg : colors.border,
-                          }}
-                        >
-                          <View
-                            className="w-1.5 h-1.5 rounded-full mr-2"
-                            style={{ backgroundColor: categories[cat].color }}
-                          />
-                          <Text className="font-sans-medium text-sm" style={{ color: selected ? colors.bg : colors.fgSecondary }}>
-                            {categories[cat].label}
-                          </Text>
-                        </Pressable>
-                      );
-                    })}
-                  </ScrollView>
+                  <CategoryPicker value={thread.category} onChange={(cat) => updateItem(thread.id, { category: cat })} />
                 </View>
                 <View>
                   <Eyebrow className="mb-2">Due</Eyebrow>
                   <DueDatePicker value={thread.dueDate} onChange={(d) => updateItem(thread.id, { dueDate: d })} />
                 </View>
-                <EditField label="Where you left off" value={editWhereLeftOff} onChange={setEditWhereLeftOff} placeholder="Halfway through chapter 3…" />
-                <EditField label="Next step" value={editNextStep} onChange={setEditNextStep} placeholder="Call the plumber…" />
+                <LabeledInput
+                  label="Where you left off"
+                  value={editWhereLeftOff}
+                  onChangeText={setEditWhereLeftOff}
+                  placeholder="Halfway through chapter 3…"
+                />
+                <LabeledInput label="Next step" value={editNextStep} onChangeText={setEditNextStep} placeholder="Call the plumber…" />
               </View>
             ) : (
               <>
@@ -502,9 +484,17 @@ export default function ThreadScreen() {
               {related.length > 0 && (
                 <View className="px-6 mt-9">
                   <Eyebrow>Related threads</Eyebrow>
-                  {related.map((r, i) => (
-                    <NoteRow key={r.id} item={r} index={i} onPress={() => router.push(`/(tabs)/context?id=${r.id}` as any)} />
-                  ))}
+                  <ThreadList>
+                    {related.map((r, i) => (
+                      <ThreadRow
+                        key={r.id}
+                        item={r}
+                        index={i}
+                        last={i === related.length - 1}
+                        onPress={() => router.push(`/(tabs)/context?id=${r.id}` as any)}
+                      />
+                    ))}
+                  </ThreadList>
                 </View>
               )}
             </>
@@ -512,34 +502,5 @@ export default function ThreadScreen() {
         </ScrollView>
       </View>
     </KeyboardAvoidingView>
-  );
-}
-
-function EditField({
-  label,
-  value,
-  onChange,
-  placeholder,
-}: {
-  label: string;
-  value: string;
-  onChange: (v: string) => void;
-  placeholder: string;
-}) {
-  const colors = useThemeColors();
-  return (
-    <View>
-      <Eyebrow className="mb-2">{label}</Eyebrow>
-      <TextInput
-        value={value}
-        onChangeText={onChange}
-        placeholder={placeholder}
-        placeholderTextColor={colors.fgTertiary}
-        selectionColor={colors.accent}
-        multiline
-        className="font-sans text-body rounded-sm px-3.5 py-3"
-        style={{ color: colors.fg, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border }}
-      />
-    </View>
   );
 }

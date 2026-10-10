@@ -22,7 +22,7 @@ const SIZE_CLASS: Record<'sm' | 'md', string> = {
 };
 
 const TEXT_CLASS: Record<'sm' | 'md', string> = {
-  sm: 'text-micro',
+  sm: 'text-xs',
   md: 'text-xs',
 };
 

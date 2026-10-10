@@ -18,7 +18,7 @@ export const PALETTE = {
     bg: '#FAF8F3',
     fg: '#1C1A15',
     fgSecondary: '#4D4940',
-    fgTertiary: '#7D786C',
+    fgTertiary: '#6B665B',
     accent: '#0D6B4A',
     accentInk: '#FFFFFF',
     accentWarm: '#A4552F', // == hueClay
@@ -57,7 +57,7 @@ export const PALETTE = {
     bg: '#121310',
     fg: '#ECE9E0',
     fgSecondary: '#BDBAB0',
-    fgTertiary: '#8B887E',
+    fgTertiary: '#9A978C',
     accent: '#5DDBA0',
     accentInk: '#00301C',
     accentWarm: '#E0A17C', // == hueClay

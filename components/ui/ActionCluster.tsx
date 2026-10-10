@@ -558,7 +558,7 @@ function RecordingOverlay({
               <Icon name="trash" size={11} color={tint} stroke={2.4} />
             )}
             <Text
-              className="font-sans-semi text-[10px] uppercase tracking-wider"
+              className="font-sans-semi text-xs uppercase tracking-caps"
               style={{ color: tint }}
             >
               {label}
@@ -588,7 +588,7 @@ function RecordingOverlay({
         )}
 
         {isLive && (
-          <Text className="font-sans text-[11px] text-fg-tertiary">{hint}</Text>
+          <Text className="font-sans text-sm text-fg-tertiary">{hint}</Text>
         )}
       </View>
     </MotiView>
