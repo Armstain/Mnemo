@@ -12,7 +12,7 @@ export const QUICK_RECORDER_OPTIONS = { ...RecordingPresets.HIGH_QUALITY, isMete
 // Below this, a "recording" is almost certainly an accidental hold (a slow
 // tap crossing the long-press threshold) rather than an intentional note —
 // discard it instead of saving a near-silent blip.
-const MIN_RECORDING_MS = 400;
+export const MIN_RECORDING_MS = 400;
 
 export type QuickRecordingPhase = 'idle' | 'recording' | 'finishing';
 export type StartResult = 'ok' | 'permission-denied' | 'device-error';

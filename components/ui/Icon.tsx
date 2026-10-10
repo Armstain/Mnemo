@@ -14,6 +14,7 @@ import {
   ChevronLeft,
   ChevronRight,
   ChevronDown,
+  ChevronUp,
   Trash2,
   Pencil,
   Share2,
@@ -46,6 +47,7 @@ export type IconName =
   | 'chevronLeft'
   | 'chevronRight'
   | 'chevronDown'
+  | 'chevronUp'
   | 'trash'
   | 'pencil'
   | 'share'
@@ -82,6 +84,7 @@ const ICONS: Record<IconName, IconComponent> = {
   chevronLeft: ChevronLeft,
   chevronRight: ChevronRight,
   chevronDown: ChevronDown,
+  chevronUp: ChevronUp,
   trash: Trash2,
   pencil: Pencil,
   share: Share2,

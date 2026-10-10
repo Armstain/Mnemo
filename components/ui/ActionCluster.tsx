@@ -1,8 +1,24 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Alert, View, Pressable, StyleSheet, Text, GestureResponderEvent } from 'react-native';
-import { SquarePen } from 'lucide-react-native';
+import {
+  Alert,
+  GestureResponderEvent,
+  Pressable,
+  StyleSheet,
+  Text,
+  useWindowDimensions,
+  View,
+} from 'react-native';
 import { MotiView, AnimatePresence } from 'moti';
-import { Easing } from 'react-native-reanimated';
+import Animated, {
+  Easing,
+  Extrapolation,
+  interpolate,
+  useAnimatedStyle,
+  useSharedValue,
+  withSpring,
+  withTiming,
+  type SharedValue,
+} from 'react-native-reanimated';
 import * as Haptics from 'expo-haptics';
 import { useAudioRecorderState, type AudioRecorder } from 'expo-audio';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -10,52 +26,63 @@ import { router, useGlobalSearchParams, usePathname } from 'expo-router';
 
 import { useThemeColors } from '@/hooks/use-theme';
 import { useMnemoStore } from '@/hooks/use-mnemo-store';
-import { Icon } from '@/components/ui/Icon';
+import { Icon, type IconName } from '@/components/ui/Icon';
 import { useReduceMotion } from '@/hooks/use-accessibility-motion';
-import { useQuickRecording } from '@/hooks/use-quick-recording';
-import {
-  DUR_BASE,
-  DUR_FAST,
-  EASE_IN_OUT,
-  EASE_OUT,
-  EXIT_QUICK,
-  PRESS_SCALE,
-  REDUCED,
-  SPRING_NAV,
-} from '@/utils/motion';
+import { MIN_RECORDING_MS, useQuickRecording } from '@/hooks/use-quick-recording';
+import { DUR_BASE, DUR_FAST, EASE_IN_OUT, EASE_OUT, EXIT_QUICK, REDUCED, SPRING_NAV } from '@/utils/motion';
 import { formatDuration } from '@/utils/time';
 import { CENTER_BUTTON_RISE, NAV_BAR_HEIGHT } from '@/components/ui/FloatingTabBar';
 import { OpenRing } from '@/components/ui/ThreadRing';
 
-// How long a hold must be sustained before it commits to recording. Long
-// enough that a normal tap never triggers it, short enough that intent
-// reads as instant once it does.
-const LONG_PRESS_MS = 380;
+// How long a hold must last before it commits to recording. Long enough that
+// a normal tap never triggers it; the red fill inside the button shows the
+// hold filling up over exactly this time.
+const LONG_PRESS_MS = 320;
 
-// Vertical drag (px) while holding that arms/disarms "release to cancel" —
-// separate enter/exit distances (hysteresis) so the state doesn't flicker
-// right at the boundary.
-const CANCEL_ENTER_PX = 70;
-const CANCEL_EXIT_PX = 40;
+// Distance from the button's centre up to the bin's centre. Dragging past
+// CANCEL_ENTER_PX arms "release to discard"; dropping back under
+// CANCEL_EXIT_PX disarms it (two thresholds, so it doesn't flicker).
+const CANCEL_DISTANCE = 116;
+const CANCEL_ENTER_PX = 84;
+const CANCEL_EXIT_PX = 56;
+// Light ticks on the way up, so the slide has notches you can feel.
+const DETENTS_PX = [28, 56];
 
-// How long the "Saved"/"Discarded" tail keeps the overlay up after release,
-// before it disappears on its own.
-const TAIL_MS = 650;
+// How long the result ("Saved", "Discarded") stays up after release.
+const TAIL_MS = { saved: 1400, discarded: 900, tooShort: 1600 } as const;
 
+// Main button diameter, and the brand ring drawn around it.
+const FAB_SIZE = 62;
+const ORBIT_SIZE = FAB_SIZE + 22;
+const BIN_SIZE = 56;
+const FAB_CENTER = FAB_SIZE / 2;
+
+// The tap menu: two options either side, above the button.
+const OPTION_X = 92;
+const OPTION_CIRCLE = 60;
+const OPTION_CENTER_Y = FAB_CENTER + 108;
+
+// Everything the button shows lives in one box above it, so every target is
+// inside its parent's bounds (Android drops touches outside them).
+const STAGE_HEIGHT = 380;
+
+const SNAP = { damping: 18, stiffness: 260, mass: 0.6 };
 
 type HoldPhase = 'idle' | 'charging' | 'recording' | 'cancelling';
-type OverlayTail = 'finishing' | 'saved' | 'discarded' | null;
+type Tail =
+  | { kind: 'finishing' }
+  | { kind: 'saved'; where: string }
+  | { kind: 'discarded' }
+  | { kind: 'tooShort' }
+  | null;
 
 /**
- * ActionCluster — one floating action button for capture, not two.
+ * ActionCluster: the capture button in the middle of the tab bar.
  *
- * Tap reveals a small menu (Record / Note) for the deliberate path — full
- * screen, category picker, manual save. Holding skips all of that: it
- * starts recording immediately inline (no navigation), shows a small
- * floating indicator near the FAB, and releasing stops and auto-saves —
- * mirroring the hold-to-record convention from WhatsApp/Telegram voice
- * messages. Sliding up while held arms "release to cancel", same as those
- * apps' slide-to-cancel gesture.
+ * Tap: the + turns into an ×, the page dims, and two choices fan out:
+ * Write and Record. Hold: the button fills red, clicks, and records right
+ * here. Release saves. Slide up into the bin to discard. On a thread's
+ * screen everything it captures joins that thread.
  */
 export function ActionCluster({ visible = true }: { visible?: boolean }) {
   const insets = useSafeAreaInsets();
@@ -63,8 +90,6 @@ export function ActionCluster({ visible = true }: { visible?: boolean }) {
   const reduceMotion = useReduceMotion();
   const { audioRecorder, start, finish } = useQuickRecording();
 
-  // On a thread's screen, everything this button captures joins that
-  // thread; anywhere else it starts a new one.
   const pathname = usePathname();
   const { id: routeId } = useGlobalSearchParams<{ id?: string }>();
   const { items } = useMnemoStore();
@@ -76,23 +101,26 @@ export function ActionCluster({ visible = true }: { visible?: boolean }) {
 
   const [expanded, setExpanded] = useState(false);
   const [holdPhase, setHoldPhase] = useState<HoldPhase>('idle');
-  const [tail, setTail] = useState<OverlayTail>(null);
+  const [tail, setTail] = useState<Tail>(null);
 
-  // Tracks whether the hold has committed to recording, so a plain tap
-  // (timer never fires) doesn't also get treated as a release-to-save.
+  // How far the button has been dragged up (px), and the live voice level
+  // (0..1). Both are read on the UI thread by the animated styles below.
+  const dragY = useSharedValue(0);
+  const level = useSharedValue(0);
+
   const longPressFired = useRef(false);
   const startTouchY = useRef(0);
+  const detent = useRef(0);
+  const recordingSince = useRef(0);
   const tailTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
-  // Our own long-press timer — see the comment on the responder handlers
-  // below for why this isn't Pressable's onLongPress/delayLongPress.
+  // Our own long-press timer; see handleGrant for why this isn't Pressable.
   const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  // Mirrors holdPhase for gesture *decisions* (state stays for rendering) —
-  // always current the instant it's written, with no render/effect gap.
+  // Mirrors holdPhase for gesture decisions, current the instant it's
+  // written (state stays for rendering).
   const holdPhaseRef = useRef<HoldPhase>('idle');
-  // start() awaits real async work (permission + recorder prep). If the
-  // finger lifts before it resolves, the gesture is already over by the
-  // time we'd flip to "recording" — this ref lets beginHold notice and
-  // immediately discard instead of leaving the mic running unattended.
+  // start() awaits permission and recorder prep. If the finger lifts before
+  // it resolves, beginHold sees this and discards instead of leaving the
+  // mic running with nobody holding the button.
   const isPressed = useRef(false);
 
   useEffect(() => {
@@ -102,23 +130,15 @@ export function ActionCluster({ visible = true }: { visible?: boolean }) {
     };
   }, []);
 
-  // Single point of truth update: keeps the ref and the render state in
-  // lockstep so every call site only has to make one call.
   const setPhase = (phase: HoldPhase) => {
     holdPhaseRef.current = phase;
     setHoldPhase(phase);
   };
 
-  // Hidden rather than unmounted (see the `visible` prop on the call site in
-  // app/(tabs)/_layout.tsx): unmounting replayed the whole entrance every
-  // time you came back from a detail screen, which is a navigation the user
-  // makes dozens of times a session.
+  // Hidden rather than unmounted (see app/(tabs)/_layout.tsx), so coming
+  // back from a detail screen doesn't replay the entrance.
   const entrance = reduceMotion
-    ? {
-        from: { opacity: 0 },
-        animate: { opacity: visible ? 1 : 0 },
-        transition: REDUCED,
-      }
+    ? { from: { opacity: 0 }, animate: { opacity: visible ? 1 : 0 }, transition: REDUCED }
     : {
         from: { opacity: 0, translateY: 24, scale: 0.9 },
         animate: {
@@ -129,15 +149,15 @@ export function ActionCluster({ visible = true }: { visible?: boolean }) {
         transition: { type: 'timing' as const, duration: DUR_BASE, easing: EASE_OUT },
       };
 
-  // A hidden cluster must not keep an open menu (or a live hold) behind it.
   useEffect(() => {
     if (!visible) setExpanded(false);
   }, [visible]);
 
-  const closeMenu = () => setExpanded(false);
+  const closeMenu = () => {
+    Haptics.selectionAsync();
+    setExpanded(false);
+  };
 
-  // The tap-menu's "Record" option and the accessibility fallback both use
-  // the full manual screen — deliberate category pick, explicit Cancel/Save.
   const goRecordScreen = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     setExpanded(false);
@@ -150,95 +170,105 @@ export function ActionCluster({ visible = true }: { visible?: boolean }) {
     router.push(`/capture${threadQuery}` as any);
   };
 
+  const showTail = (next: Exclude<Tail, null | { kind: 'finishing' }>) => {
+    setTail(next);
+    if (tailTimeout.current) clearTimeout(tailTimeout.current);
+    tailTimeout.current = setTimeout(() => setTail(null), TAIL_MS[next.kind]);
+  };
+
   const beginHold = async () => {
     const result = await start();
     if (result !== 'ok') {
       setPhase('idle');
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
       if (result === 'permission-denied') {
-        Alert.alert('Permission required', 'Please enable microphone access to record thoughts.');
+        Alert.alert('Microphone is off', 'Allow microphone access in Settings to record thoughts.');
       } else {
-        Alert.alert(
-          'Microphone error',
-          'Could not start recording. Check that the app has microphone permission in Settings.',
-        );
+        Alert.alert('Could not record', 'Something went wrong starting the microphone. Try again.');
       }
       return;
     }
     if (!isPressed.current) {
-      // Finger already lifted while we were still awaiting permission/prep
-      // — the gesture ended before recording could visibly begin. Discard
-      // rather than leave the mic recording with no one holding the button.
       finish('general', false);
       setPhase('idle');
       return;
     }
+    recordingSince.current = Date.now();
     setPhase('recording');
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    // The click that says "you're recording now".
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Rigid);
   };
 
   const endHold = (phaseAtRelease: HoldPhase) => {
+    dragY.value = reduceMotion ? 0 : withSpring(0, SNAP);
+    level.value = 0;
     if (phaseAtRelease !== 'recording' && phaseAtRelease !== 'cancelling') {
       setPhase('idle');
       return;
     }
     const wantsSave = phaseAtRelease === 'recording';
+    const tooShort = Date.now() - recordingSince.current < MIN_RECORDING_MS;
     setPhase('idle');
-    setTail('finishing');
-    if (tailTimeout.current) clearTimeout(tailTimeout.current);
+    setTail({ kind: 'finishing' });
 
-    finish('general', wantsSave, currentThread?.id).then((item) => {
-      const saved = wantsSave && !!item;
-      setTail(saved ? 'saved' : 'discarded');
-      if (saved) {
+    finish('general', wantsSave, currentThread?.id).then((saved) => {
+      if (wantsSave && saved) {
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        showTail({ kind: 'saved', where: currentThread?.title ?? '' });
+      } else if (wantsSave && tooShort) {
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+        showTail({ kind: 'tooShort' });
       } else {
-        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+        showTail({ kind: 'discarded' });
       }
-      tailTimeout.current = setTimeout(() => setTail(null), TAIL_MS);
     });
   };
 
   const handleDragMove = (e: GestureResponderEvent) => {
     const current = holdPhaseRef.current;
     if (current !== 'recording' && current !== 'cancelling') return;
-    const deltaY = startTouchY.current - e.nativeEvent.pageY;
-    if (current === 'recording' && deltaY > CANCEL_ENTER_PX) {
+    const raw = Math.max(0, startTouchY.current - e.nativeEvent.pageY);
+
+    if (current === 'recording') {
+      const step = DETENTS_PX.filter((d) => raw >= d).length;
+      if (step !== detent.current) {
+        detent.current = step;
+        Haptics.selectionAsync();
+      }
+    }
+
+    if (current === 'recording' && raw > CANCEL_ENTER_PX) {
       setPhase('cancelling');
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    } else if (current === 'cancelling' && deltaY < CANCEL_EXIT_PX) {
+      // A heavier bump as the button drops into the bin.
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
+      dragY.value = reduceMotion ? CANCEL_DISTANCE : withSpring(CANCEL_DISTANCE, SNAP);
+    } else if (current === 'cancelling' && raw < CANCEL_EXIT_PX) {
       setPhase('recording');
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      dragY.value = reduceMotion ? raw : withSpring(raw, SNAP);
+    } else if (current === 'recording') {
+      // Follows the finger, so the button feels like something you carry.
+      dragY.value = Math.min(raw, CANCEL_DISTANCE);
     }
   };
 
-  // The FAB's gesture is handled via the raw Responder System instead of
-  // Pressable, deliberately. Pressable/Pressability sits its own state
-  // machine between us and the touch stream (press-rect tracking, a
-  // long-press deactivation distance, responder negotiation with any
-  // ancestor pannable/scrollable view) — and a fast upward drag is exactly
-  // the kind of gesture that negotiation can quietly reassign mid-flight.
-  // That lines up with what was actually observed: the visual "cancelling"
-  // state always appeared correctly, but release only *sometimes* honored
-  // it — consistent with the responder occasionally being taken/terminated
-  // through a path Pressable's onPressOut doesn't cover, rather than a
-  // plain closure/timing bug (which the earlier holdPhaseRef fix already
-  // ruled out — the ref stayed current, and it still misfired). Owning the
-  // responder outright removes that whole negotiation layer: we grant it on
-  // touch start, refuse to give it up mid-gesture, and drive our own
-  // long-press timer, so every release is `onResponderRelease` on the exact
-  // gesture we started, never something Pressability decided on our behalf.
+  // The button owns the raw responder instead of using Pressable: Pressable
+  // negotiates the responder with scroll views and its own press-rect
+  // logic, and a fast upward drag is exactly the gesture that negotiation
+  // can take away mid-flight, which made slide-to-cancel unreliable. Here we
+  // claim the responder on touch, refuse to hand it over, and run our own
+  // long-press timer, so every release lands on the gesture we started.
   const handleGrant = (e: GestureResponderEvent) => {
     longPressFired.current = false;
     isPressed.current = true;
+    detent.current = 0;
     startTouchY.current = e.nativeEvent.pageY;
     setPhase('charging');
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    Haptics.selectionAsync();
     if (longPressTimer.current) clearTimeout(longPressTimer.current);
     longPressTimer.current = setTimeout(() => {
       longPressFired.current = true;
-      // A hold always wins over an already-open tap-menu — the two
-      // shouldn't ever be visible at once.
       setExpanded(false);
       beginHold();
     }, LONG_PRESS_MS);
@@ -256,19 +286,19 @@ export function ActionCluster({ visible = true }: { visible?: boolean }) {
     isPressed.current = false;
     const wasLongPress = longPressFired.current;
     longPressFired.current = false;
-    // Always runs — resolves charging/recording/cancelling back to idle,
-    // and saves/discards when a hold had actually committed.
     endHold(holdPhaseRef.current);
     if (!wasLongPress) {
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      if (expanded) {
+        Haptics.selectionAsync();
+      } else {
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      }
       setExpanded((v) => !v);
     }
   };
 
-  // Fires if the OS/another view rips the responder away mid-gesture
-  // (a real release never reaches us in that case). Ambiguous intent, so
-  // always discard rather than risk a save the user never actually asked
-  // for by releasing normally.
+  // The OS took the gesture away (a real release never arrives). Intent is
+  // unclear, so discard rather than save something nobody released.
   const handleTerminate = () => {
     clearLongPressTimer();
     isPressed.current = false;
@@ -277,191 +307,222 @@ export function ActionCluster({ visible = true }: { visible?: boolean }) {
     if (phaseAtEnd === 'recording' || phaseAtEnd === 'cancelling') {
       endHold('cancelling');
     } else {
-      setPhase('idle');
+      endHold('idle');
     }
   };
 
-  const showOverlay = holdPhase === 'recording' || holdPhase === 'cancelling' || tail !== null;
+  const live = holdPhase === 'recording' || holdPhase === 'cancelling';
   const cancelling = holdPhase === 'cancelling';
+  const dimmed = expanded || live || tail !== null;
 
-  const iconMode: 'mic' | 'close' | 'cancel' =
-    holdPhase === 'cancelling' ? 'cancel' : expanded ? 'close' : 'mic';
-  const fabTint =
-    holdPhase === 'recording' || holdPhase === 'cancelling' ? colors.error : colors.accent;
-  const fabInk = holdPhase === 'recording' || holdPhase === 'cancelling' ? colors.errorInk : colors.accentInk;
+  const fabColor = expanded ? colors.fg : live ? colors.error : colors.accent;
+  const fabInk = expanded ? colors.bg : live ? colors.errorInk : colors.accentInk;
+  const glyph: 'plus' | 'mic' | 'trash' = cancelling ? 'trash' : live ? 'mic' : 'plus';
+
+  const puckStyle = useAnimatedStyle(() => ({
+    transform: [{ translateY: -dragY.value }],
+  }));
+
+  // A soft disc behind the button that swells with your voice.
+  const voiceHaloStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(level.value, [0, 1], [0.16, 0.34]),
+    transform: [
+      { translateY: -dragY.value },
+      { scale: interpolate(level.value, [0, 1], [1.08, 1.55], Extrapolation.CLAMP) },
+    ],
+  }));
 
   return (
     <>
-      {/* Backdrop — only present (and hit-testable) while the tap-menu is
-          open, so tapping anywhere else closes it without ever stealing
-          touches from the rest of the app while collapsed. */}
-      {expanded && (
-        <Pressable
-          onPress={closeMenu}
-          style={StyleSheet.absoluteFillObject}
-          className="z-40"
-          accessibilityElementsHidden
-          importantForAccessibility="no-hide-descendants"
-        >
-          {/* A soft wash of the page colour, so the menu reads against
-              whatever list happens to be behind it. */}
+      {/* Dims the page under the menu or a recording so the controls are the
+          only thing to look at. Tapping it closes the menu; while recording
+          it ignores touches (the finger is on the button anyway). */}
+      <AnimatePresence>
+        {dimmed && (
           <MotiView
+            key="scrim"
             from={{ opacity: 0 }}
-            animate={{ opacity: 0.82 }}
-            transition={reduceMotion ? REDUCED : { type: 'timing', duration: DUR_FAST, easing: EASE_OUT }}
-            style={[StyleSheet.absoluteFillObject, { backgroundColor: colors.bg }]}
-          />
-        </Pressable>
-      )}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={reduceMotion ? REDUCED : { type: 'timing', duration: DUR_BASE, easing: EASE_OUT }}
+            exitTransition={EXIT_QUICK}
+            pointerEvents={expanded ? 'auto' : 'none'}
+            style={[StyleSheet.absoluteFillObject, styles.scrimLayer]}
+          >
+            <Pressable
+              onPress={closeMenu}
+              style={[StyleSheet.absoluteFillObject, { backgroundColor: colors.bg, opacity: 0.9 }]}
+              accessibilityElementsHidden
+              importantForAccessibility="no-hide-descendants"
+            />
+          </MotiView>
+        )}
+      </AnimatePresence>
 
       <View
         pointerEvents={visible ? 'box-none' : 'none'}
         accessibilityElementsHidden={!visible}
         importantForAccessibility={visible ? 'auto' : 'no-hide-descendants'}
-        className="absolute bottom-0 left-0 right-0 z-50 items-center"
-        style={{
-          // Same bottom inset as FloatingTabBar, then up so the button rises
-          // CENTER_BUTTON_RISE above the bar's top edge.
-          paddingBottom: Math.max(insets.bottom, 16) + NAV_BAR_HEIGHT + CENTER_BUTTON_RISE - FAB_SIZE,
-        }}
+        style={[
+          styles.dock,
+          {
+            // Same bottom inset as FloatingTabBar, then up so the button rises
+            // CENTER_BUTTON_RISE above the bar's top edge.
+            paddingBottom: Math.max(insets.bottom, 16) + NAV_BAR_HEIGHT + CENTER_BUTTON_RISE - FAB_SIZE,
+          },
+        ]}
       >
-        <MotiView {...entrance} style={styles.stack}>
+        <MotiView {...entrance} pointerEvents="box-none" style={styles.stage}>
+          {/* ── Tap menu ── */}
           <AnimatePresence>
-            {showOverlay && (
-              <RecordingOverlay
-                key="recording-overlay"
-                recorder={audioRecorder}
-                cancelling={cancelling}
-                tail={tail}
+            {expanded && (
+              <MenuHint
+                key="hint"
+                threadTitle={currentThread?.title}
                 reduceMotion={reduceMotion}
               />
             )}
-          </AnimatePresence>
-
-          <AnimatePresence>
             {expanded && (
-              <MiniAction
-                key="record"
-                label="Record"
-                icon={<Icon name="mic" size={20} color={colors.onPrimaryContainer} stroke={2.2} />}
-                bg={colors.primaryContainer}
-                delay={60}
-                reduceMotion={reduceMotion}
-                onPress={goRecordScreen}
-              />
-            )}
-            {expanded && (
-              <MiniAction
-                key="note"
+              <MenuOption
+                key="write"
+                x={-OPTION_X}
+                icon="pencil"
                 label="Write"
-                icon={<SquarePen size={20} color={colors.fg} strokeWidth={1.9} />}
-                bg={colors.surfaceHighest}
+                caption="Type a note"
+                tone="neutral"
                 delay={0}
                 reduceMotion={reduceMotion}
                 onPress={goNote}
               />
             )}
+            {expanded && (
+              <MenuOption
+                key="record"
+                x={OPTION_X}
+                icon="mic"
+                label="Record"
+                caption="Talk it through"
+                tone="accent"
+                delay={40}
+                reduceMotion={reduceMotion}
+                onPress={goRecordScreen}
+              />
+            )}
           </AnimatePresence>
 
-          {/* Main FAB — tap to open the menu; hold to record inline. */}
-          <View style={styles.mainWrap}>
-            {/* The brand's open ring around the button. Still at rest (no
-                decorative motion on a task surface); it turns while a hold
-                is recording. */}
-            <MotiView
-              pointerEvents="none"
-              style={styles.orbit}
-              animate={{
-                rotate: holdPhase === 'recording' && !reduceMotion ? '360deg' : '0deg',
-                opacity: holdPhase === 'idle' ? 0.55 : 0.9,
-              }}
-              transition={
-                holdPhase === 'recording' && !reduceMotion
-                  ? { type: 'timing', duration: 3000, easing: Easing.linear, loop: true, repeatReverse: false }
-                  : { type: 'timing', duration: DUR_FAST, easing: EASE_OUT }
-              }
-            >
-              <OpenRing size={ORBIT_SIZE} color={fabTint} weight={0.022} core={false} />
-            </MotiView>
-            {/* Charging ring — grows continuously while held, so the hold
-                itself reads as "in progress" before it commits. */}
-            {holdPhase === 'charging' && !reduceMotion && (
-              <MotiView
-                from={{ scale: 1, opacity: 0.35 }}
-                animate={{ scale: 1.5, opacity: 0 }}
-                transition={{ type: 'timing', duration: LONG_PRESS_MS, easing: EASE_OUT }}
-                style={[styles.chargingRing, { borderColor: colors.accent }]}
-                pointerEvents="none"
+          {/* ── Recording ── */}
+          <AnimatePresence>
+            {(live || tail !== null) && (
+              <RecordingCard
+                key="card"
+                recorder={audioRecorder}
+                level={level}
+                cancelling={cancelling}
+                tail={tail}
+                threadTitle={currentThread?.title}
+                reduceMotion={reduceMotion}
               />
             )}
-            {/* Breathing ring while actually recording — a live pulse,
-                tinted to match the cancel/record state. */}
-            {(holdPhase === 'recording' || holdPhase === 'cancelling') && !reduceMotion && (
-              <MotiView
-                from={{ scale: 1, opacity: 0.35 }}
-                animate={{ scale: 1.4, opacity: 0 }}
-                transition={{ type: 'timing', duration: 1400, loop: true, easing: EASE_OUT }}
-                style={[styles.chargingRing, { borderColor: fabTint }]}
-                pointerEvents="none"
+          </AnimatePresence>
+          <AnimatePresence>
+            {live && (
+              <CancelLane
+                key="lane"
+                dragY={dragY}
+                armed={cancelling}
+                reduceMotion={reduceMotion}
               />
             )}
-            <View
-              accessible
-              accessibilityRole="button"
-              accessibilityLabel={
-                expanded ? 'Close quick actions' : 'Capture — tap for options, hold to record'
-              }
-              accessibilityActions={[{ name: 'longpress', label: 'Record a voice note' }]}
-              onAccessibilityAction={(event) => {
-                if (event.nativeEvent.actionName === 'longpress') goRecordScreen();
-              }}
-              // Raw Responder System, not Pressable — see the comment above
-              // handleGrant for why. We claim the responder immediately and
-              // refuse to release it until the gesture ends on our terms.
-              onStartShouldSetResponder={() => true}
-              onResponderTerminationRequest={() => false}
-              onResponderGrant={handleGrant}
-              onResponderMove={handleDragMove}
-              onResponderRelease={handleRelease}
-              onResponderTerminate={handleTerminate}
-              style={styles.mainFabTouchable}
-            >
+          </AnimatePresence>
+
+          {/* ── The button ── */}
+          <View pointerEvents="box-none" style={styles.fabSlot}>
+            {live && !reduceMotion && (
+              <Animated.View
+                pointerEvents="none"
+                style={[styles.halo, { backgroundColor: colors.error }, voiceHaloStyle]}
+              />
+            )}
+            <Animated.View pointerEvents="box-none" style={[styles.fabSlotInner, puckStyle]}>
+              {/* The brand's open ring. Still at rest; it turns while recording. */}
               <MotiView
-                animate={{ backgroundColor: fabTint, scale: holdPhase === 'idle' ? 1 : PRESS_SCALE }}
-                transition={{ type: 'timing', duration: DUR_FAST, easing: EASE_OUT }}
-                style={styles.mainFab}
+                pointerEvents="none"
+                style={styles.orbit}
+                animate={{
+                  rotate: live && !reduceMotion ? '360deg' : '0deg',
+                  opacity: expanded ? 0 : live ? 0.9 : 0.55,
+                }}
+                transition={
+                  live && !reduceMotion
+                    ? { type: 'timing', duration: 3000, easing: Easing.linear, loop: true, repeatReverse: false }
+                    : { type: 'timing', duration: DUR_FAST, easing: EASE_OUT }
+                }
+              >
+                <OpenRing size={ORBIT_SIZE} color={live ? colors.error : colors.accent} weight={0.022} core={false} />
+              </MotiView>
+
+              <View
+                accessible
+                accessibilityRole="button"
+                accessibilityLabel={
+                  expanded ? 'Close capture options' : 'Capture. Tap for options, hold to record.'
+                }
+                accessibilityActions={[{ name: 'longpress', label: 'Record a voice note' }]}
+                onAccessibilityAction={(event) => {
+                  if (event.nativeEvent.actionName === 'longpress') goRecordScreen();
+                }}
+                onStartShouldSetResponder={() => true}
+                onResponderTerminationRequest={() => false}
+                onResponderGrant={handleGrant}
+                onResponderMove={handleDragMove}
+                onResponderRelease={handleRelease}
+                onResponderTerminate={handleTerminate}
+                style={styles.fabTouch}
               >
                 <MotiView
-                  animate={{ opacity: iconMode === 'mic' ? 1 : 0, scale: iconMode === 'mic' ? 1 : 0.5 }}
-                  transition={reduceMotion ? REDUCED : SPRING_NAV}
-                  style={StyleSheet.absoluteFillObject}
+                  animate={{
+                    backgroundColor: fabColor,
+                    scale: holdPhase === 'charging' ? 0.94 : cancelling ? 0.86 : 1,
+                  }}
+                  transition={{
+                    backgroundColor: { type: 'timing', duration: DUR_FAST, easing: EASE_OUT },
+                    scale: reduceMotion ? REDUCED : SPRING_NAV,
+                  }}
+                  style={styles.fab}
                 >
-                  <View style={styles.iconCenter}>
-                    {/* Mic: the button is the app's voice-first capture.
-                        Tapping still offers Write as well. */}
+                  {/* Hold feedback: red fills the button from the centre over
+                      exactly the hold time, then it clicks into recording. */}
+                  <MotiView
+                    pointerEvents="none"
+                    animate={{ scale: holdPhase === 'charging' || live ? 1 : 0 }}
+                    transition={
+                      holdPhase === 'charging'
+                        ? { type: 'timing', duration: LONG_PRESS_MS, easing: Easing.out(Easing.quad) }
+                        : { type: 'timing', duration: DUR_FAST, easing: EASE_OUT }
+                    }
+                    style={[styles.fill, { backgroundColor: colors.error }]}
+                  />
+                  <Glyph
+                    show={glyph === 'plus'}
+                    rotate={expanded ? '135deg' : '0deg'}
+                    reduceMotion={reduceMotion}
+                  >
+                    <Icon
+                      name="plus"
+                      size={30}
+                      color={holdPhase === 'charging' ? colors.errorInk : fabInk}
+                      stroke={2.4}
+                    />
+                  </Glyph>
+                  <Glyph show={glyph === 'mic'} reduceMotion={reduceMotion}>
                     <Icon name="mic" size={26} color={fabInk} stroke={2.2} />
-                  </View>
-                </MotiView>
-                <MotiView
-                  animate={{ opacity: iconMode === 'close' ? 1 : 0, scale: iconMode === 'close' ? 1 : 0.5 }}
-                  transition={reduceMotion ? REDUCED : SPRING_NAV}
-                  style={StyleSheet.absoluteFillObject}
-                >
-                  <View style={styles.iconCenter}>
-                    <Icon name="x" size={26} color={fabInk} stroke={2.4} />
-                  </View>
-                </MotiView>
-                <MotiView
-                  animate={{ opacity: iconMode === 'cancel' ? 1 : 0, scale: iconMode === 'cancel' ? 1 : 0.5 }}
-                  transition={reduceMotion ? REDUCED : SPRING_NAV}
-                  style={StyleSheet.absoluteFillObject}
-                >
-                  <View style={styles.iconCenter}>
+                  </Glyph>
+                  <Glyph show={glyph === 'trash'} reduceMotion={reduceMotion}>
                     <Icon name="trash" size={24} color={fabInk} stroke={2.2} />
-                  </View>
+                  </Glyph>
                 </MotiView>
-              </MotiView>
-            </View>
+              </View>
+            </Animated.View>
           </View>
         </MotiView>
       </View>
@@ -469,192 +530,422 @@ export function ActionCluster({ visible = true }: { visible?: boolean }) {
   );
 }
 
-const WAVEFORM_BARS = 9;
-// Rough dBFS-ish baseline so bars start small instead of flickering empty
-// before the first real metering sample arrives.
-const METERING_BASELINE = -50;
-
-function RecordingOverlay({
-  recorder,
-  cancelling,
-  tail,
+/** One of the button's glyphs; only the current one is visible. */
+function Glyph({
+  show,
+  rotate = '0deg',
   reduceMotion,
+  children,
 }: {
-  recorder: AudioRecorder;
-  cancelling: boolean;
-  tail: OverlayTail;
+  show: boolean;
+  rotate?: string;
   reduceMotion: boolean;
+  children: React.ReactNode;
 }) {
-  const colors = useThemeColors();
-  // Polls the recorder only while this overlay itself is mounted — i.e.
-  // only during (and just after) an actual hold-to-record session, not for
-  // the app's whole lifetime.
-  const { durationMillis, metering } = useAudioRecorderState(recorder, 60);
-  const isLive = tail === null;
-  const tint = tail === 'saved' ? colors.accent : colors.error;
-
-  // A real rolling window of actual metering samples (one per poll tick)
-  // rather than one instantaneous value fanned out across arbitrary shape
-  // constants — each bar reflects an actual past instant, oldest to newest.
-  const [levels, setLevels] = useState<number[]>(() =>
-    Array(WAVEFORM_BARS).fill(METERING_BASELINE),
-  );
-  useEffect(() => {
-    setLevels((prev) => [...prev.slice(1), metering ?? METERING_BASELINE]);
-  }, [metering]);
-
-  const label =
-    tail === 'saved'
-      ? 'Saved'
-      : tail === 'discarded'
-        ? 'Discarded'
-        : tail === 'finishing'
-          ? 'Saving…'
-          : cancelling
-            ? 'Release to cancel'
-            : 'Recording';
-
-  const hint = cancelling ? 'Release to discard' : 'Slide up to cancel · release to save';
-
-  const motionProps = reduceMotion
-    ? {
-        from: { opacity: 0 },
-        animate: { opacity: 1 },
-        exit: { opacity: 0 },
-        transition: REDUCED,
-      }
-    : {
-        from: { opacity: 0, translateY: 6, scale: 0.9 },
-        animate: { opacity: 1, translateY: 0, scale: 1 },
-        exit: { opacity: 0, translateY: 4, scale: 0.94 },
-        transition: SPRING_NAV,
-      };
-
   return (
-    <MotiView {...motionProps} style={styles.overlayShadow}>
-      <View style={[styles.overlayCard, { backgroundColor: colors.surfaceHigh, borderColor: tint }]}>
-        <View className="flex-row items-center justify-between mb-1.5">
-          <View className="flex-row items-center gap-1.5">
-            {isLive && !cancelling && (
-              <MotiView
-                from={{ opacity: 0.35 }}
-                animate={{ opacity: reduceMotion ? 0.9 : 1 }}
-                transition={
-                  reduceMotion
-                    ? REDUCED
-                    : {
-                        type: 'timing',
-                        duration: 650,
-                        loop: true,
-                        repeatReverse: true,
-                        easing: EASE_IN_OUT,
-                      }
-                }
-                style={[styles.recDot, { backgroundColor: tint }]}
-              />
-            )}
-            {tail === 'saved' && <Icon name="check" size={12} color={tint} stroke={2.6} />}
-            {(tail === 'discarded' || cancelling) && (
-              <Icon name="trash" size={11} color={tint} stroke={2.4} />
-            )}
-            <Text
-              className="font-sans-semi text-xs uppercase tracking-caps"
-              style={{ color: tint }}
-            >
-              {label}
-            </Text>
-          </View>
-          {isLive && (
-            <Text className="font-sans-medium text-xs" style={{ color: colors.fgSecondary }}>
-              {formatDuration(durationMillis)}
-            </Text>
-          )}
-        </View>
-
-        {isLive && (
-          <View className="flex-row items-center gap-0.5 h-7 mb-1.5">
-            {levels.map((sample, i) => {
-              const level = Math.max(0.12, Math.min(1, (sample + 50) / 45));
-              return (
-                <MotiView
-                  key={i}
-                  animate={{ scaleY: level }}
-                  transition={{ type: 'timing', duration: 80, easing: Easing.linear }}
-                  style={[styles.bar, { backgroundColor: tint, transformOrigin: 'bottom' } as any]}
-                />
-              );
-            })}
-          </View>
-        )}
-
-        {isLive && (
-          <Text className="font-sans text-sm text-fg-tertiary">{hint}</Text>
-        )}
-      </View>
+    <MotiView
+      pointerEvents="none"
+      animate={{ opacity: show ? 1 : 0, scale: show ? 1 : 0.4, rotate }}
+      transition={reduceMotion ? REDUCED : SPRING_NAV}
+      style={[StyleSheet.absoluteFillObject, styles.center]}
+    >
+      {children}
     </MotiView>
   );
 }
 
-function MiniAction({
-  label,
+/** "Adding to …" above the menu, and the hint that teaches hold-to-record. */
+function MenuHint({ threadTitle, reduceMotion }: { threadTitle?: string; reduceMotion: boolean }) {
+  const colors = useThemeColors();
+  return (
+    <MotiView
+      from={{ opacity: 0, translateY: reduceMotion ? 0 : 8 }}
+      animate={{ opacity: 1, translateY: 0 }}
+      exit={{ opacity: 0 }}
+      transition={reduceMotion ? REDUCED : { type: 'timing', duration: DUR_BASE, delay: 80, easing: EASE_OUT }}
+      exitTransition={EXIT_QUICK}
+      pointerEvents="none"
+      style={[styles.menuHint, { bottom: OPTION_CENTER_Y + OPTION_CIRCLE / 2 + 26 }]}
+    >
+      {threadTitle ? (
+        <Text
+          className="font-sans-semi text-xs uppercase tracking-caps text-center mb-1.5"
+          style={{ color: colors.accent }}
+          numberOfLines={1}
+        >
+          Adding to {threadTitle}
+        </Text>
+      ) : null}
+      <Text className="font-sans text-sm text-center" style={{ color: colors.fgSecondary }}>
+        Tip: hold <Text className="font-sans-semi" style={{ color: colors.fg }}>+</Text> to record without
+        leaving the screen
+      </Text>
+    </MotiView>
+  );
+}
+
+/** A choice in the tap menu: a big round target with a label underneath. */
+function MenuOption({
+  x,
   icon,
-  bg,
-  onPress,
+  label,
+  caption,
+  tone,
   delay,
   reduceMotion,
+  onPress,
 }: {
+  x: number;
+  icon: IconName;
   label: string;
-  icon: React.ReactNode;
-  bg: string;
-  onPress: () => void;
+  caption: string;
+  tone: 'accent' | 'neutral';
   delay: number;
   reduceMotion: boolean;
+  onPress: () => void;
 }) {
   const colors = useThemeColors();
+  const [pressed, setPressed] = useState(false);
+  const circleBg = tone === 'accent' ? colors.accent : colors.surfaceRaised;
+  const ink = tone === 'accent' ? colors.accentInk : colors.fg;
 
+  // Each option flies out of the button along its own diagonal.
   const motionProps = reduceMotion
-    ? {
-        from: { opacity: 0 },
-        animate: { opacity: 1 },
-        exit: { opacity: 0 },
-        transition: REDUCED,
-      }
+    ? { from: { opacity: 0 }, animate: { opacity: 1 }, exit: { opacity: 0 }, transition: REDUCED }
     : {
-        from: { opacity: 0, translateY: 12, scale: 0.92 },
-        animate: { opacity: 1, translateY: 0, scale: 1 },
-        exit: { opacity: 0, translateY: 8, scale: 0.94 },
+        from: { opacity: 0, translateX: -x * 0.75, translateY: 70, scale: 0.4 },
+        animate: { opacity: 1, translateX: 0, translateY: 0, scale: 1 },
+        exit: { opacity: 0, translateX: -x * 0.6, translateY: 56, scale: 0.5 },
         transition: { ...SPRING_NAV, delay },
         exitTransition: { ...EXIT_QUICK, delay: 0 },
       };
 
   return (
-    <MotiView {...motionProps}>
+    <MotiView
+      {...motionProps}
+      style={[
+        styles.option,
+        { marginLeft: x - OPTION_W / 2, bottom: OPTION_CENTER_Y - OPTION_CIRCLE / 2 - OPTION_LABEL_H },
+      ]}
+    >
       <Pressable
         accessibilityRole="button"
-        accessibilityLabel={label}
-        android_ripple={{ color: colors.border, borderless: false }}
+        accessibilityLabel={`${label}. ${caption}.`}
         onPress={onPress}
-        style={[styles.miniPill, { backgroundColor: bg, borderColor: colors.border }]}
+        onPressIn={() => setPressed(true)}
+        onPressOut={() => setPressed(false)}
+        style={styles.optionPress}
       >
-        {icon}
-        <Text className="font-sans-semi text-sm" style={{ color: colors.fg }}>
+        <MotiView
+          animate={{ scale: pressed ? 0.92 : 1 }}
+          transition={reduceMotion ? REDUCED : { type: 'spring', damping: 20, stiffness: 380, mass: 0.5 }}
+          style={[
+            styles.optionCircle,
+            {
+              backgroundColor: circleBg,
+              borderColor: tone === 'accent' ? 'transparent' : colors.border,
+            },
+          ]}
+        >
+          <Icon name={icon} size={24} color={ink} stroke={2} />
+        </MotiView>
+        <Text className="font-sans-semi text-body mt-2" style={{ color: colors.fg }}>
           {label}
+        </Text>
+        <Text className="font-sans text-sm" style={{ color: colors.fgTertiary }}>
+          {caption}
         </Text>
       </Pressable>
     </MotiView>
   );
 }
 
-// Main button diameter, and the brand ring drawn around it.
-const FAB_SIZE = 62;
-const ORBIT_SIZE = FAB_SIZE + 22;
+/**
+ * The slide-to-cancel lane: chevrons that drift upward toward a bin. The bin
+ * grows as the button gets closer and turns red once releasing would
+ * discard.
+ */
+function CancelLane({
+  dragY,
+  armed,
+  reduceMotion,
+}: {
+  dragY: SharedValue<number>;
+  armed: boolean;
+  reduceMotion: boolean;
+}) {
+  const colors = useThemeColors();
+
+  const binStyle = useAnimatedStyle(() => ({
+    transform: [
+      {
+        scale: interpolate(
+          dragY.value,
+          [0, CANCEL_ENTER_PX, CANCEL_DISTANCE],
+          [0.86, 1, 1.18],
+          Extrapolation.CLAMP,
+        ),
+      },
+    ],
+  }));
+  const chevronsStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(dragY.value, [0, CANCEL_EXIT_PX], [1, 0], Extrapolation.CLAMP),
+  }));
+
+  return (
+    <MotiView
+      from={{ opacity: 0, translateY: reduceMotion ? 0 : 16 }}
+      animate={{ opacity: 1, translateY: 0 }}
+      exit={{ opacity: 0 }}
+      transition={reduceMotion ? REDUCED : SPRING_NAV}
+      exitTransition={EXIT_QUICK}
+      pointerEvents="none"
+      style={styles.lane}
+    >
+      <Animated.View style={[styles.binWrap, binStyle]}>
+        <MotiView
+          animate={{
+            backgroundColor: armed ? colors.error : colors.surfaceRaised,
+            borderColor: armed ? colors.error : colors.border,
+          }}
+          transition={{ type: 'timing', duration: DUR_FAST, easing: EASE_OUT }}
+          style={styles.bin}
+        >
+          <Icon name="trash" size={22} color={armed ? colors.errorInk : colors.fgSecondary} stroke={2} />
+        </MotiView>
+      </Animated.View>
+
+      <Animated.View style={[styles.chevrons, chevronsStyle]}>
+        {[0, 1, 2].map((i) => (
+          <MotiView
+            key={i}
+            from={{ opacity: 0.15, translateY: 4 }}
+            animate={{ opacity: reduceMotion ? 0.6 : 1, translateY: reduceMotion ? 0 : -2 }}
+            transition={
+              reduceMotion
+                ? REDUCED
+                : {
+                    type: 'timing',
+                    duration: 520,
+                    delay: (2 - i) * 140,
+                    loop: true,
+                    repeatReverse: true,
+                    easing: EASE_IN_OUT,
+                  }
+            }
+            style={{ marginTop: -8 }}
+          >
+            <Icon name="chevronUp" size={20} color={colors.fgTertiary} stroke={2.2} />
+          </MotiView>
+        ))}
+      </Animated.View>
+    </MotiView>
+  );
+}
+
+const WAVEFORM_BARS = 30;
+// Rough dBFS baseline so the bars start low instead of flickering empty
+// before the first metering sample arrives.
+const METERING_BASELINE = -50;
+
+/** Live timer and waveform while recording, then the result after release. */
+function RecordingCard({
+  recorder,
+  level,
+  cancelling,
+  tail,
+  threadTitle,
+  reduceMotion,
+}: {
+  recorder: AudioRecorder;
+  level: SharedValue<number>;
+  cancelling: boolean;
+  tail: Tail;
+  threadTitle?: string;
+  reduceMotion: boolean;
+}) {
+  const colors = useThemeColors();
+  const { width } = useWindowDimensions();
+  // Polls the recorder only while this card is on screen.
+  const { durationMillis, metering } = useAudioRecorderState(recorder, 60);
+  const isLive = tail === null;
+
+  const [levels, setLevels] = useState<number[]>(() => Array(WAVEFORM_BARS).fill(METERING_BASELINE));
+  useEffect(() => {
+    if (!isLive) return;
+    const sample = metering ?? METERING_BASELINE;
+    setLevels((prev) => [...prev.slice(1), sample]);
+    level.value = withTiming(normalise(sample), { duration: 90 });
+  }, [metering, isLive, level]);
+
+  const tint = cancelling ? colors.error : colors.fg;
+  const destination = threadTitle ? `to ${threadTitle}` : 'as a new thread';
+
+  const motionProps = reduceMotion
+    ? { from: { opacity: 0 }, animate: { opacity: 1 }, exit: { opacity: 0 }, transition: REDUCED }
+    : {
+        from: { opacity: 0, translateY: 14, scale: 0.96 },
+        animate: { opacity: 1, translateY: 0, scale: 1 },
+        exit: { opacity: 0, translateY: 8, scale: 0.97 },
+        transition: SPRING_NAV,
+        exitTransition: EXIT_QUICK,
+      };
+
+  return (
+    <MotiView
+      {...motionProps}
+      pointerEvents="none"
+      style={[
+        styles.card,
+        {
+          width: Math.min(width - 48, 340),
+          bottom: FAB_CENTER + CANCEL_DISTANCE + BIN_SIZE / 2 + 22,
+          backgroundColor: colors.surfaceRaised,
+          borderColor: cancelling ? colors.error : colors.border,
+        },
+      ]}
+    >
+      {isLive ? (
+        <>
+          <View className="flex-row items-center justify-between">
+            <View className="flex-row items-center gap-2">
+              <MotiView
+                from={{ opacity: 0.3 }}
+                animate={{ opacity: 1 }}
+                transition={
+                  reduceMotion
+                    ? REDUCED
+                    : { type: 'timing', duration: 700, loop: true, repeatReverse: true, easing: EASE_IN_OUT }
+                }
+                style={[styles.recDot, { backgroundColor: colors.error }]}
+              />
+              <Text className="font-sans-semi text-body" style={{ color: tint }}>
+                {cancelling ? 'Release to discard' : 'Recording'}
+              </Text>
+            </View>
+            <Text
+              className="font-sans-semi"
+              style={{ color: tint, fontSize: 22, fontVariant: ['tabular-nums'] }}
+            >
+              {formatDuration(durationMillis)}
+            </Text>
+          </View>
+
+          <View style={styles.wave}>
+            {levels.map((sample, i) => (
+              <MotiView
+                key={i}
+                animate={{ scaleY: Math.max(0.1, normalise(sample)) }}
+                transition={{ type: 'timing', duration: 80, easing: Easing.linear }}
+                style={[
+                  styles.bar,
+                  {
+                    backgroundColor: cancelling ? colors.error : colors.accent,
+                    // Older samples fade out toward the left.
+                    opacity: 0.35 + (0.65 * i) / (WAVEFORM_BARS - 1),
+                  },
+                ]}
+              />
+            ))}
+          </View>
+
+          <Text className="font-sans text-sm" style={{ color: cancelling ? colors.error : colors.fgTertiary }}>
+            {cancelling ? 'This recording will be deleted' : `Let go to save ${destination}`}
+          </Text>
+        </>
+      ) : (
+        <TailContent tail={tail} reduceMotion={reduceMotion} />
+      )}
+    </MotiView>
+  );
+}
+
+function TailContent({ tail, reduceMotion }: { tail: NonNullable<Tail>; reduceMotion: boolean }) {
+  const colors = useThemeColors();
+  const view: { icon: IconName; bg: string; ink: string; title: string; detail: string } =
+    tail.kind === 'saved'
+      ? {
+          icon: 'check',
+          bg: colors.accent,
+          ink: colors.accentInk,
+          title: 'Saved',
+          detail: tail.where ? `Transcribing into ${tail.where}` : 'Transcribing into a new thread',
+        }
+      : tail.kind === 'tooShort'
+        ? {
+            icon: 'mic',
+            bg: colors.surfaceHigh,
+            ink: colors.fg,
+            title: 'Too short to save',
+            detail: 'Keep holding the button while you talk',
+          }
+        : tail.kind === 'discarded'
+          ? {
+              icon: 'trash',
+              bg: colors.errorSoft,
+              ink: colors.error,
+              title: 'Discarded',
+              detail: 'Nothing was saved',
+            }
+          : { icon: 'mic', bg: colors.surfaceHigh, ink: colors.fgSecondary, title: 'Saving…', detail: ' ' };
+
+  return (
+    <View className="flex-row items-center">
+      <MotiView
+        key={tail.kind}
+        from={{ scale: reduceMotion ? 1 : 0.5, opacity: 0 }}
+        animate={{ scale: 1, opacity: 1 }}
+        transition={reduceMotion ? REDUCED : { type: 'spring', damping: 12, stiffness: 260, mass: 0.6 }}
+        style={[styles.tailIcon, { backgroundColor: view.bg }]}
+      >
+        <Icon name={view.icon} size={20} color={view.ink} stroke={2.4} />
+      </MotiView>
+      <View className="flex-1 ml-3">
+        <Text className="font-sans-semi text-body" style={{ color: colors.fg }}>
+          {view.title}
+        </Text>
+        <Text className="font-sans text-sm mt-0.5" style={{ color: colors.fgTertiary }} numberOfLines={1}>
+          {view.detail}
+        </Text>
+      </View>
+    </View>
+  );
+}
+
+/** Rough dBFS to 0..1. Decoration, not a meter. */
+function normalise(dbfs: number) {
+  return Math.max(0, Math.min(1, (dbfs + 50) / 45));
+}
+
+const OPTION_W = 120;
+const OPTION_LABEL_H = 48;
 
 const styles = StyleSheet.create({
-  stack: {
-    alignItems: 'center',
-    gap: 12,
+  scrimLayer: {
+    zIndex: 40,
   },
-  mainWrap: {
+  dock: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    zIndex: 50,
+  },
+  stage: {
+    height: STAGE_HEIGHT,
+    width: '100%',
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+  },
+  fabSlot: {
+    width: ORBIT_SIZE,
+    height: FAB_SIZE,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  fabSlotInner: {
+    width: ORBIT_SIZE,
+    height: ORBIT_SIZE,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -663,83 +954,125 @@ const styles = StyleSheet.create({
     width: ORBIT_SIZE,
     height: ORBIT_SIZE,
   },
-  mainFabTouchable: {
+  halo: {
+    position: 'absolute',
     width: FAB_SIZE,
     height: FAB_SIZE,
     borderRadius: FAB_SIZE / 2,
-    overflow: 'hidden',
-    // M3 elevation level 3.
+  },
+  fabTouch: {
+    width: FAB_SIZE,
+    height: FAB_SIZE,
+    borderRadius: FAB_SIZE / 2,
     shadowColor: '#000000',
     shadowOffset: { width: 0, height: 4 },
     shadowRadius: 10,
     shadowOpacity: 0.22,
     elevation: 8,
   },
-  mainFab: {
+  fab: {
     width: FAB_SIZE,
     height: FAB_SIZE,
     borderRadius: FAB_SIZE / 2,
-    alignItems: 'center',
-    justifyContent: 'center',
+    overflow: 'hidden',
   },
-  chargingRing: {
+  fill: {
     position: 'absolute',
     width: FAB_SIZE,
     height: FAB_SIZE,
     borderRadius: FAB_SIZE / 2,
-    borderWidth: 2,
   },
-  iconCenter: {
-    flex: 1,
+  center: {
     alignItems: 'center',
     justifyContent: 'center',
   },
-  miniPill: {
-    flexDirection: 'row',
+  menuHint: {
+    position: 'absolute',
+    left: 32,
+    right: 32,
+    alignItems: 'center',
+  },
+  option: {
+    position: 'absolute',
+    left: '50%',
+    width: OPTION_W,
+  },
+  optionPress: {
+    alignItems: 'center',
+  },
+  optionCircle: {
+    width: OPTION_CIRCLE,
+    height: OPTION_CIRCLE,
+    borderRadius: OPTION_CIRCLE / 2,
+    borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    minWidth: 136,
-    gap: 8,
-    height: 44,
-    paddingHorizontal: 18,
-    borderRadius: 999,
-    borderWidth: StyleSheet.hairlineWidth,
-    overflow: 'hidden',
-    shadowColor: '#000000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowRadius: 6,
-    shadowOpacity: 0.16,
-    elevation: 4,
-  },
-  overlayShadow: {
-    // Pulled slightly closer to the FAB than the mini-menu's gap — reads
-    // as emerging from the button rather than a detached popup.
-    marginBottom: -6,
-    borderRadius: 20,
-    // Matches Glass's "regular" elevated-surface recipe (see
-    // components/ui/Glass.tsx) — the app's own flat M3 language, not a
-    // bespoke material just for this one component.
     shadowColor: '#000000',
     shadowOffset: { width: 0, height: 3 },
     shadowRadius: 8,
-    shadowOpacity: 0.16,
-    elevation: 3,
+    shadowOpacity: 0.14,
+    elevation: 4,
   },
-  overlayCard: {
-    width: 224,
-    borderRadius: 20,
+  lane: {
+    position: 'absolute',
+    bottom: FAB_CENTER + 18,
+    height: CANCEL_DISTANCE - 18 + BIN_SIZE / 2,
+    width: BIN_SIZE + 24,
+    alignItems: 'center',
+  },
+  binWrap: {
+    width: BIN_SIZE,
+    height: BIN_SIZE,
+  },
+  bin: {
+    width: BIN_SIZE,
+    height: BIN_SIZE,
+    borderRadius: BIN_SIZE / 2,
     borderWidth: 1.5,
-    padding: 14,
-    overflow: 'hidden',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  chevrons: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingTop: 8,
+  },
+  card: {
+    position: 'absolute',
+    borderRadius: 22,
+    borderWidth: 1,
+    paddingHorizontal: 18,
+    paddingVertical: 16,
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 8 },
+    shadowRadius: 20,
+    shadowOpacity: 0.12,
+    elevation: 6,
   },
   recDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+  wave: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    height: 40,
+    marginTop: 12,
+    marginBottom: 10,
   },
   bar: {
     width: 4,
-    height: 24,
+    height: 36,
     borderRadius: 2,
+  },
+  tailIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 });
