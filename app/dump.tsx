@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { View, Text, Alert } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
+import { useCaptureTarget } from '@/hooks/use-capture-target';
+import { FocusDestination } from '@/components/ui/FocusDestination';
 import { MotiView } from 'moti';
 import * as Haptics from 'expo-haptics';
 import {
@@ -105,8 +107,8 @@ export default function DumpScreen() {
   // ?threadId=… records into an existing thread (from a thread screen)
   // instead of starting a new one, so there's no category to pick.
   const { autostart, threadId } = useLocalSearchParams<{ autostart?: string; threadId?: string }>();
-  const targetThreadId = typeof threadId === 'string' && threadId ? threadId : undefined;
-  const targetThread = targetThreadId ? store.items.find((i) => i.id === targetThreadId) : undefined;
+  const target = useCaptureTarget(threadId);
+  const targetThread = target.destination;
   const autostarted = useRef(false);
   useEffect(() => {
     if (autostart !== '1' || !hasPermission || autostarted.current) return;
@@ -125,7 +127,13 @@ export default function DumpScreen() {
       // saveVoiceRecording copies the file to a permanent location, adds
       // the pending item, and kicks off background AI structuring — the
       // same path the FAB's quick hold-to-record flow uses.
-      const saved = await saveVoiceRecording({ tempUri, category, threadId: targetThreadId, store });
+      const saved = await saveVoiceRecording({
+        tempUri,
+        category,
+        threadId: targetThread?.id,
+        filing: target.filing,
+        store,
+      });
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       router.replace(`/(tabs)/context?id=${saved.threadId}` as any);
     } catch (e) {
@@ -178,6 +186,17 @@ export default function DumpScreen() {
             )}
           </View>
         </MotiView>
+
+        {/* Focus thread, with a way to keep this one recording separate */}
+        {!isRecording && target.focusThread && (
+          <MotiView {...enter.fade(1)} className="mb-4">
+            <FocusDestination
+              focusThread={target.focusThread}
+              separate={target.separate}
+              onToggle={target.setSeparate}
+            />
+          </MotiView>
+        )}
 
         {/* Category — only when starting a new thread */}
         {!isRecording && !targetThread && (

@@ -31,6 +31,7 @@ LogBox.ignoreLogs(['SafeAreaView has been deprecated']);
 import { ONBOARDING_KEY } from '@/app/onboarding';
 import { NudgeScheduler } from '@/components/NudgeScheduler';
 import { PendingProcessor } from '@/components/PendingProcessor';
+import { FilingNotifier } from '@/components/FilingNotifier';
 import { UndoToastHost } from '@/components/ui/UndoToastHost';
 import { MnemoStoreProvider } from '@/hooks/use-mnemo-store';
 import { UndoToastProvider } from '@/hooks/use-undo-toast';
@@ -200,6 +201,7 @@ function RootLayoutNav() {
             />
           </Stack>
           <PendingProcessor />
+          <FilingNotifier />
           <NudgeScheduler />
           <UndoToastHost />
         </ThemeProvider>

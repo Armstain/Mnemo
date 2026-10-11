@@ -3,7 +3,7 @@ import { AudioModule, RecordingPresets, setAudioModeAsync, useAudioRecorder } fr
 
 import { discardRecordingFile, saveVoiceRecording } from '@/lib/capture';
 import { useMnemoStore } from '@/hooks/use-mnemo-store';
-import type { Category, Entry } from '@/types/mnemo';
+import type { Category, Entry, Filing } from '@/types/mnemo';
 
 // Metering on, so the floating overlay can drive a real waveform instead
 // of a decorative loop.
@@ -58,13 +58,15 @@ export function useQuickRecording() {
 
   /**
    * Stops the recorder and either saves or discards, based on `save`. With
-   * a `threadId` the recording joins that thread; otherwise it starts one.
+   * a `threadId` the recording joins that thread (`filing` says why);
+   * otherwise it starts one.
    */
   const finish = useCallback(
     async (
       category: Category,
       save: boolean,
       threadId?: string,
+      filing?: Filing,
     ): Promise<{ threadId: string; entry: Entry } | null> => {
       if (phase !== 'recording') return null;
       const tooShort = Date.now() - startedAt.current < MIN_RECORDING_MS;
@@ -76,7 +78,7 @@ export function useQuickRecording() {
           discardRecordingFile(tempUri);
           return null;
         }
-        return await saveVoiceRecording({ tempUri, category, threadId, store });
+        return await saveVoiceRecording({ tempUri, category, threadId, filing, store });
       } catch (err) {
         console.error('Failed to finish quick recording', err);
         return null;

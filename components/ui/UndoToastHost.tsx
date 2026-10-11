@@ -54,15 +54,15 @@ export function UndoToastHost() {
           <Pressable
             onPress={() => {
               Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-              toast.onUndo();
+              toast.onAction();
               dismiss();
             }}
             hitSlop={8}
             accessibilityRole="button"
-            accessibilityLabel="Undo"
+            accessibilityLabel={toast.actionLabel}
           >
             <Text className="font-sans-semi text-sm" style={{ color: colors.accent }}>
-              Undo
+              {toast.actionLabel}
             </Text>
           </Pressable>
         </MotiView>

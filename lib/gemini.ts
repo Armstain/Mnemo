@@ -67,26 +67,153 @@ const SUMMARY_SCHEMA = {
   required: ['leftOff', 'nextSteps', 'resources'],
 };
 
-const DUMP_SCHEMA = {
+const ROLLUPS = ['sum', 'latest', 'average', 'compare'];
+
+const DUMP_PROPERTIES = {
+  title: { type: Type.STRING, description: 'Short punchy title (max 5 words)' },
+  notes: { type: Type.STRING, description: 'Cleaned up, well-formatted notes' },
+  links: {
+    type: Type.ARRAY,
+    items: { type: Type.STRING },
+    description: 'URLs mentioned in the note',
+  },
+  tags: {
+    type: Type.ARRAY,
+    items: { type: Type.STRING },
+    description: '2-5 short lowercase keyword tags capturing the topic (e.g. "passport", "travel", "recipe"). No hashtags, no categories already covered by suggestedCategory.',
+  },
+  suggestedCategory: { type: Type.STRING, enum: VALID_CATEGORIES },
+  summary: SUMMARY_SCHEMA,
+  measures: {
+    type: Type.ARRAY,
+    description: 'Numbers the person reports that are worth tracking. Empty if none.',
+    items: {
+      type: Type.OBJECT,
+      properties: {
+        metric: { type: Type.STRING },
+        value: { type: Type.NUMBER },
+        unit: { type: Type.STRING },
+        label: { type: Type.STRING },
+        group: { type: Type.STRING },
+        rollup: { type: Type.STRING, enum: ROLLUPS },
+      },
+      required: ['metric', 'value', 'unit', 'label', 'group', 'rollup'],
+    },
+  },
+};
+
+const THREAD_MATCH_SCHEMA = {
   type: Type.OBJECT,
   properties: {
-    title: { type: Type.STRING, description: 'Short punchy title (max 5 words)' },
-    notes: { type: Type.STRING, description: 'Cleaned up, well-formatted notes' },
-    links: {
-      type: Type.ARRAY,
-      items: { type: Type.STRING },
-      description: 'URLs mentioned in the note',
-    },
-    tags: {
-      type: Type.ARRAY,
-      items: { type: Type.STRING },
-      description: '2-5 short lowercase keyword tags capturing the topic (e.g. "passport", "travel", "recipe"). No hashtags, no categories already covered by suggestedCategory.',
-    },
-    suggestedCategory: { type: Type.STRING, enum: VALID_CATEGORIES },
-    summary: SUMMARY_SCHEMA,
+    match: { type: Type.STRING, enum: ['existing', 'new'] },
+    threadId: { type: Type.STRING },
+    confidence: { type: Type.NUMBER },
+    reason: { type: Type.STRING },
   },
-  required: ['title', 'notes', 'links', 'tags', 'suggestedCategory', 'summary'],
+  required: ['match', 'threadId', 'confidence', 'reason'],
 };
+
+const DUMP_REQUIRED = ['title', 'notes', 'links', 'tags', 'suggestedCategory', 'summary', 'measures'];
+
+/** The capture schema; thread matching and a transcript only when asked for. */
+function dumpSchema(opts: { threads: boolean; transcript: boolean }) {
+  const properties: Record<string, unknown> = { ...DUMP_PROPERTIES };
+  const required = [...DUMP_REQUIRED];
+  if (opts.transcript) {
+    properties.transcript = {
+      type: Type.STRING,
+      description: 'Faithful word-for-word transcript, numbers written as digits',
+    };
+    required.push('transcript');
+  }
+  if (opts.threads) {
+    properties.thread = THREAD_MATCH_SCHEMA;
+    required.push('thread');
+  }
+  return { type: Type.OBJECT, properties, required };
+}
+
+/** An open thread a new capture might belong to (see lib/filing.ts). */
+export interface ThreadCandidate {
+  id: string;
+  title: string;
+  category: string;
+  nextStep?: string;
+  /** A snippet of its newest entry. */
+  latest?: string;
+  /** The thread the person chose to send quick captures to. */
+  focused?: boolean;
+  /** What it already tracks, e.g. "spent (EUR, sum)". */
+  tracks?: string[];
+}
+
+export interface CaptureContext {
+  /** Open threads this capture might belong to (quick captures only). */
+  candidates: ThreadCandidate[];
+  /** What the thread it's going into already tracks, so names are reused. */
+  tracks?: string[];
+}
+
+export interface ThreadMatch {
+  match: 'existing' | 'new';
+  threadId: string;
+  confidence: number;
+  reason: string;
+}
+
+/** What one capture call returns. `measures` is unchecked: see verifyMeasures. */
+export interface ProcessedCapture {
+  title: string;
+  notes: string;
+  links: string[];
+  tags?: string[];
+  suggestedCategory?: string;
+  summary?: { leftOff: string; nextSteps: string[]; resources: { name: string; url: string }[] };
+  measures?: unknown[];
+  transcript?: string;
+  thread?: ThreadMatch;
+}
+
+const MEASURE_RULES = `
+MEASURES ("measures"):
+Numbers the person reports about their life that they'd want to add up or follow over time: money spent, distance, weight, hours slept or studied, pages read, reps, counts, scores, prices of options they're comparing.
+- Never: dates, times of day, years, ages in passing, phone numbers, addresses, ids, ordinals, or numbers that are only part of a name.
+- "metric": short and stable, e.g. "spent", "ran", "weight", "sleep", "studied", "price". Reuse an existing name when one is listed below.
+- "value": the number exactly as they said it. Never estimate, convert units or currencies, add numbers up or split them.
+- "unit": ISO currency code for money when they named or clearly meant one (euros → EUR, taka → BDT, rupees → INR); otherwise the unit they used ("km", "kg", "h", "pages"), or "".
+- "label": 1-4 words for what this one was ("dinner", "morning run"), or "".
+- "group": a broad bucket to break totals down by ("food", "transport", "stay"), or "".
+- "rollup": how values of this metric combine. "sum" for amounts that add up (spending, distance, hours worked). "latest" for a level that changes (body weight, balance, progress). "average" for a rating or recurring reading (sleep, mood). "compare" for options being weighed (prices of laptops, rents).
+- If there is nothing to track, return [].`;
+
+function trackRules(ctx?: CaptureContext): string {
+  const tracks = [...new Set([...(ctx?.tracks ?? []), ...(ctx?.candidates ?? []).flatMap((c) => c.tracks ?? [])])];
+  return tracks.length > 0 ? `Already tracked (reuse these names and units): ${tracks.join('; ')}.` : '';
+}
+
+function threadRules(ctx?: CaptureContext): string {
+  if (!ctx || ctx.candidates.length === 0) return '';
+  const list = ctx.candidates
+    .map((c) => {
+      const parts = [`id=${c.id}`, `"${c.title}"`, c.category];
+      if (c.nextStep) parts.push(`next: ${c.nextStep}`);
+      if (c.latest) parts.push(`latest: ${c.latest}`);
+      if (c.tracks?.length) parts.push(`tracks: ${c.tracks.join(', ')}`);
+      return `- ${parts.join(' · ')}${c.focused ? '  ← FOCUSED: they chose to send quick notes here' : ''}`;
+    })
+    .join('\n');
+  return `
+THREAD ("thread"):
+The person has these ongoing threads in their life:
+${list}
+
+Decide whether this capture continues one of them: the same trip, task, project, purchase or person, not merely a similar topic.
+- "match": "existing" with that thread's exact id, or "new" with threadId "".
+- A quick update, expense or reading made during a trip, project or routine belongs to it when it plausibly happened as part of it.
+- If a thread is FOCUSED, choose it for anything plausibly related to it; answer "new" only when the capture is clearly about something else.
+- "confidence": 0 to 1, how sure you are it belongs there (not how similar the words are).
+- "reason": one short line they will read, e.g. "Sounds like part of your Lisbon trip".`;
+}
 
 const ENHANCE_SCHEMA = {
   type: Type.OBJECT,
@@ -153,7 +280,10 @@ export async function generateTitle(notes: string) {
   }
 }
 
-export async function processVoiceDump(transcript: string) {
+export async function processVoiceDump(
+  transcript: string,
+  ctx?: CaptureContext,
+): Promise<ProcessedCapture> {
   const prompt = `
     You are an expert productivity assistant. The user just captured a thought — it could be about anything in their life: work, errands, shopping, study, health, ideas, or personal matters.
     
@@ -176,15 +306,19 @@ export async function processVoiceDump(transcript: string) {
         "leftOff": "1-2 sentences on exactly where they left off",
         "nextSteps": ["Actionable step 1", "Actionable step 2"],
         "resources": [{"name": "Relevant resource 1", "url": "URL or search link"}]
-      }
+      },
+      "measures": [{"metric": "spent", "value": 40, "unit": "EUR", "label": "dinner", "group": "food", "rollup": "sum"}]
     }
+    ${MEASURE_RULES}
+    ${trackRules(ctx)}
+    ${threadRules(ctx)}
   `;
 
   const response = await generateText({
     contents: prompt,
     config: {
       responseMimeType: 'application/json',
-      responseSchema: DUMP_SCHEMA,
+      responseSchema: dumpSchema({ threads: !!ctx?.candidates.length, transcript: false }),
     },
   });
 
@@ -218,7 +352,11 @@ export async function generateSpeech(text: string) {
   }
 }
 
-export async function processAudioDump(base64Audio: string, mimeType: string) {
+export async function processAudioDump(
+  base64Audio: string,
+  mimeType: string,
+  ctx?: CaptureContext,
+): Promise<ProcessedCapture> {
   const prompt = `
     You are an expert productivity assistant. The user just recorded a voice thought about something in their life — it could be work, errands, shopping, study, health, ideas, or personal matters.
     
@@ -239,8 +377,13 @@ export async function processAudioDump(base64Audio: string, mimeType: string) {
         "leftOff": "1-2 sentences on exactly where they left off in the speaker's language",
         "nextSteps": ["Actionable steps in the speaker's language"],
         "resources": [{"name": "Relevant resources mentioned in the speaker's language", "url": "URL or search link"}]
-      }
+      },
+      "transcript": "Word-for-word transcript, with numbers written as digits",
+      "measures": [{"metric": "spent", "value": 40, "unit": "EUR", "label": "dinner", "group": "food", "rollup": "sum"}]
     }
+    ${MEASURE_RULES}
+    ${trackRules(ctx)}
+    ${threadRules(ctx)}
   `;
 
   const response = await generateText({
@@ -254,7 +397,7 @@ export async function processAudioDump(base64Audio: string, mimeType: string) {
     ],
     config: {
       responseMimeType: 'application/json',
-      responseSchema: DUMP_SCHEMA,
+      responseSchema: dumpSchema({ threads: !!ctx?.candidates.length, transcript: true }),
     },
   });
 

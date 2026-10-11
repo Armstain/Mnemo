@@ -92,11 +92,16 @@ export function ActionCluster({ visible = true }: { visible?: boolean }) {
 
   const pathname = usePathname();
   const { id: routeId } = useGlobalSearchParams<{ id?: string }>();
-  const { items } = useMnemoStore();
+  const { items, focusThreadId } = useMnemoStore();
   const currentThread =
     pathname.includes('context') && typeof routeId === 'string'
       ? items.find((i) => i.id === routeId)
       : undefined;
+  // Anywhere else, captures go to the focus thread if one is set (the
+  // Write and Record screens resolve that themselves).
+  const focusThread =
+    !currentThread && focusThreadId ? items.find((i) => i.id === focusThreadId) : undefined;
+  const target = currentThread ?? focusThread;
   const threadQuery = currentThread ? `?threadId=${currentThread.id}` : '';
 
   const [expanded, setExpanded] = useState(false);
@@ -211,10 +216,15 @@ export function ActionCluster({ visible = true }: { visible?: boolean }) {
     setPhase('idle');
     setTail({ kind: 'finishing' });
 
-    finish('general', wantsSave, currentThread?.id).then((saved) => {
+    finish(
+      'general',
+      wantsSave,
+      target?.id,
+      currentThread ? { by: 'user' } : focusThread ? { by: 'focus' } : undefined,
+    ).then((saved) => {
       if (wantsSave && saved) {
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-        showTail({ kind: 'saved', where: currentThread?.title ?? '' });
+        showTail({ kind: 'saved', where: target?.title ?? '' });
       } else if (wantsSave && tooShort) {
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
         showTail({ kind: 'tooShort' });
@@ -378,7 +388,7 @@ export function ActionCluster({ visible = true }: { visible?: boolean }) {
             {expanded && (
               <MenuHint
                 key="hint"
-                threadTitle={currentThread?.title}
+                threadTitle={target?.title}
                 reduceMotion={reduceMotion}
               />
             )}
@@ -419,7 +429,7 @@ export function ActionCluster({ visible = true }: { visible?: boolean }) {
                 level={level}
                 cancelling={cancelling}
                 tail={tail}
-                threadTitle={currentThread?.title}
+                threadTitle={target?.title}
                 reduceMotion={reduceMotion}
               />
             )}

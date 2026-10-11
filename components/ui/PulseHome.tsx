@@ -123,7 +123,8 @@ function ResumeCard({ item }: { item: MnemoItem }) {
 export function PulseHome() {
   const enter = useEnter();
   const insets = useSafeAreaInsets();
-  const { items, getActiveItems } = useMnemoStore();
+  const { items, getActiveItems, focusThreadId, setFocusThread } = useMnemoStore();
+  const focusThread = focusThreadId ? items.find((i) => i.id === focusThreadId) : undefined;
   const colors = useThemeColors();
   const categories = useCategories();
 
@@ -188,6 +189,37 @@ export function PulseHome() {
           <Text className="font-quote text-body leading-relaxed mt-1.5" style={{ color: colors.fgSecondary }}>
             {summary}
           </Text>
+        ) : null}
+        {/* Where quick captures are going, while a focus thread is set */}
+        {focusThread ? (
+          <View
+            className="flex-row items-center self-start rounded-full pl-3 pr-1.5 h-10 mt-4"
+            style={{ backgroundColor: colors.accentSoft, maxWidth: '100%' }}
+          >
+            <Pressable
+              onPress={() => router.push(`/(tabs)/context?id=${focusThread.id}` as any)}
+              accessibilityRole="button"
+              accessibilityLabel={`Quick captures go to ${focusThread.title}. Open it.`}
+              className="flex-row items-center shrink h-10 active:opacity-70"
+            >
+              <Icon name="pin" size={15} color={colors.accent} stroke={2.2} />
+              <Text className="font-sans-medium text-sm ml-2 mr-2 shrink" style={{ color: colors.fg }} numberOfLines={1}>
+                Capturing into <Text className="font-sans-semi">{focusThread.title}</Text>
+              </Text>
+            </Pressable>
+            <Pressable
+              onPress={() => setFocusThread(null)}
+              hitSlop={8}
+              accessibilityRole="button"
+              accessibilityLabel="Stop sending quick captures there"
+              className="rounded-full px-3 h-7 items-center justify-center active:opacity-70"
+              style={{ backgroundColor: colors.surfaceLowest }}
+            >
+              <Text className="font-sans-semi text-sm" style={{ color: colors.accent }}>
+                Stop
+              </Text>
+            </Pressable>
+          </View>
         ) : null}
       </MotiView>
 

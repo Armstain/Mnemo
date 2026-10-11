@@ -9,6 +9,8 @@ import {
   Platform,
 } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
+import { useCaptureTarget } from '@/hooks/use-capture-target';
+import { FocusDestination } from '@/components/ui/FocusDestination';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { MotiView } from 'moti';
 import { useMnemoStore } from '@/hooks/use-mnemo-store';
@@ -42,8 +44,8 @@ export default function CaptureScreen() {
   const store = useMnemoStore();
   // ?threadId=… adds an entry to that thread instead of starting a new one.
   const { threadId } = useLocalSearchParams<{ threadId?: string }>();
-  const targetThread =
-    typeof threadId === 'string' && threadId ? store.items.find((i) => i.id === threadId) : undefined;
+  const target = useCaptureTarget(threadId);
+  const targetThread = target.destination;
 
   // Core fields
   const [text, setText] = useState('');
@@ -96,7 +98,7 @@ export default function CaptureScreen() {
     let savedThreadId: string;
     let entry;
     if (targetThread) {
-      entry = store.addEntry(targetThread.id, entryInput);
+      entry = store.addEntry(targetThread.id, { ...entryInput, filing: target.filing });
       savedThreadId = targetThread.id;
       if (dueDate) store.updateItem(targetThread.id, { dueDate });
     } else {
@@ -155,6 +157,17 @@ export default function CaptureScreen() {
           keyboardShouldPersistTaps="handled"
           contentContainerStyle={{ paddingBottom: Math.max(insets.bottom, 24) + 24 }}
         >
+          {/* Focus thread, with a way to keep this one note separate */}
+          {target.focusThread && (
+            <MotiView {...enter.fade(1)} className="mb-5">
+              <FocusDestination
+                focusThread={target.focusThread}
+                separate={target.separate}
+                onToggle={target.setSeparate}
+              />
+            </MotiView>
+          )}
+
           {/* Category — only when starting a new thread */}
           {!targetThread && (
             <MotiView {...enter.fade(1)} className="mb-6">

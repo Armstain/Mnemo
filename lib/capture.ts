@@ -1,19 +1,37 @@
 import { Directory, File, Paths } from 'expo-file-system';
-import { processAudioDump, processVoiceDump } from '@/lib/gemini';
+import {
+  processAudioDump,
+  processVoiceDump,
+  type CaptureContext,
+  type ProcessedCapture,
+} from '@/lib/gemini';
 import { transcribeAudio } from '@/lib/groq';
-import { embedText, embeddableText, toBlob, EMBEDDING_MODEL, EMBEDDING_DIMS } from '@/lib/embeddings';
-import { upsertEmbedding } from '@/lib/db';
-import type { AISummary, Category, Entry, MnemoItem } from '@/types/mnemo';
+import {
+  embedText,
+  embeddableText,
+  fromBlob,
+  toBlob,
+  EMBEDDING_MODEL,
+  EMBEDDING_DIMS,
+} from '@/lib/embeddings';
+import { getAllEmbeddings, upsertEmbedding } from '@/lib/db';
+import type { Block, Category, Entry, Filing } from '@/types/mnemo';
 import type { CaptureStore } from '@/hooks/use-mnemo-store';
 import { buildBlocks } from '@/lib/threads';
+import { trackedMetrics, verifyMeasures } from '@/lib/measures';
+import {
+  ATTACH_CONFIDENCE,
+  decideFiling,
+  emitFiling,
+  gatherCandidates,
+  similarityTo,
+  type FilingDecision,
+} from '@/lib/filing';
 
-export interface ProcessedRecording {
-  title: string;
-  notes: string;
-  links: string[];
-  tags?: string[];
-  suggestedCategory?: string;
-  summary?: AISummary;
+const CATEGORIES: Category[] = ['work', 'personal', 'study', 'shopping', 'health', 'ideas', 'errands', 'general'];
+
+function asCategory(value: unknown): Category | undefined {
+  return CATEGORIES.includes(value as Category) ? (value as Category) : undefined;
 }
 
 /**
@@ -24,23 +42,23 @@ export interface ProcessedRecording {
  * Throws only when every provider is unreachable; callers keep their
  * offline "process later" path for that case.
  */
-export async function processRecording(input: {
-  fileUri: string;
-  base64: string;
-  mimeType: string;
-}): Promise<ProcessedRecording> {
+export async function processRecording(
+  input: { fileUri: string; base64: string; mimeType: string },
+  ctx?: CaptureContext,
+): Promise<ProcessedCapture> {
   try {
-    return await processAudioDump(input.base64, input.mimeType);
+    return await processAudioDump(input.base64, input.mimeType, ctx);
   } catch {
     const transcript = await transcribeAudio(input.fileUri, input.mimeType);
     try {
-      return await processVoiceDump(transcript);
+      return { ...(await processVoiceDump(transcript, ctx)), transcript };
     } catch {
       const words = transcript.split(/\s+/);
       return {
         title: words.slice(0, 5).join(' ') + (words.length > 5 ? '…' : ''),
         notes: transcript,
         links: [],
+        transcript,
       };
     }
   }
@@ -87,9 +105,11 @@ export async function saveVoiceRecording(params: {
   tempUri: string;
   category: Category;
   threadId?: string;
+  /** How it got into `threadId`: picked there by the person, or their focus thread. */
+  filing?: Filing;
   store: CaptureStore;
 }): Promise<{ threadId: string; entry: Entry }> {
-  const { tempUri, category, threadId, store } = params;
+  const { tempUri, category, threadId, filing, store } = params;
 
   const recordingsDir = new Directory(Paths.document, 'recordings');
   try {
@@ -108,7 +128,7 @@ export async function saveVoiceRecording(params: {
   };
 
   if (threadId) {
-    const entry = store.addEntry(threadId, entryInput);
+    const entry = store.addEntry(threadId, { ...entryInput, filing: filing ?? { by: 'user' } });
     resolvePendingEntry(entry, store);
     return { threadId, entry };
   }
@@ -163,22 +183,47 @@ type PendingEntry = Pick<
 >;
 
 /**
- * Structures a pending entry (voice or text) and writes the result back.
- * Throws on failure — callers that show their own error feedback (the
- * manual "Retry" button) should call this directly; silent background
- * callers should use `resolvePendingEntry` instead.
+ * Structures a pending entry (voice or text), writes the result back, and
+ * decides where it belongs. Throws on failure — callers that show their own
+ * error feedback (the manual "Retry" button) should call this directly;
+ * silent background callers should use `resolvePendingEntry` instead.
  *
- * - The entry gets the cleaned-up text and any links; a checklist the user
- *   made by hand is kept. Their own left-off / next step win over the AI's.
- * - If the entry started a new thread (the thread is still `pending`), the
- *   thread takes the AI's title, tags and summary. An existing thread keeps
- *   its title; it only gains new tags.
+ * - The entry gets the cleaned-up text, links and any measures (each number
+ *   checked against what was actually said). A hand-made checklist is kept,
+ *   and the person's own left-off / next step win over the AI's.
+ * - A quick capture (filed `new` or to the focus thread) is matched against
+ *   open threads in the same AI call, then filed per lib/filing.ts:
+ *   attached to an existing thread, suggested, or moved out of the focus
+ *   thread. The UI hears about it through `emitFiling`.
+ * - If the entry still has its own new thread, that thread takes the AI's
+ *   title, tags and summary; an existing thread only gains tags.
  */
 export async function structurePendingEntry(
   entry: PendingEntry,
   store: CaptureStore,
 ): Promise<void> {
-  let processed: ProcessedRecording;
+  const snap = store.snapshot();
+  const live = snap.entries.find((e) => e.id === entry.id);
+  if (!live) return; // Deleted while it waited.
+  const filedBy = live.filing.by;
+  const matching = filedBy === 'new' || filedBy === 'focus';
+  const candidates = matching
+    ? gatherCandidates({
+        threads: snap.items,
+        entries: snap.entries,
+        // A new capture's own placeholder thread isn't a candidate; the focus
+        // thread it was saved into is.
+        excludeId: filedBy === 'new' ? live.threadId : undefined,
+        focusId: store.getFocusThreadId(),
+        text: entry.pendingRawText,
+      })
+    : [];
+  // Names the entry's own thread already tracks, so "spent" stays "spent".
+  const tracks =
+    filedBy === 'new' ? [] : trackedMetrics(snap.entries.filter((e) => e.threadId === live.threadId));
+  const ctx = candidates.length > 0 || tracks.length > 0 ? { candidates, tracks } : undefined;
+
+  let processed: ProcessedCapture;
   let transcript = entry.transcript;
 
   if (entry.pendingAudioUri) {
@@ -188,26 +233,32 @@ export async function structurePendingEntry(
       return;
     }
     const base64 = await audioFile.base64();
-    processed = await processRecording({
-      fileUri: entry.pendingAudioUri,
-      base64,
-      mimeType: 'audio/m4a',
-    });
+    processed = await processRecording(
+      { fileUri: entry.pendingAudioUri, base64, mimeType: 'audio/m4a' },
+      ctx,
+    );
     try { audioFile.delete(); } catch { /* already deleted — safe to ignore */ }
   } else if (entry.pendingRawText) {
     transcript = transcript ?? entry.pendingRawText;
-    processed = await processVoiceDump(entry.pendingRawText);
+    processed = await processVoiceDump(entry.pendingRawText, ctx);
   } else {
     store.updateEntry(entry.id, { pending: false });
     return;
   }
+  transcript = transcript ?? processed.transcript;
 
+  // Every number must appear in the person's own words, not only the AI's notes.
+  const measures = verifyMeasures(
+    processed.measures,
+    entry.pendingRawText ?? processed.transcript ?? processed.notes,
+  );
   const handMadeChecklists = entry.blocks.filter((b) => b.kind === 'checklist');
   const existingLinks = entry.blocks.flatMap((b) => (b.kind === 'link' ? [b.url] : []));
   const links = [...new Set([...existingLinks, ...(processed.links ?? [])])];
-  const blocks = [
+  const blocks: Block[] = [
     ...buildBlocks({ text: processed.notes }),
     ...handMadeChecklists,
+    ...(measures.length > 0 ? [{ kind: 'measures' as const, items: measures }] : []),
     ...buildBlocks({ links }),
   ];
   const leftOff = entry.leftOff || processed.summary?.leftOff;
@@ -223,13 +274,82 @@ export async function structurePendingEntry(
     pendingRawText: undefined,
   });
 
-  const thread = store.getThread(entry.threadId);
-  if (!thread) return;
   const tags = processed.tags ?? [];
+  const aiCategory = asCategory(processed.suggestedCategory);
+
+  // ─── Where it belongs ──────────────────────────────────────
+  let decision: FilingDecision = { action: 'stay' };
+  if (matching && processed.thread) {
+    let similarity: Map<string, number> | undefined;
+    if (
+      filedBy === 'new' &&
+      processed.thread.match === 'existing' &&
+      processed.thread.confidence >= ATTACH_CONFIDENCE
+    ) {
+      try {
+        const vector = await embedText(processed.notes, 'RETRIEVAL_DOCUMENT');
+        const ids = new Set(candidates.map((c) => c.id));
+        const rows = (await getAllEmbeddings()).filter((r) => ids.has(r.itemId));
+        similarity = similarityTo(vector, new Map(rows.map((r) => [r.itemId, fromBlob(r.vector)])));
+      } catch {
+        // Offline or not embedded yet: the model's answer stands alone.
+      }
+    }
+    decision = decideFiling({ filedBy, match: processed.thread, candidates, similarity });
+  }
+
+  if (decision.action === 'attach') {
+    const own = store.getThread(live.threadId);
+    store.moveEntry(entry.id, decision.threadId, { by: 'auto', confidence: decision.confidence });
+    if (own && !store.snapshot().entries.some((e) => e.threadId === own.id)) {
+      store.removeThreadNow(own.id);
+    }
+    const target = store.getThread(decision.threadId);
+    if (!target) return;
+    if (tags.length > 0) {
+      store.updateItem(target.id, { tags: [...new Set([...target.tags, ...tags])].slice(0, 8) });
+    }
+    emitFiling({
+      type: 'attached',
+      entryId: entry.id,
+      fromThreadId: live.threadId,
+      toThreadId: target.id,
+      toTitle: target.title,
+      ownTitle: processed.title,
+      ownCategory: aiCategory ?? own?.category ?? 'general',
+    });
+    await embedThread(store, target.id);
+    return;
+  }
+
+  if (decision.action === 'release') {
+    const from = store.getThread(live.threadId);
+    const created = store.moveEntryToNewThread(entry.id, {
+      title: processed.title,
+      category: aiCategory ?? 'general',
+      tags,
+    });
+    if (!created) return;
+    if (processed.summary) store.updateItem(created.id, { aiSummary: processed.summary });
+    emitFiling({
+      type: 'released',
+      entryId: entry.id,
+      fromThreadId: live.threadId,
+      fromTitle: from?.title ?? '',
+      toThreadId: created.id,
+    });
+    await embedThread(store, created.id);
+    return;
+  }
+
+  const thread = store.getThread(live.threadId);
+  if (!thread) return;
   if (thread.pending) {
     store.updateItem(thread.id, {
       title: processed.title,
       tags,
+      // The category picker defaults to General; a better guess wins.
+      ...(thread.category === 'general' && aiCategory ? { category: aiCategory } : {}),
       aiSummary: processed.summary,
       pending: false,
       pendingAudioUri: undefined,
@@ -240,17 +360,31 @@ export async function structurePendingEntry(
     store.updateItem(thread.id, { tags: [...new Set([...thread.tags, ...tags])].slice(0, 8) });
   }
 
-  await embedAndStore({
-    id: thread.id,
-    title: thread.pending ? processed.title : thread.title,
-    // The thread's earlier text plus this entry's, so the vector describes
-    // the whole thread rather than its latest capture alone.
-    content: [processed.notes, thread.content].filter(Boolean).join('\n\n'),
-    whereLeftOff: leftOff,
-    nextStep,
-    tags: [...new Set([...thread.tags, ...tags])],
-    category: thread.category,
-  });
+  if (decision.action === 'suggest') {
+    const target = store.getThread(decision.threadId);
+    if (target) {
+      store.updateEntry(entry.id, {
+        filing: { by: 'suggested', threadId: target.id, confidence: decision.confidence },
+      });
+      emitFiling({
+        type: 'suggested',
+        entryId: entry.id,
+        threadId: thread.id,
+        toThreadId: target.id,
+        toTitle: target.title,
+        reason: decision.reason,
+      });
+    }
+  }
+
+  await embedThread(store, thread.id);
+}
+
+/** Re-embeds a thread from its current text (best-effort, see embedAndStore). */
+async function embedThread(store: CaptureStore, threadId: string): Promise<void> {
+  const thread = store.getThread(threadId);
+  if (!thread) return;
+  await embedAndStore(thread);
 }
 
 /**
