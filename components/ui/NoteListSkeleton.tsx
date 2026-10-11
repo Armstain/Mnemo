@@ -26,7 +26,7 @@ export function Bone({
   );
 }
 
-/** One placeholder row, shaped like NoteRow's three text lines. */
+/** One placeholder row, shaped like a ThreadRow's lines. */
 function SkeletonRow() {
   return (
     <View className="py-3.5 border-b border-border/60" style={{ gap: 8 }}>
@@ -64,7 +64,7 @@ function Breathe({ children }: { children: React.ReactNode }) {
 }
 
 /**
- * Placeholder for a NoteRow list while the store's first load is still in
+ * Placeholder for a ThreadRow list while the store's first load is still in
  * flight. A breathing fade rather than a spinner: the row shapes are
  * already on screen, so the wait reads as "your content is arriving" —
  * predictable — instead of an unknown blank hold.

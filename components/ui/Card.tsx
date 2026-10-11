@@ -9,7 +9,7 @@ import { DUR_BASE, EASE_OUT, motion } from '@/utils/motion';
 interface CardProps {
   children: React.ReactNode;
   variant?: 'surface' | 'raised' | 'flat' | 'tinted' | 'dashed';
-  pad?: 'sm' | 'md' | 'lg';
+  pad?: 'none' | 'sm' | 'md' | 'lg';
   interactive?: boolean;
   onPress?: () => void;
   className?: string;
@@ -18,6 +18,7 @@ interface CardProps {
 }
 
 const PAD_CLASSES: Record<NonNullable<CardProps['pad']>, string> = {
+  none: '',
   sm: 'p-4',
   md: 'p-5',
   lg: 'p-6',
@@ -39,7 +40,7 @@ export function Card({
 
   // Variant color/border is conditional at runtime — uniwind's className
   // pipeline only resolves *static* class strings (see useThemeColors), so
-  // it has to go through inline `style`, matching ZenCard/NoteRow.
+  // it has to go through inline `style`, like the other surfaces.
   const variantStyle = (() => {
     switch (variant) {
       case 'raised':

@@ -8,18 +8,21 @@ import {
   KeyboardAvoidingView,
   Platform,
 } from 'react-native';
-import { router } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { MotiView } from 'moti';
 import { useMnemoStore } from '@/hooks/use-mnemo-store';
-import { resolvePendingItem } from '@/lib/capture';
+import { resolvePendingEntry } from '@/lib/capture';
+import { buildBlocks } from '@/lib/threads';
 import { Button, IconButton } from '@/components/ui/Button';
-import { Pill } from '@/components/ui/Pill';
 import { Icon } from '@/components/ui/Icon';
+import { Eyebrow } from '@/components/ui/Eyebrow';
+import { CategoryPicker } from '@/components/ui/CategoryPicker';
+import { LabeledInput } from '@/components/ui/LabeledInput';
+import { noFocusRing } from '@/utils/web';
 import { ChecklistEditor } from '@/components/ui/ChecklistEditor';
 import { DueDatePicker } from '@/components/ui/DueDatePicker';
 import { EditorToolbar, type TextSelection } from '@/components/ui/EditorToolbar';
-import { CATEGORY_LIST, useCategories } from '@/utils/categories';
 import { useThemeColors } from '@/hooks/use-theme';
 import type { Category, ChecklistItem } from '@/types/mnemo';
 import { useReduceMotion } from '@/hooks/use-accessibility-motion';
@@ -36,7 +39,11 @@ export default function CaptureScreen() {
   const enter = useEnter();
   const reduceMotion = useReduceMotion();
   const insets = useSafeAreaInsets();
-  const { addItem, updateItem } = useMnemoStore();
+  const store = useMnemoStore();
+  // ?threadId=… adds an entry to that thread instead of starting a new one.
+  const { threadId } = useLocalSearchParams<{ threadId?: string }>();
+  const targetThread =
+    typeof threadId === 'string' && threadId ? store.items.find((i) => i.id === threadId) : undefined;
 
   // Core fields
   const [text, setText] = useState('');
@@ -52,7 +59,6 @@ export default function CaptureScreen() {
   const [dueDate, setDueDate] = useState<number | undefined>();
 
   const colors = useThemeColors();
-  const categories = useCategories();
 
   const canSave = useMemo(
     () => text.trim().length > 0 || checklistItems.length > 0,
@@ -74,29 +80,45 @@ export default function CaptureScreen() {
         : rawTitle || (hasChecklist ? 'Checklist' : 'Quick note');
     const hasTextToStructure = trimmedText.length > 0;
 
-    // Save instantly with the raw content so the user never waits on the
+    // Save instantly with the raw text so the user never waits on the
     // network — AI structuring (title/summary/links) happens in the
-    // background and patches the item in place when it lands.
-    const newItem = addItem({
-      type: hasChecklist ? 'checklist' : 'note',
-      title: fallbackTitle,
-      content: trimmedText,
-      checklistItems: hasChecklist ? checklistItems : undefined,
-      links: [],
-      category,
-      tags: [],
-      status: 'active',
+    // background and patches the entry (and a new thread's title) in place.
+    const entryInput = {
+      source: 'text' as const,
+      transcript: trimmedText || undefined,
+      blocks: buildBlocks({ text: trimmedText, checklistItems }),
+      leftOff: whereLeftOff.trim() || undefined,
       nextStep: nextStep.trim() || undefined,
-      whereLeftOff: whereLeftOff.trim() || undefined,
-      dueDate,
       pending: hasTextToStructure,
       pendingRawText: hasTextToStructure ? trimmedText : undefined,
-    });
+    };
 
-    router.replace(`/(tabs)/context?id=${newItem.id}` as any);
+    let savedThreadId: string;
+    let entry;
+    if (targetThread) {
+      entry = store.addEntry(targetThread.id, entryInput);
+      savedThreadId = targetThread.id;
+      if (dueDate) store.updateItem(targetThread.id, { dueDate });
+    } else {
+      const created = store.createThread(
+        {
+          title: fallbackTitle,
+          category,
+          tags: [],
+          status: 'active',
+          dueDate,
+          pending: hasTextToStructure,
+        },
+        entryInput,
+      );
+      entry = created.entry;
+      savedThreadId = created.thread.id;
+    }
+
+    router.replace(`/(tabs)/context?id=${savedThreadId}` as any);
 
     if (hasTextToStructure) {
-      resolvePendingItem(newItem, updateItem);
+      resolvePendingEntry(entry, store);
     }
   };
 
@@ -115,8 +137,11 @@ export default function CaptureScreen() {
         >
           <IconButton icon="x" label="Cancel" variant="bare" onPress={() => router.back()} />
 
-          <Text className="font-sans-medium text-sm text-fg-secondary tracking-wide">
-            New thought
+          <Text
+            className="flex-1 text-center font-sans-medium text-sm text-fg-secondary mx-3"
+            numberOfLines={1}
+          >
+            {targetThread ? `Add to ${targetThread.title}` : 'New thought'}
           </Text>
 
           <Button onPress={handleSave} disabled={!canSave} variant="primary" size="sm" icon="check">
@@ -130,47 +155,27 @@ export default function CaptureScreen() {
           keyboardShouldPersistTaps="handled"
           contentContainerStyle={{ paddingBottom: Math.max(insets.bottom, 24) + 24 }}
         >
-          {/* Category selector */}
-          <MotiView {...enter.fade(1)}
-            className="mb-5"
-          >
-            <Text className="font-sans-medium text-[10px] text-fg-muted tracking-wider uppercase mb-2">
-              Category
-            </Text>
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={{ gap: 6 }}
-            >
-              {CATEGORY_LIST.map((cat) => (
-                <Pill
-                  key={cat}
-                  tone={categories[cat].color}
-                  size="md"
-                  dot={false}
-                  outline={category !== cat}
-                  selected={category === cat}
-                  onPress={() => setCategory(cat)}
-                >
-                  {categories[cat].label}
-                </Pill>
-              ))}
-            </ScrollView>
-          </MotiView>
+          {/* Category — only when starting a new thread */}
+          {!targetThread && (
+            <MotiView {...enter.fade(1)} className="mb-6">
+              <Eyebrow className="mb-2.5">Category</Eyebrow>
+              <CategoryPicker value={category} onChange={setCategory} />
+            </MotiView>
+          )}
 
-          {/* Main content area — freeform text + optional checklist, one surface */}
-          <MotiView {...enter.rise(1)}
-          >
+          {/* Text + optional checklist, one surface */}
+          <MotiView {...enter.rise(1)}>
             <View
-              className="rounded-md p-5 mb-4"
+              className="rounded-md px-5 pt-4 pb-3 mb-5"
               style={{ backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border }}
             >
               <TextInput
                 multiline
                 autoFocus
-                placeholder="What's on your mind?"
+                placeholder={targetThread ? 'What changed?' : "What's on your mind?"}
                 placeholderTextColor={colors.fgTertiary}
-                className="font-sans text-base text-fg leading-7 min-h-[140px]"
+                className="font-sans text-fg min-h-[160px]"
+                style={[{ fontSize: 17, lineHeight: 26 }, noFocusRing]}
                 value={text}
                 onChangeText={setText}
                 selection={selection}
@@ -181,15 +186,11 @@ export default function CaptureScreen() {
 
               {showChecklist && (
                 <View className="border-t mt-4 pt-4" style={{ borderColor: colors.border }}>
-                  <ChecklistEditor
-                    items={checklistItems}
-                    onChange={setChecklistItems}
-                    editable
-                  />
+                  <ChecklistEditor items={checklistItems} onChange={setChecklistItems} editable />
                 </View>
               )}
 
-              <View className="mt-4">
+              <View className="mt-3 pt-2 border-t" style={{ borderColor: colors.border }}>
                 <EditorToolbar
                   value={text}
                   selection={selection}
@@ -202,24 +203,18 @@ export default function CaptureScreen() {
                 />
               </View>
             </View>
-
-            {/* Character / item count */}
-            <Text className="font-sans text-xs text-fg-muted text-right mb-4">
-              {text.length} characters
-              {checklistItems.length > 0 && ` · ${checklistItems.length} items`}
-            </Text>
           </MotiView>
 
-          {/* Optional fields toggle */}
-          <MotiView {...enter.fade(2)}
-          >
+          {/* Optional fields */}
+          <MotiView {...enter.fade(2)}>
             <Pressable
               onPress={() => setShowOptional(!showOptional)}
-              android_ripple={{ color: colors.border }}
-              className="flex-row items-center justify-between py-3 mb-2 rounded-md overflow-hidden"
+              accessibilityRole="button"
+              accessibilityState={{ expanded: showOptional }}
+              className="flex-row items-center justify-between py-3 active:opacity-70"
             >
-              <Text className="font-sans-medium text-xs text-fg-muted tracking-wide">
-                More details (optional)
+              <Text className="font-sans-medium text-body" style={{ color: colors.fgSecondary }}>
+                Add where you left off, next step or a due date
               </Text>
               {/* The chevron turns with the disclosure rather than snapping
                   to its new angle — it's the same 200ms event. */}
@@ -230,7 +225,7 @@ export default function CaptureScreen() {
                   reduceMotion,
                 )}
               >
-                <Icon name="chevronDown" size={16} color={colors.fgTertiary} />
+                <Icon name="chevronDown" size={18} color={colors.fgTertiary} />
               </MotiView>
             </Pressable>
 
@@ -242,45 +237,22 @@ export default function CaptureScreen() {
                   { type: 'timing' as const, duration: DUR_TOGGLE, easing: EASE_OUT },
                   reduceMotion,
                 )}
-                className="gap-4 mb-6"
+                className="gap-5 mt-2 mb-6"
               >
-                {/* Where left off */}
+                <LabeledInput
+                  label="Where you left off"
+                  value={whereLeftOff}
+                  onChangeText={setWhereLeftOff}
+                  placeholder="Halfway through chapter 3…"
+                />
+                <LabeledInput
+                  label="Next step"
+                  value={nextStep}
+                  onChangeText={setNextStep}
+                  placeholder="Call the plumber…"
+                />
                 <View>
-                  <Text className="font-sans-medium text-[10px] text-fg-muted tracking-wider uppercase mb-1.5">
-                    Where you left off
-                  </Text>
-                  <TextInput
-                    placeholder="e.g. Halfway through chapter 3..."
-                    placeholderTextColor={colors.fgTertiary}
-                    className="font-sans text-sm text-fg py-2.5 px-3.5 rounded-md"
-                    style={{ backgroundColor: colors.surfaceHigh }}
-                    value={whereLeftOff}
-                    onChangeText={setWhereLeftOff}
-                    selectionColor={colors.accent}
-                  />
-                </View>
-
-                {/* Next step */}
-                <View>
-                  <Text className="font-sans-medium text-[10px] text-fg-muted tracking-wider uppercase mb-1.5">
-                    Next step
-                  </Text>
-                  <TextInput
-                    placeholder="e.g. Call the plumber..."
-                    placeholderTextColor={colors.fgTertiary}
-                    className="font-sans text-sm text-fg py-2.5 px-3.5 rounded-md"
-                    style={{ backgroundColor: colors.surfaceHigh }}
-                    value={nextStep}
-                    onChangeText={setNextStep}
-                    selectionColor={colors.accent}
-                  />
-                </View>
-
-                {/* Due date */}
-                <View>
-                  <Text className="font-sans-medium text-[10px] text-fg-muted tracking-wider uppercase mb-1.5">
-                    Due date
-                  </Text>
+                  <Eyebrow className="mb-2">Due</Eyebrow>
                   <DueDatePicker value={dueDate} onChange={setDueDate} />
                 </View>
               </MotiView>

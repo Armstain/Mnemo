@@ -197,8 +197,8 @@ const STATUS_META: Record<ItemStatus, { label: string; colors: DualColor }> = {
     label: 'Archived',
     colors: {
       // fg-tertiary — quieter than completed
-      dark: '#8B887E',
-      light: '#7D786C',
+      dark: '#9A978C',
+      light: '#6B665B',
       darkTint: 'rgba(139,136,126,0.14)',
       lightTint: 'rgba(125,120,108,0.12)',
     },

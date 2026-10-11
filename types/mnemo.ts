@@ -28,6 +28,15 @@ export interface AISummary {
   resources: { name: string; url: string }[];
 }
 
+/**
+ * A thread — one ongoing thing in someone's life (a passport renewal, a
+ * roadmap draft). Its history lives in `Entry` rows; see docs/specs/threads.md.
+ *
+ * `content`, `checklistItems` and `links` here are a cache derived from the
+ * thread's entries (see `deriveThreadCache` in lib/threads.ts). They keep
+ * search, embeddings and list previews working on one object; entries are
+ * the source of truth, and nothing should write these fields directly.
+ */
 export interface MnemoItem {
   id: string;
   type: ItemType;
@@ -39,11 +48,14 @@ export interface MnemoItem {
   tags: string[];
   status: ItemStatus;
 
-  /** User-authored: what to do next. Works offline. */
+  /** What to do next — from the latest entry, unless pinned by the user. */
   nextStep?: string;
 
-  /** User-authored: where they stopped. Works offline. */
+  /** Where they stopped — from the latest entry, unless pinned by the user. */
   whereLeftOff?: string;
+
+  /** Fields the user edited on the thread, which new entries must not overwrite. */
+  pinned?: { nextStep?: boolean; whereLeftOff?: boolean };
 
   /** Optional due date as Unix timestamp (ms). */
   dueDate?: number;
@@ -58,6 +70,61 @@ export interface MnemoItem {
   aiSummary?: AISummary;
 
   /** True while the item is queued for AI processing. */
+  pending?: boolean;
+  pendingRawText?: string;
+  pendingAudioUri?: string;
+}
+
+/** Thread is the product name for a MnemoItem; new code should prefer it. */
+export type Thread = MnemoItem;
+
+// ─── Entries & blocks ───────────────────────────────────────────
+// One capture inside a thread. See docs/specs/threads.md.
+
+export type EntrySource = 'voice' | 'text' | 'share';
+
+export type Block =
+  | { kind: 'text'; markdown: string }
+  | { kind: 'checklist'; items: ChecklistItem[] }
+  | {
+      kind: 'chart';
+      chart: 'bar' | 'line';
+      title: string;
+      unit?: string;
+      points: { label: string; value: number }[];
+    }
+  | {
+      kind: 'link';
+      url: string;
+      title?: string;
+      site?: string;
+      imageUrl?: string;
+      description?: string;
+      summary?: string;
+      why?: string;
+    };
+
+/** How an entry got into its thread. */
+export type Filing =
+  | { by: 'user' }
+  | { by: 'auto'; confidence: number }
+  | { by: 'suggested'; threadId: string; confidence: number }
+  | { by: 'new' };
+
+export interface Entry {
+  id: string;
+  threadId: string;
+  createdAt: number;
+  updatedAt: number;
+  source: EntrySource;
+  /** What was said, typed or shared, as captured (before AI clean-up). */
+  transcript?: string;
+  blocks: Block[];
+  /** This entry's "where you are now" / next step. */
+  leftOff?: string;
+  nextStep?: string;
+  filing: Filing;
+  /** True while the entry waits for AI structuring (offline, failed, in flight). */
   pending?: boolean;
   pendingRawText?: string;
   pendingAudioUri?: string;

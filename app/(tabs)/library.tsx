@@ -1,22 +1,25 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { ScrollView, Text, View } from 'react-native';
+import { Pressable, ScrollView, Text, View } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
-import { AnimatePresence, MotiView } from 'moti';
+import { MotiView } from 'moti';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { NoteRow } from '@/components/ui/NoteRow';
+import { ThreadList, ThreadRow } from '@/components/ui/ThreadRow';
+import { CategoryPicker } from '@/components/ui/CategoryPicker';
 import { NoteListSkeleton } from '@/components/ui/NoteListSkeleton';
 import { SearchBar } from '@/components/SearchBar';
-import { Pill } from '@/components/ui/Pill';
 import { Icon } from '@/components/ui/Icon';
 import { NAV_CLEARANCE } from '@/components/ui/FloatingTabBar';
 import { useMnemoStore } from '@/hooks/use-mnemo-store';
-import { useUndoToast } from '@/hooks/use-undo-toast';
 import { useThemeColors } from '@/hooks/use-theme';
 import { bm25Search } from '@/lib/bm25';
-import { CATEGORY_LIST, useCategories } from '@/utils/categories';
+import { hybridSearch } from '@/lib/search';
+import { CATEGORY_LIST } from '@/utils/categories';
 import { useEnter } from '@/utils/motion';
-import type { Category, ItemStatus } from '@/types/mnemo';
+import type { Category, ItemStatus, MnemoItem } from '@/types/mnemo';
+
+// Debounce before the semantic (network) half of search fires.
+const SEMANTIC_DEBOUNCE_MS = 300;
 
 type FilterStatus = 'all' | ItemStatus;
 
@@ -30,14 +33,12 @@ const STATUS_FILTERS: { key: FilterStatus; label: string }[] = [
 
 export default function LibraryScreen() {
   const enter = useEnter();
-  const { items, deleteItem, undoDelete, isLoaded } = useMnemoStore();
-  const { showUndoToast } = useUndoToast();
+  const { items, isLoaded } = useMnemoStore();
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<Category | 'all'>('all');
   const [selectedStatus, setSelectedStatus] = useState<FilterStatus>('all');
   const insets = useSafeAreaInsets();
   const colors = useThemeColors();
-  const categories = useCategories();
 
   // Allow other screens to open the library pre-filtered (?category=work).
   const { category: categoryParam } = useLocalSearchParams<{ category?: string }>();
@@ -48,23 +49,49 @@ export default function LibraryScreen() {
     }
   }, [categoryParam]);
 
-  const filteredItems = useMemo(() => {
-    let result = items;
+  // Category/status filters first; search (if any) ranks within them.
+  const scopedItems = useMemo(
+    () =>
+      items.filter(
+        (i) =>
+          (selectedCategory === 'all' || i.category === selectedCategory) &&
+          (selectedStatus === 'all' || i.status === selectedStatus),
+      ),
+    [items, selectedCategory, selectedStatus],
+  );
 
-    if (selectedCategory !== 'all') {
-      result = result.filter((i) => i.category === selectedCategory);
-    }
-    if (selectedStatus !== 'all') {
-      result = result.filter((i) => i.status === selectedStatus);
-    }
-    if (searchQuery.trim()) {
-      result = bm25Search(searchQuery, result);
-    } else {
-      result = [...result].sort((a, b) => b.updatedAt - a.updatedAt);
-    }
+  // Instant keyword results on every keystroke, so search never feels
+  // network-gated...
+  const keywordResults = useMemo(
+    () =>
+      searchQuery.trim()
+        ? bm25Search(searchQuery, scopedItems)
+        : [...scopedItems].sort((a, b) => b.updatedAt - a.updatedAt),
+    [searchQuery, scopedItems],
+  );
 
-    return result;
-  }, [items, selectedCategory, selectedStatus, searchQuery]);
+  // ...upgraded to the hybrid keyword + meaning ranking once it resolves,
+  // so "travel documents" still finds the passport note. null = not ready
+  // for this query yet.
+  const [hybridResults, setHybridResults] = useState<MnemoItem[] | null>(null);
+  useEffect(() => {
+    const trimmed = searchQuery.trim();
+    // Clear immediately so a new query never shows the last one's results.
+    setHybridResults(null);
+    if (!trimmed) return;
+
+    let cancelled = false;
+    const handle = setTimeout(async () => {
+      const fused = await hybridSearch(trimmed, scopedItems);
+      if (!cancelled) setHybridResults(fused);
+    }, SEMANTIC_DEBOUNCE_MS);
+    return () => {
+      cancelled = true;
+      clearTimeout(handle);
+    };
+  }, [searchQuery, scopedItems]);
+
+  const filteredItems = hybridResults ?? keywordResults;
 
   if (!isLoaded) {
     return (
@@ -78,10 +105,10 @@ export default function LibraryScreen() {
     <View className="flex-1 px-5" style={{ paddingTop: insets.top + 16 }}>
       {/* Header */}
       <MotiView {...enter.rise(0)}
-        className="mb-4 flex-row items-baseline justify-between"
+        className="mb-4 flex-row items-end justify-between"
       >
         <Text className="text-display font-display text-fg">Library</Text>
-        <Text className="font-sans text-xs text-fg-tertiary">
+        <Text className="font-sans text-sm text-fg-tertiary mb-2">
           {filteredItems.length} item{filteredItems.length !== 1 ? 's' : ''}
         </Text>
       </MotiView>
@@ -93,77 +120,48 @@ export default function LibraryScreen() {
         <SearchBar
           value={searchQuery}
           onChangeText={setSearchQuery}
-          placeholder="Search your thoughts..."
+          placeholder="Search your notes"
         />
       </MotiView>
 
-      {/* Category filter */}
-      <MotiView {...enter.fade(2)}
-        className="mb-1"
-      >
-        <Text className="font-sans-medium text-[9px] text-fg-tertiary tracking-widest uppercase mb-0.5 px-0.5">
-          Category
-        </Text>
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={{ gap: 7, paddingRight: 20, paddingVertical: 6 }}
+      {/* Status — a segmented control, since exactly one is always on */}
+      <MotiView {...enter.fade(2)} className="mb-3">
+        <View
+          className="flex-row rounded-full p-1"
+          style={{ backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border }}
         >
-          <Pill
-            tone={colors.fgSecondary}
-            size="sm"
-            dot={false}
-            outline={selectedCategory !== 'all'}
-            selected={selectedCategory === 'all'}
-            onPress={() => setSelectedCategory('all')}
-          >
-            All
-          </Pill>
-          {CATEGORY_LIST.map((cat) => {
-            const config = categories[cat];
+          {STATUS_FILTERS.map(({ key, label }) => {
+            const selected = selectedStatus === key;
             return (
-              <Pill
-                key={cat}
-                tone={config.color}
-                size="sm"
-                dot={false}
-                outline={selectedCategory !== cat}
-                selected={selectedCategory === cat}
-                onPress={() => setSelectedCategory(selectedCategory === cat ? 'all' : cat)}
+              <Pressable
+                key={key}
+                onPress={() => setSelectedStatus(key)}
+                accessibilityRole="tab"
+                accessibilityState={{ selected }}
+                className="flex-1 items-center justify-center rounded-full h-9"
+                style={{ backgroundColor: selected ? colors.surfaceRaised : 'transparent' }}
               >
-                {config.label}
-              </Pill>
+                <Text
+                  className="font-sans-semi text-sm"
+                  style={{ color: selected ? colors.fg : colors.fgTertiary }}
+                  numberOfLines={1}
+                >
+                  {label}
+                </Text>
+              </Pressable>
             );
           })}
-        </ScrollView>
+        </View>
       </MotiView>
 
-      {/* Status filter */}
-      <MotiView {...enter.fade(2)}
-        className="mb-3"
-      >
-        <Text className="font-sans-medium text-[9px] text-fg-tertiary tracking-widest uppercase mb-0.5 px-0.5">
-          Status
-        </Text>
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={{ gap: 7, paddingVertical: 6 }}
-        >
-          {STATUS_FILTERS.map(({ key, label }) => (
-            <Pill
-              key={key}
-              tone={colors.accent}
-              size="sm"
-              dot={false}
-              outline={selectedStatus !== key}
-              selected={selectedStatus === key}
-              onPress={() => setSelectedStatus(key)}
-            >
-              {label}
-            </Pill>
-          ))}
-        </ScrollView>
+      {/* Category */}
+      <MotiView {...enter.fade(2)} className="mb-4">
+        <CategoryPicker
+          value={selectedCategory}
+          onChange={(cat) => setSelectedCategory(cat === selectedCategory ? 'all' : cat)}
+          includeAll
+          inset={20}
+        />
       </MotiView>
 
       {/* Results */}
@@ -173,38 +171,27 @@ export default function LibraryScreen() {
         contentContainerStyle={{ paddingBottom: insets.bottom + NAV_CLEARANCE }}
       >
         {filteredItems.length === 0 ? (
-          <MotiView {...enter.fade(0)}
-            className="py-20 items-center"
-          >
-            <Icon name="layers" size={32} color={colors.fgTertiary} stroke={1.5} />
-            <Text className="font-sans text-sm text-fg-secondary mt-4">
-              {searchQuery ? 'No matching items found' : 'No items yet'}
+          <MotiView {...enter.fade(0)} className="py-20 items-center px-6">
+            <Icon name="layers" size={28} color={colors.fgTertiary} stroke={1.6} />
+            <Text className="font-sans-medium text-body mt-4" style={{ color: colors.fg }}>
+              {searchQuery ? 'Nothing matches that' : 'Nothing here yet'}
+            </Text>
+            <Text className="font-sans text-sm mt-1 text-center" style={{ color: colors.fgTertiary }}>
+              {searchQuery ? 'Try other words, or clear the filters.' : 'Threads you capture show up here.'}
             </Text>
           </MotiView>
         ) : (
-          <View>
-            {/* AnimatePresence so a deleted row leaves visibly. Without it
-                the row teleported out while the undo toast sprang in — the
-                only thing that animated was the confirmation of something
-                that hadn't. */}
-            <AnimatePresence>
-              {filteredItems.map((item, index) => (
-                <NoteRow
-                  key={item.id}
-                  item={item}
-                  index={index}
-                  showStatus
-                  onPress={() =>
-                    router.push(`/(tabs)/context?id=${item.id}` as any)
-                  }
-                  onDelete={() => {
-                    deleteItem(item.id);
-                    showUndoToast(`"${item.title}" deleted`, () => undoDelete(item.id));
-                  }}
-                />
-              ))}
-            </AnimatePresence>
-          </View>
+          <ThreadList>
+            {filteredItems.map((item, index) => (
+              <ThreadRow
+                key={item.id}
+                item={item}
+                index={index}
+                last={index === filteredItems.length - 1}
+                onPress={() => router.push(`/(tabs)/context?id=${item.id}` as any)}
+              />
+            ))}
+          </ThreadList>
         )}
       </ScrollView>
     </View>

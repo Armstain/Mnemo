@@ -23,6 +23,8 @@ import * as Haptics from 'expo-haptics';
 import { useEffect, useState } from 'react';
 import { Button, IconButton } from '@/components/ui/Button';
 import { Pill } from '@/components/ui/Pill';
+import { Eyebrow } from '@/components/ui/Eyebrow';
+import { noFocusRing } from '@/utils/web';
 import { Icon } from '@/components/ui/Icon';
 import {
   useThemeColors,
@@ -102,7 +104,7 @@ function NudgeSettingsCard() {
   const isOn = prefs.enabled && granted;
 
   return (
-    <View className="bg-surface rounded-2xl p-5 border border-border/50 gap-4">
+    <View className="bg-surface rounded-lg p-5 border border-border/50 gap-4">
       <View className="flex-row items-center justify-between">
         <View className="flex-row items-center flex-1 mr-3">
           <Bell size={15} color={colors.accent} strokeWidth={2} />
@@ -118,7 +120,7 @@ function NudgeSettingsCard() {
         />
       </View>
 
-      <Text className="font-sans text-xs text-fg-secondary leading-relaxed">
+      <Text className="font-sans text-sm text-fg-secondary leading-relaxed">
         When a thread sits untouched for a couple of days, Mnemo reminds you of it once, with
         its next step. Never more than one a day.
       </Text>
@@ -143,7 +145,7 @@ function NudgeSettingsCard() {
 
       {blocked && (
         <View className="flex-row items-center justify-between gap-3">
-          <Text className="font-sans text-xs text-fg-tertiary flex-1">
+          <Text className="font-sans text-sm text-fg-tertiary flex-1">
             Notifications are off for Mnemo in your phone's settings.
           </Text>
           <Button variant="quiet" size="sm" onPress={() => Linking.openSettings()}>
@@ -216,28 +218,21 @@ function ApiKeyConfigCard() {
   };
 
   return (
-    <View className="bg-surface rounded-2xl p-5 border border-border/50 gap-4">
+    <View className="bg-surface rounded-lg p-5 border border-border/50 gap-4">
       {/* Header */}
       <View className="flex-row items-center justify-between">
         <View className="flex-row items-center">
           <Key size={16} color={colors.accent} strokeWidth={2} />
-          <Text className="font-sans-semi text-sm text-fg ml-2">Gemini API Key</Text>
+          <Text className="font-sans-semi text-sm text-fg ml-2">Gemini API key</Text>
         </View>
 
         <Pill tone={source === 'none' ? colors.error : colors.accent} size="sm">
-          {source === 'custom'
-            ? 'Custom Key Active'
-            : source === 'env'
-            ? 'Environment Key'
-            : 'Not Configured'}
+          {source === 'custom' ? 'Your key' : source === 'env' ? 'Built-in key' : 'Not set'}
         </Pill>
       </View>
 
       {/* Input Field */}
       <View className="gap-1.5">
-        <Text className="font-sans-medium text-[11px] text-fg-tertiary">
-          ENTER YOUR GEMINI API KEY
-        </Text>
         <View className="flex-row items-center bg-surface-warm rounded-md border border-border/60 px-3.5 py-2">
           <TextInput
             value={inputKey}
@@ -250,7 +245,8 @@ function ApiKeyConfigCard() {
             secureTextEntry={!showKey}
             autoCapitalize="none"
             autoCorrect={false}
-            className="flex-1 font-sans text-xs text-fg py-1"
+            className="flex-1 font-sans text-sm text-fg py-1"
+            style={noFocusRing}
             selectionColor={colors.accent}
           />
           <Pressable
@@ -283,7 +279,7 @@ function ApiKeyConfigCard() {
             <AlertCircle size={15} color={colors.error} style={{ marginTop: 2 }} />
           )}
           <Text
-            className="font-sans text-xs flex-1"
+            className="font-sans text-sm flex-1"
             style={{ color: testResult.success ? colors.accent : colors.error }}
           >
             {testResult.message}
@@ -294,7 +290,7 @@ function ApiKeyConfigCard() {
       {/* Action Buttons */}
       <View className="flex-row items-center gap-2 pt-1">
         <Button onPress={handleSave} disabled={isSaving} variant="primary" size="sm" className="flex-1" icon="check">
-          {isSaving ? 'Saving...' : 'Save Key'}
+          {isSaving ? 'Saving...' : 'Save'}
         </Button>
 
         <Button
@@ -304,7 +300,7 @@ function ApiKeyConfigCard() {
           size="sm"
           icon="sparkles"
         >
-          {isTesting ? 'Testing...' : 'Test Key'}
+          {isTesting ? 'Testing...' : 'Test'}
         </Button>
 
         {source === 'custom' && (
@@ -317,11 +313,11 @@ function ApiKeyConfigCard() {
         onPress={openGoogleAIStudio}
         className="flex-row items-center justify-between pt-2 border-t border-border/40"
       >
-        <Text className="font-sans text-xs text-fg-secondary">
-          Need a key? Get one free in 30 seconds
+        <Text className="flex-1 font-sans text-sm text-fg-secondary mr-3">
+          Need a key? It's free.
         </Text>
         <View className="flex-row items-center">
-          <Text className="font-sans-medium text-xs text-accent mr-1">Google AI Studio</Text>
+          <Text className="font-sans-medium text-sm text-accent mr-1">Google AI Studio</Text>
           <Icon name="arrowUpRight" size={12} color={colors.accent} />
         </View>
       </Pressable>
@@ -390,28 +386,21 @@ function GroqApiKeyConfigCard() {
   };
 
   return (
-    <View className="bg-surface rounded-2xl p-5 border border-border/50 gap-4">
+    <View className="bg-surface rounded-lg p-5 border border-border/50 gap-4">
       {/* Header */}
       <View className="flex-row items-center justify-between">
         <View className="flex-row items-center">
           <Icon name="mic" size={16} color={colors.accent} stroke={2} />
-          <Text className="font-sans-semi text-sm text-fg ml-2">Groq API Key (Whisper Voice)</Text>
+          <Text className="font-sans-semi text-sm text-fg ml-2">Groq API key</Text>
         </View>
 
         <Pill tone={source === 'none' ? colors.error : colors.accent} size="sm">
-          {source === 'custom'
-            ? 'Custom Key Active'
-            : source === 'env'
-            ? 'Environment Key'
-            : 'Not Configured'}
+          {source === 'custom' ? 'Your key' : source === 'env' ? 'Built-in key' : 'Not set'}
         </Pill>
       </View>
 
       {/* Input Field */}
       <View className="gap-1.5">
-        <Text className="font-sans-medium text-[11px] text-fg-tertiary">
-          ENTER YOUR GROQ API KEY
-        </Text>
         <View className="flex-row items-center bg-surface-warm rounded-md border border-border/60 px-3.5 py-2">
           <TextInput
             value={inputKey}
@@ -424,7 +413,8 @@ function GroqApiKeyConfigCard() {
             secureTextEntry={!showKey}
             autoCapitalize="none"
             autoCorrect={false}
-            className="flex-1 font-sans text-xs text-fg py-1"
+            className="flex-1 font-sans text-sm text-fg py-1"
+            style={noFocusRing}
             selectionColor={colors.accent}
           />
           <Pressable
@@ -457,7 +447,7 @@ function GroqApiKeyConfigCard() {
             <AlertCircle size={15} color={colors.error} style={{ marginTop: 2 }} />
           )}
           <Text
-            className="font-sans text-xs flex-1"
+            className="font-sans text-sm flex-1"
             style={{ color: testResult.success ? colors.accent : colors.error }}
           >
             {testResult.message}
@@ -468,7 +458,7 @@ function GroqApiKeyConfigCard() {
       {/* Action Buttons */}
       <View className="flex-row items-center gap-2 pt-1">
         <Button onPress={handleSave} disabled={isSaving} variant="primary" size="sm" className="flex-1" icon="check">
-          {isSaving ? 'Saving...' : 'Save Key'}
+          {isSaving ? 'Saving...' : 'Save'}
         </Button>
 
         <Button
@@ -478,7 +468,7 @@ function GroqApiKeyConfigCard() {
           size="sm"
           icon="sparkles"
         >
-          {isTesting ? 'Testing...' : 'Test Key'}
+          {isTesting ? 'Testing...' : 'Test'}
         </Button>
 
         {source === 'custom' && (
@@ -491,11 +481,11 @@ function GroqApiKeyConfigCard() {
         onPress={openGroqConsole}
         className="flex-row items-center justify-between pt-2 border-t border-border/40"
       >
-        <Text className="font-sans text-xs text-fg-secondary">
-          Need a Groq key? Free Whisper transcription
+        <Text className="flex-1 font-sans text-sm text-fg-secondary mr-3">
+          Backup voice transcription. Free.
         </Text>
         <View className="flex-row items-center">
-          <Text className="font-sans-medium text-xs text-accent mr-1">console.groq.com</Text>
+          <Text className="font-sans-medium text-sm text-accent mr-1">console.groq.com</Text>
           <Icon name="arrowUpRight" size={12} color={colors.accent} />
         </View>
       </Pressable>
@@ -574,11 +564,9 @@ export default function ModalScreen() {
           <MotiView {...enter.rise(0)}
             className="gap-3 mb-10"
           >
-            <Text className="font-sans-medium text-xs text-fg-tertiary tracking-wide mb-1">
-              APPEARANCE
-            </Text>
+            <Eyebrow className="mb-1">Appearance</Eyebrow>
 
-            <View className="bg-surface rounded-2xl p-2 border border-border/50 flex-row gap-1">
+            <View className="bg-surface rounded-lg p-2 border border-border/50 flex-row gap-1">
               {THEME_OPTIONS.map(({ key, label, icon: Icon }) => {
                 const selected = preference === key;
                 return (
@@ -599,7 +587,7 @@ export default function ModalScreen() {
                       strokeWidth={2}
                     />
                     <Text
-                      className="font-sans-medium text-xs ml-1.5"
+                      className="font-sans-medium text-sm ml-1.5"
                       style={{ color: selected ? colors.fg : colors.fgTertiary }}
                     >
                       {label}
@@ -615,9 +603,7 @@ export default function ModalScreen() {
             <MotiView {...enter.rise(1)}
               className="gap-3 mb-10"
             >
-              <Text className="font-sans-medium text-xs text-fg-tertiary tracking-wide mb-1">
-                NUDGES
-              </Text>
+              <Eyebrow className="mb-1">Nudges</Eyebrow>
 
               <NudgeSettingsCard />
             </MotiView>
@@ -627,19 +613,17 @@ export default function ModalScreen() {
           <MotiView {...enter.rise(1)}
             className="gap-3 mb-10"
           >
-            <Text className="font-sans-medium text-xs text-fg-tertiary tracking-wide mb-1">
-              AI CONFIGURATION
-            </Text>
+            <Eyebrow className="mb-1">AI keys</Eyebrow>
 
             <ApiKeyConfigCard />
             <GroqApiKeyConfigCard />
 
-            <View className="bg-surface rounded-2xl p-5 border border-border/50">
+            <View className="bg-surface rounded-lg p-5 border border-border/50">
               <View className="flex-row items-center mb-2">
                 <Icon name="mic" size={15} color={colors.accent} />
                 <Text className="font-sans-semi text-sm text-fg ml-2">Offline behaviour</Text>
               </View>
-              <Text className="font-sans text-xs text-fg-secondary leading-relaxed">
+              <Text className="font-sans text-sm text-fg-secondary leading-relaxed">
                 When you record or write a note without connectivity, it is saved immediately and
                 processed by AI automatically the next time you open the app with a connection.
                 You will never lose a note.
@@ -651,19 +635,17 @@ export default function ModalScreen() {
           <MotiView {...enter.rise(2)}
             className="gap-3 mb-10"
           >
-            <Text className="font-sans-medium text-xs text-fg-tertiary tracking-wide mb-1">
-              PRIVACY
-            </Text>
+            <Eyebrow className="mb-1">Privacy</Eyebrow>
 
-            <View className="bg-surface rounded-2xl p-5 border border-border/50">
+            <View className="bg-surface rounded-lg p-5 border border-border/50">
               <View className="flex-row items-center mb-2">
                 <Shield size={15} color={colors.accent} />
                 <Text className="font-sans-semi text-sm text-fg ml-2">Your data</Text>
               </View>
-              <Text className="font-sans text-xs text-fg-secondary leading-relaxed">
-                Notes are stored locally on your device using encrypted secure storage. Audio and
-                text are sent to Google Gemini only for AI processing and are not retained by Mnemo
-                on any server.
+              <Text className="font-sans text-sm text-fg-secondary leading-relaxed">
+                Your notes live only on this device. Mnemo has no server and no account. To
+                transcribe and organise a note, its audio or text is sent to Google Gemini (and to
+                Groq if you add a Groq key), using the keys you enter here.
               </Text>
             </View>
 
@@ -672,14 +654,14 @@ export default function ModalScreen() {
               disabled={isClearing}
               accessibilityRole="button"
               accessibilityLabel="Clear all data"
-              className={`bg-surface rounded-2xl p-5 border border-error/30 flex-row items-center ${
+              className={`bg-surface rounded-lg p-5 border border-error/30 flex-row items-center ${
                 isClearing ? 'opacity-60' : 'active:opacity-80'
               }`}
             >
               <Icon name="trash" size={15} color={colors.error} />
               <View className="ml-2 flex-1">
                 <Text className="font-sans-semi text-sm text-error">Clear all data</Text>
-                <Text className="font-sans text-xs text-fg-tertiary mt-0.5">
+                <Text className="font-sans text-sm text-fg-tertiary mt-0.5">
                   Permanently deletes every note and recording on this device
                 </Text>
               </View>
@@ -691,16 +673,14 @@ export default function ModalScreen() {
           <MotiView {...enter.rise(2)}
             className="gap-3"
           >
-            <Text className="font-sans-medium text-xs text-fg-tertiary tracking-wide mb-1">
-              ABOUT
-            </Text>
+            <Eyebrow className="mb-1">About</Eyebrow>
 
-            <View className="bg-surface rounded-2xl p-5 border border-border/50">
+            <View className="bg-surface rounded-lg p-5 border border-border/50">
               <View className="flex-row items-center mb-2">
                 <Info size={15} color={colors.accent} />
                 <Text className="font-sans-semi text-sm text-fg ml-2">Mnemo</Text>
               </View>
-              <Text className="font-sans text-xs text-fg-secondary leading-relaxed">
+              <Text className="font-sans text-sm text-fg-secondary leading-relaxed">
                 Named after Mnemosyne, the Greek goddess of memory. Mnemo helps you leave a mental
                 breadcrumb before stepping away from deep work, so you can pick up exactly where you
                 left off.

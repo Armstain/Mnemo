@@ -11,7 +11,8 @@ import { RecordButton } from '@/components/ui/RecordButton';
 import { useMnemoStore } from '@/hooks/use-mnemo-store';
 import { useQuickRecording } from '@/hooks/use-quick-recording';
 import { useThemeColors } from '@/hooks/use-theme';
-import { resolvePendingItem } from '@/lib/capture';
+import { resolvePendingEntry } from '@/lib/capture';
+import { buildBlocks } from '@/lib/threads';
 import { NUDGE_TIMES, requestNudgePermission, saveNudgePrefs } from '@/lib/nudges';
 import { useEnter } from '@/utils/motion';
 
@@ -72,7 +73,7 @@ export function FirstCaptureStep({
 }) {
   const enter = useEnter();
   const colors = useThemeColors();
-  const { addItem, updateItem } = useMnemoStore();
+  const store = useMnemoStore();
   const recording = useQuickRecording();
   const [mode, setMode] = useState<'voice' | 'type'>('voice');
   const [text, setText] = useState('');
@@ -110,10 +111,10 @@ export function FirstCaptureStep({
       setMode('type');
       return;
     }
-    const item = await recording.finish('general', true);
-    if (item) {
+    const saved = await recording.finish('general', true);
+    if (saved) {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      onCaptured(item.id);
+      onCaptured(saved.threadId);
     } else {
       setHint('That was a little short. Tap and try again, or type it.');
     }
@@ -140,20 +141,25 @@ export function FirstCaptureStep({
     const trimmed = text.trim();
     if (!trimmed) return;
     const firstLine = trimmed.split('\n')[0];
-    const item = addItem({
-      type: 'note',
-      title: firstLine.length > 50 ? `${firstLine.substring(0, 50)}…` : firstLine,
-      content: trimmed,
-      links: [],
-      category: 'general',
-      tags: [],
-      status: 'active',
-      pending: true,
-      pendingRawText: trimmed,
-    });
-    resolvePendingItem(item, updateItem);
+    const { thread, entry } = store.createThread(
+      {
+        title: firstLine.length > 50 ? `${firstLine.substring(0, 50)}…` : firstLine,
+        category: 'general',
+        tags: [],
+        status: 'active',
+        pending: true,
+      },
+      {
+        source: 'text',
+        transcript: trimmed,
+        blocks: buildBlocks({ text: trimmed }),
+        pending: true,
+        pendingRawText: trimmed,
+      },
+    );
+    resolvePendingEntry(entry, store);
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    onCaptured(item.id);
+    onCaptured(thread.id);
   };
 
   const recordLabel =
@@ -274,7 +280,7 @@ export function RevealStep({ itemId, onContinue }: { itemId: string; onContinue:
               <Text className="text-fg font-display text-heading leading-tight mb-3">{item.title}</Text>
               {structured && item.nextStep ? (
                 <View className="mb-3">
-                  <Text className="font-sans-medium text-micro text-fg-tertiary tracking-widest uppercase mb-1">
+                  <Text className="font-sans-semi text-xs text-fg-tertiary tracking-caps uppercase mb-1">
                     Next step
                   </Text>
                   <Text className="font-sans text-sm text-fg leading-relaxed">{item.nextStep}</Text>
@@ -282,7 +288,7 @@ export function RevealStep({ itemId, onContinue }: { itemId: string; onContinue:
               ) : null}
               {structured && item.whereLeftOff ? (
                 <View>
-                  <Text className="font-sans-medium text-micro text-fg-tertiary tracking-widest uppercase mb-1">
+                  <Text className="font-sans-semi text-xs text-fg-tertiary tracking-caps uppercase mb-1">
                     Where you left off
                   </Text>
                   <Text className="font-sans text-sm text-fg-secondary leading-relaxed">
@@ -349,10 +355,10 @@ export function NudgeStep({ itemId, onDone }: { itemId: string | null; onDone: (
         <MotiView {...enter.rise(1)}>
           <Card variant="surface" pad="md">
             <View className="flex-row items-center justify-between mb-1.5">
-              <Text className="font-sans-medium text-micro text-fg-tertiary tracking-widest uppercase">
+              <Text className="font-sans-semi text-xs text-fg-tertiary tracking-caps uppercase">
                 Mnemo
               </Text>
-              <Text className="font-sans text-micro text-fg-tertiary">
+              <Text className="font-sans text-xs text-fg-tertiary">
                 {`${NUDGE_TIMES.morning.hour}:${String(NUDGE_TIMES.morning.minute).padStart(2, '0')}`}
               </Text>
             </View>

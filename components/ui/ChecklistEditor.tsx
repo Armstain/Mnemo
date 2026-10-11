@@ -67,10 +67,10 @@ export function ChecklistEditor({
       {totalCount > 0 && (
         <View className={`mb-3 ${compact ? 'mb-2' : 'mb-4'}`}>
           <View className="flex-row justify-between items-center mb-1.5">
-            <Text className="font-sans-medium text-[11px] text-fg-muted">
+            <Text className="font-sans-medium text-sm text-fg-muted">
               Progress
             </Text>
-            <Text className="font-sans text-[11px] text-fg-muted">
+            <Text className="font-sans text-sm text-fg-muted">
               {checkedCount} of {totalCount}
             </Text>
           </View>
@@ -186,7 +186,7 @@ export function ChecklistProgress({
           }}
         />
       </View>
-      <Text className="font-sans text-[10px] text-fg-muted">
+      <Text className="font-sans text-xs text-fg-muted">
         {checked}/{total}
       </Text>
     </View>

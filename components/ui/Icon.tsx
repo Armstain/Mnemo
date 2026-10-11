@@ -14,6 +14,7 @@ import {
   ChevronLeft,
   ChevronRight,
   ChevronDown,
+  ChevronUp,
   Trash2,
   Pencil,
   Share2,
@@ -25,6 +26,7 @@ import {
   Calendar,
   Hash,
   Volume2,
+  MoreHorizontal,
 } from 'lucide-react-native';
 
 type IconComponent = typeof Home;
@@ -45,6 +47,7 @@ export type IconName =
   | 'chevronLeft'
   | 'chevronRight'
   | 'chevronDown'
+  | 'chevronUp'
   | 'trash'
   | 'pencil'
   | 'share'
@@ -55,7 +58,8 @@ export type IconName =
   | 'pin'
   | 'calendar'
   | 'hash'
-  | 'volume';
+  | 'volume'
+  | 'more';
 
 /**
  * Mnemo's interface-chrome icon vocabulary — a name-keyed wrapper over
@@ -80,6 +84,7 @@ const ICONS: Record<IconName, IconComponent> = {
   chevronLeft: ChevronLeft,
   chevronRight: ChevronRight,
   chevronDown: ChevronDown,
+  chevronUp: ChevronUp,
   trash: Trash2,
   pencil: Pencil,
   share: Share2,
@@ -91,6 +96,7 @@ const ICONS: Record<IconName, IconComponent> = {
   calendar: Calendar,
   hash: Hash,
   volume: Volume2,
+  more: MoreHorizontal,
 };
 
 export interface IconProps {

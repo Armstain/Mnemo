@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { View, Text, Alert, ScrollView } from 'react-native';
+import { View, Text, Alert } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { MotiView } from 'moti';
 import * as Haptics from 'expo-haptics';
@@ -12,10 +12,10 @@ import {
 import { useMnemoStore } from '@/hooks/use-mnemo-store';
 import { saveVoiceRecording } from '@/lib/capture';
 import { QUICK_RECORDER_OPTIONS } from '@/hooks/use-quick-recording';
-import { Button } from '@/components/ui/Button';
-import { Pill } from '@/components/ui/Pill';
+import { Button, IconButton } from '@/components/ui/Button';
+import { Eyebrow } from '@/components/ui/Eyebrow';
+import { CategoryPicker } from '@/components/ui/CategoryPicker';
 import { RecordButton } from '@/components/ui/RecordButton';
-import { CATEGORY_LIST, useCategories } from '@/utils/categories';
 import { useThemeColors } from '@/hooks/use-theme';
 import { Easing } from 'react-native-reanimated';
 import { EASE_IN_OUT, useEnter } from '@/utils/motion';
@@ -32,13 +32,12 @@ const METERING_BASELINE = -50;
 export default function DumpScreen() {
   const enter = useEnter();
   const insets = useSafeAreaInsets();
-  const { addItem, updateItem } = useMnemoStore();
+  const store = useMnemoStore();
 
   const [isProcessing, setIsProcessing] = useState(false);
   const [hasPermission, setHasPermission] = useState<boolean | null>(null);
   const [category, setCategory] = useState<Category>('general');
   const colors = useThemeColors();
-  const categories = useCategories();
 
   // Metering on, and polled fast (60ms), so the waveform reflects actual
   // input instead of a decorative loop — the recording should feel heard.
@@ -103,7 +102,11 @@ export default function DumpScreen() {
   // widgets / Siri / Control Center, which all deep-link to
   // mnemo://dump?autostart=1). Waits for the permission check on mount so
   // a first-time user gets the OS prompt, not a failed start.
-  const { autostart } = useLocalSearchParams<{ autostart?: string }>();
+  // ?threadId=… records into an existing thread (from a thread screen)
+  // instead of starting a new one, so there's no category to pick.
+  const { autostart, threadId } = useLocalSearchParams<{ autostart?: string; threadId?: string }>();
+  const targetThreadId = typeof threadId === 'string' && threadId ? threadId : undefined;
+  const targetThread = targetThreadId ? store.items.find((i) => i.id === targetThreadId) : undefined;
   const autostarted = useRef(false);
   useEffect(() => {
     if (autostart !== '1' || !hasPermission || autostarted.current) return;
@@ -122,9 +125,9 @@ export default function DumpScreen() {
       // saveVoiceRecording copies the file to a permanent location, adds
       // the pending item, and kicks off background AI structuring — the
       // same path the FAB's quick hold-to-record flow uses.
-      const newItem = await saveVoiceRecording({ tempUri, category, addItem, updateItem });
+      const saved = await saveVoiceRecording({ tempUri, category, threadId: targetThreadId, store });
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      router.replace(`/(tabs)/context?id=${newItem.id}` as any);
+      router.replace(`/(tabs)/context?id=${saved.threadId}` as any);
     } catch (e) {
       console.error('stopAndSave error', e);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
@@ -153,87 +156,62 @@ export default function DumpScreen() {
     <View style={{ flex: 1, backgroundColor: colors.bg }}>
     <View className="flex-1 px-6">
       <View className="flex-1">
-        {/* Header */}
-        <MotiView {...enter.fade(0)}
-          className="flex-row justify-between items-center mb-6"
+        {/* Header — same shape as the Write screen: close, title, balance */}
+        <MotiView
+          {...enter.fade(0)}
+          className="flex-row items-center justify-between mb-4"
           style={{ paddingTop: Math.max(insets.top, 16) }}
         >
-          <Text className="font-sans-medium text-sm text-fg-muted">
-            {isRecording ? "Listening..." : "Voice capture"}
+          <IconButton icon="x" label="Close" variant="bare" onPress={handleCancel} />
+          <Text className="flex-1 text-center font-sans-medium text-sm text-fg-secondary mx-3" numberOfLines={1}>
+            {targetThread ? `Add to ${targetThread.title}` : 'Voice note'}
           </Text>
-          {isRecording && (
-            <MotiView
-              from={{ opacity: 0.4 }}
-              animate={{ opacity: 1 }}
-              transition={{
-                type: 'timing',
-                duration: 900,
-                loop: true,
-                repeatReverse: true,
-                easing: EASE_IN_OUT,
-              }}
-            >
-              <View className="w-2.5 h-2.5 rounded-full bg-accent-warm" />
-            </MotiView>
-          )}
+          <View style={{ width: 44, alignItems: 'center' }}>
+            {isRecording && (
+              <MotiView
+                from={{ opacity: 0.4 }}
+                animate={{ opacity: 1 }}
+                transition={{ type: 'timing', duration: 900, loop: true, repeatReverse: true, easing: EASE_IN_OUT }}
+              >
+                <View className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: colors.error }} />
+              </MotiView>
+            )}
+          </View>
         </MotiView>
 
-        {/* Category selector — horizontal scroll to match capture screen */}
-        {!isRecording && (
-          <MotiView {...enter.fade(1)}
-            className="mb-6"
-          >
-            <Text className="font-sans-medium text-[10px] text-fg-muted tracking-wider uppercase mb-2">
-              Category
-            </Text>
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={{ gap: 6 }}
-            >
-              {CATEGORY_LIST.map((cat) => (
-                <Pill
-                  key={cat}
-                  tone={categories[cat].color}
-                  size="md"
-                  dot={false}
-                  outline={category !== cat}
-                  selected={category === cat}
-                  onPress={() => setCategory(cat)}
-                >
-                  {categories[cat].label}
-                </Pill>
-              ))}
-            </ScrollView>
+        {/* Category — only when starting a new thread */}
+        {!isRecording && !targetThread && (
+          <MotiView {...enter.fade(1)} className="mb-4">
+            <Eyebrow className="mb-2.5">Category</Eyebrow>
+            <CategoryPicker value={category} onChange={setCategory} />
           </MotiView>
         )}
 
         {/* Central Mic Area */}
         <View className="flex-1 items-center justify-center">
-          <RecordButton size={112} recording={isRecording} />
+          <RecordButton size={112} recording={isRecording} orbit />
 
           <MotiView {...enter.rise(2)}
             className="mt-10"
           >
-            <Text className="text-2xl font-sans-medium text-fg text-center">
-              {isRecording ? "Listening..." : "Ready to listen"}
+            <Text className="font-display text-title text-fg text-center">
+              {isRecording ? 'Listening…' : 'Talk it through'}
             </Text>
-            <Text className="font-sans text-sm text-fg-muted text-center mt-2">
+            <Text className="font-sans text-body text-fg-secondary text-center mt-2 leading-relaxed px-6">
               {isRecording
-                ? "Speak your thoughts freely"
-                : !hasPermission
-                ? "Microphone permission required"
-                : "Tap to start capturing"}
+                ? 'Say it the way you would tell a friend.'
+                : hasPermission === false
+                  ? 'Mnemo needs the microphone. You can allow it in Settings.'
+                  : 'Mnemo writes up the note, where you left off and what comes next.'}
             </Text>
           </MotiView>
         </View>
 
-        {/* Audio level feedback */}
-        <View className="h-36 rounded-[16px] bg-surface border border-border/50 p-5 mb-8 shadow-soft-sm items-center justify-center">
-          {isRecording ? (
-            // Each bar reflects a real past metering sample, oldest to
-            // newest — the waveform tracks actual input instead of a
-            // decorative loop, so speaking louder visibly registers.
+        {/* Live level — only while recording */}
+        {isRecording && (
+          <View className="h-20 items-center justify-center mb-6">
+            {/* Each bar is a real past metering sample, oldest to newest, so
+                speaking louder visibly registers. */}
             <View className="flex-row items-end gap-1.5 h-12">
               {levels.map((sample, i) => {
                 const level = Math.max(0.12, Math.min(1, (sample + 50) / 45));
@@ -242,26 +220,16 @@ export default function DumpScreen() {
                     key={i}
                     animate={{ scaleY: level }}
                     transition={{ type: 'timing', duration: 80, easing: Easing.linear }}
-                    style={{
-                      width: 4,
-                      height: 48,
-                      borderRadius: 2,
-                      transformOrigin: 'bottom',
-                    }}
-                    className="bg-accent"
+                    style={{ width: 4, height: 48, borderRadius: 2, transformOrigin: 'bottom', backgroundColor: colors.accent }}
                   />
                 );
               })}
             </View>
-          ) : (
-            <Text className="font-sans-medium text-sm text-fg-muted text-center">
-              Capture audio directly for AI processing
-            </Text>
-          )}
-        </View>
+          </View>
+        )}
 
         {/* Actions */}
-        <View 
+        <View
           className="gap-3"
           style={{ paddingBottom: Math.max(insets.bottom, 24) + 12 }}
         >
@@ -291,7 +259,7 @@ export default function DumpScreen() {
                 className="flex-2"
                 icon="check"
               >
-                {isProcessing ? 'Saving...' : 'Save'}
+                {isProcessing ? 'Saving…' : 'Save'}
               </Button>
             </MotiView>
           )}

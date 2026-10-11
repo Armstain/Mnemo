@@ -6,6 +6,7 @@ import { Icon } from '@/components/ui/Icon';
 import { useThemeColors } from '@/hooks/use-theme';
 import { useReduceMotion } from '@/hooks/use-accessibility-motion';
 import { DUR_TOGGLE, EASE_OUT, motion } from '@/utils/motion';
+import { noFocusRing } from '@/utils/web';
 
 interface SearchBarProps {
   value: string;
@@ -60,7 +61,7 @@ export const SearchBar = ({
         placeholder={placeholder}
         placeholderTextColor={colors.fgTertiary}
         className="flex-1 font-sans text-body"
-        style={{ color: colors.fg }}
+        style={[{ color: colors.fg }, noFocusRing]}
         selectionColor={colors.accent}
         autoFocus={autoFocus}
       />
