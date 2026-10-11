@@ -8,7 +8,7 @@ import { useUndoToast } from '@/hooks/use-undo-toast';
 import { useThemeColors } from '@/hooks/use-theme';
 import { useReduceMotion } from '@/hooks/use-accessibility-motion';
 import { EXIT_QUICK, SPRING_SHEET, motion } from '@/utils/motion';
-import { CENTER_BUTTON_RISE, NAV_BAR_HEIGHT } from '@/components/ui/FloatingTabBar';
+import { CENTER_BUTTON_RISE, NAV_BAR_HEIGHT, navBottom } from '@/components/ui/FloatingTabBar';
 
 /**
  * Mounted once at the app root. Floats just above the tab bar so it never
@@ -34,7 +34,7 @@ export function UndoToastHost() {
           pointerEvents="box-none"
           className="absolute left-6 right-6 z-50 flex-row items-center justify-between rounded-md px-4 py-3.5"
           style={{
-            bottom: Math.max(insets.bottom, 16) + NAV_BAR_HEIGHT + CENTER_BUTTON_RISE + 12,
+            bottom: navBottom(insets.bottom) + NAV_BAR_HEIGHT + CENTER_BUTTON_RISE + 12,
             backgroundColor: colors.surfaceHigh,
             borderWidth: 1,
             borderColor: colors.border,
@@ -54,15 +54,15 @@ export function UndoToastHost() {
           <Pressable
             onPress={() => {
               Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-              toast.onUndo();
+              toast.onAction();
               dismiss();
             }}
             hitSlop={8}
             accessibilityRole="button"
-            accessibilityLabel="Undo"
+            accessibilityLabel={toast.actionLabel}
           >
             <Text className="font-sans-semi text-sm" style={{ color: colors.accent }}>
-              Undo
+              {toast.actionLabel}
             </Text>
           </Pressable>
         </MotiView>

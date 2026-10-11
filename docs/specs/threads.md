@@ -179,6 +179,65 @@ it makes today) and compares it with the chosen thread's vector.
   away. Voice entries land in *Just captured* with *Processing later*; text and
   shares can still be filed by hand using on-device keyword matches.
 
+**As built (step 2):** a suggestion shows as a banner on the capture's own
+thread (*Part of Passport renewal?* · Move there · Keep separate) and as a
+toast, rather than a *Just captured* list on Home. Every entry has *Move*
+(searchable picker, or its own new thread). Merging threads is not built yet.
+Logic: `lib/filing.ts`; applied in `structurePendingEntry` (`lib/capture.ts`).
+
+### Focus
+
+For a trip or a project, a thread can be set to *Send quick captures here*
+(one at a time). While it's set:
+
+- Quick captures from Home (hold +, Write, Record) are saved straight into it
+  (`filing: { by: 'focus' }`), so filing works offline and needs no AI.
+- The capture call still sees the open threads. Only when the model is sure
+  (≥ 0.8) the capture is about something else is it moved to a thread of its
+  own (toast: *Kept apart from Lisbon trip* · Undo); a confident match to a
+  different thread becomes a suggestion.
+- Home shows *Capturing into Lisbon trip* · Stop. Completing, archiving or
+  deleting the thread turns focus off, and so do 3 days with nothing new in
+  it (checked on launch, on returning to the app, and at each capture), so a
+  trip you came back from stops collecting captures.
+
+### Time
+
+Each candidate is sent with when it was last updated, plus today's date; the
+prompt says a trip or project quiet for weeks is probably over. On the
+device, a thread quiet for more than 14 days is never filed into
+automatically, only suggested. Voice captures only see threads active in the
+last 14 days (plus the focus); typed ones can also reach older threads by
+keyword, which is where that cap matters.
+
+---
+
+## 3b. Measures (numbers worth tracking)
+
+Not only expenses: any number someone reports that they'd add up or follow
+over time. Each entry can carry a `measures` block:
+
+```ts
+{ metric: 'spent', value: 40, unit: 'EUR', label: 'dinner', group: 'food', rollup: 'sum' }
+```
+
+| Rollup | For | Thread card shows |
+|---|---|---|
+| `sum` | spending, distance, hours, pages | total, per day, breakdown by group |
+| `latest` | weight, balance, progress | current value, change since first, trend line |
+| `average` | sleep, mood, commute | average, range, trend line |
+| `compare` | prices of options | options side by side, lowest first |
+
+- The model extracts; the device checks and does all the maths
+  (`lib/measures.ts`). A value must appear in what the person said or typed
+  (digits in any script, `1,200`, `12,50`, `5k`, and number words in
+  English, Bangla and Banglish: *der hajar*, *দেড় হাজার*, *পনেরোশো*,
+  *সাড়ে তিন হাজার*, *2 lakh*), so a total or conversion the model made up is
+  dropped.
+- The model is told what the thread already tracks (`spent (EUR, sum)`) so
+  names and units stay consistent. Readings in another unit or currency are
+  listed separately; nothing is converted.
+
 ---
 
 ## 4. Sharing in
@@ -237,7 +296,7 @@ Same as today, plus the open-threads list in the prompt.
    one-entry threads; the thread screen shows the timeline; *Add to this
    thread* works with the current AI pipeline.
 2. **Capture v2.** New schema and prompt, device-side checks, auto-connect with
-   toast and *Just captured* suggestions, Move and Merge.
+   toast and suggestions, Move, focus and measures. *(Built; Merge still to do.)*
 3. **Chart and link blocks** rendered properly.
 4. **Share sheet.**
 

@@ -1,4 +1,5 @@
 import type { Block, ChecklistItem, Entry, MnemoItem } from '@/types/mnemo';
+import { formatValue } from '@/lib/measures';
 
 // Pure helpers for threads and their entries. No storage, no React — the
 // store (hooks/use-mnemo-store.tsx) and the database migration both build
@@ -26,6 +27,10 @@ export function entryText(entry: Pick<Entry, 'blocks'>): string {
           return block.title;
         case 'link':
           return [block.title, block.summary, block.url].filter(Boolean).join(' ');
+        case 'measures':
+          return block.items
+            .map((m) => `${m.label || m.metric}: ${formatValue(m.value, m.unit)}`)
+            .join('\n');
       }
     })
     .filter((t) => t && t.trim())

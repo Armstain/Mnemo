@@ -4,6 +4,8 @@ import * as Haptics from 'expo-haptics';
 import { useThemeColors } from '@/hooks/use-theme';
 import { useStatusConfig } from '@/utils/categories';
 import { Icon } from '@/components/ui/Icon';
+import { MotiView } from 'moti';
+import { Animated, usePressScale } from '@/hooks/use-press-scale';
 import type { ChecklistItem } from '@/types/mnemo';
 
 interface ChecklistEditorProps {
@@ -75,13 +77,17 @@ export function ChecklistEditor({
             </Text>
           </View>
           <View className="h-1.5 bg-surface-warm rounded-full overflow-hidden">
-            <View
+            {/* Grows from the left (a transform, so it stays on the UI thread). */}
+            <MotiView
               className="h-full rounded-full"
+              animate={{ scaleX: Math.max(progress, 0.0001) }}
+              transition={{ type: 'spring', damping: 18, stiffness: 160 }}
               style={{
-                width: `${progress * 100}%`,
+                width: '100%',
+                transformOrigin: 'left',
                 backgroundColor:
                   progress === 1 ? statusColors.completed.color : colors.accent,
-              }}
+              } as any}
             />
           </View>
         </View>
@@ -96,23 +102,20 @@ export function ChecklistEditor({
               compact ? 'py-1' : 'py-2'
             }`}
           >
-            <Pressable
-              onPress={() => toggleItem(item.id)}
-              className="w-5 h-5 rounded-md items-center justify-center mr-3 border"
-              style={{
-                backgroundColor: item.checked ? colors.accent : 'transparent',
-                borderColor: item.checked ? colors.accent : colors.border,
-              }}
-            >
-              {item.checked && <Icon name="check" size={12} color={colors.accentInk} stroke={3} />}
-            </Pressable>
+            <CheckBox checked={item.checked} onPress={() => toggleItem(item.id)} />
 
-            <Text
-              className={`flex-1 font-sans text-sm ${item.checked ? 'line-through' : ''}`}
-              style={{ color: item.checked ? colors.fgTertiary : colors.fg }}
+            <MotiView
+              className="flex-1"
+              animate={{ opacity: item.checked ? 0.7 : 1 }}
+              transition={{ type: 'timing', duration: 200 }}
             >
-              {item.text}
-            </Text>
+              <Text
+                className={`font-sans text-sm ${item.checked ? 'line-through' : ''}`}
+                style={{ color: item.checked ? colors.fgTertiary : colors.fg }}
+              >
+                {item.text}
+              </Text>
+            </MotiView>
 
             {editable && (
               <Pressable
@@ -190,5 +193,51 @@ export function ChecklistProgress({
         {checked}/{total}
       </Text>
     </View>
+  );
+}
+
+/** A checkbox that pops when ticked, with the tick scaling in. */
+function CheckBox({ checked, onPress }: { checked: boolean; onPress: () => void }) {
+  const colors = useThemeColors();
+  const press = usePressScale(0.85);
+  const was = React.useRef(checked);
+  React.useEffect(() => {
+    if (checked && !was.current) press.pop();
+    was.current = checked;
+  }, [checked]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  return (
+    <Pressable
+      onPress={onPress}
+      onPressIn={press.onPressIn}
+      onPressOut={press.onPressOut}
+      hitSlop={8}
+      accessibilityRole="checkbox"
+      accessibilityState={{ checked }}
+      style={{ marginRight: 12 }}
+    >
+      <Animated.View
+        style={[
+          {
+            width: 20,
+            height: 20,
+            borderRadius: 6,
+            borderWidth: 1,
+            alignItems: 'center',
+            justifyContent: 'center',
+            backgroundColor: checked ? colors.accent : 'transparent',
+            borderColor: checked ? colors.accent : colors.border,
+          },
+          press.style,
+        ]}
+      >
+        <MotiView
+          animate={{ scale: checked ? 1 : 0.3, opacity: checked ? 1 : 0 }}
+          transition={{ type: 'spring', damping: 12, stiffness: 300 }}
+        >
+          <Icon name="check" size={12} color={colors.accentInk} stroke={3} />
+        </MotiView>
+      </Animated.View>
+    </Pressable>
   );
 }

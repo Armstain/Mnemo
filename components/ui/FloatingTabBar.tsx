@@ -1,48 +1,98 @@
-import React, { useState, useCallback } from 'react';
-import { View, Pressable, StyleSheet, Text, type LayoutChangeEvent } from 'react-native';
-import { MotiView } from 'moti';
+import React, { useEffect, useState } from 'react';
+import { Pressable, StyleSheet, View, type LayoutChangeEvent } from 'react-native';
+import Svg, { Path } from 'react-native-svg';
+import Animated, {
+  useAnimatedStyle,
+  useSharedValue,
+  withSequence,
+  withSpring,
+  withTiming,
+} from 'react-native-reanimated';
 import * as Haptics from 'expo-haptics';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router, usePathname } from 'expo-router';
 
 import { useThemeColors, useThemeName } from '@/hooks/use-theme';
 import { useReduceMotion } from '@/hooks/use-accessibility-motion';
-import { PRESS_SCALE, SPRING_NAV, SPRING_PRESS, motion } from '@/utils/motion';
+import { closeCapture, useCaptureActive } from '@/hooks/use-capture-active';
 import { Icon, type IconName } from '@/components/ui/Icon';
 
-// Two tabs either side of the capture button (ActionCluster), which sits
-// in the gap in the middle of the bar. Search lives inside Library.
+// Two tabs either side of the capture button (ActionCluster), which sits in
+// a notch in the middle of the bar. Search lives inside Library.
 const TABS = [
   { name: 'Home', icon: 'home' as IconName, route: '/' },
   { name: 'Library', icon: 'layers' as IconName, route: '/(tabs)/library' },
 ] as const;
 
-/** Width of the gap in the middle of the bar that the capture button sits in. */
-export const CENTER_SLOT_WIDTH = 96;
+// ─── Geometry ───────────────────────────────────────────────────
+// Shared with ActionCluster so the button lands exactly in the notch.
+
+/** Bar height (excludes the gap below it, see navBottom). */
+export const NAV_BAR_HEIGHT = 64;
+/** Diameter of the capture button. */
+export const CAPTURE_BUTTON_SIZE = 56;
+/** Diameter of the brand ring around it; the notch is shaped for this. */
+export const CAPTURE_RING_SIZE = CAPTURE_BUTTON_SIZE + 14;
+const CORNER = 28;
+/** Half the notch's opening along the bar's top edge. */
+const NOTCH_HALF = 62;
+/** How deep the notch dips below the top edge. */
+const NOTCH_DEPTH = 34;
+/** Space between the ring and the bottom of the notch. */
+const NOTCH_GAP = 4;
+/** Centre of the button, measured down from the bar's top edge (negative: above it). */
+const BUTTON_CENTER_Y = NOTCH_DEPTH - NOTCH_GAP - CAPTURE_RING_SIZE / 2;
 /** How far the capture button rises above the bar's top edge. */
-export const CENTER_BUTTON_RISE = 26;
+export const CENTER_BUTTON_RISE = CAPTURE_BUTTON_SIZE / 2 - BUTTON_CENTER_Y;
 
-// Navigation bar container height (excludes the bottom safe inset, which
-// is added on top). Exported so the FAB and screens can reserve clearance
-// without magic numbers.
-export const NAV_BAR_HEIGHT = 66;
+/**
+ * Distance from the screen's bottom edge to the bar: clear of the system
+ * gesture bar / home indicator with room to breathe, so the bar floats
+ * instead of resting on it. Everything stacked on the bar uses this too.
+ */
+export function navBottom(insetBottom: number): number {
+  return Math.max(insetBottom + 12, 20);
+}
 
-// Scroll-content bottom padding that clears the floating nav bar, the
-// capture button rising out of it, and a standard 16dp margin.
-export const NAV_CLEARANCE = NAV_BAR_HEIGHT + CENTER_BUTTON_RISE + 16;
-// Kept as its own name for Home; the capture button no longer floats in a
-// separate stack above the bar, so Home needs no more room than any tab.
+// Scroll-content bottom padding (added to the safe inset) that clears the
+// floating bar, its gap above the inset, the button rising out of it, and
+// a standard 16dp margin.
+export const NAV_CLEARANCE = NAV_BAR_HEIGHT + CENTER_BUTTON_RISE + 12 + 16;
+// Kept as its own name for Home.
 export const CONTENT_BOTTOM_CLEARANCE = NAV_CLEARANCE;
 
-const PILL_WIDTH = 48;
-const PILL_HEIGHT = 28;
-// Matches styles.item paddingVertical — the pill sits over the icon slot,
-// which is the first child inside that padding.
-const ITEM_PAD_Y = 4;
+/** The bar's outline: a rounded rectangle with a smooth bowl in the middle of the top edge. */
+function barPath(w: number, h: number): string {
+  const cx = w / 2;
+  const x1 = cx - NOTCH_HALF;
+  const x2 = cx + NOTCH_HALF;
+  const bowl = CAPTURE_RING_SIZE / 2 + 2;
+  const r = CORNER;
+  return [
+    `M ${r} 0`,
+    `L ${x1} 0`,
+    `C ${x1 + 14} 0, ${cx - bowl} ${NOTCH_DEPTH}, ${cx} ${NOTCH_DEPTH}`,
+    `C ${cx + bowl} ${NOTCH_DEPTH}, ${x2 - 14} 0, ${x2} 0`,
+    `L ${w - r} 0`,
+    `A ${r} ${r} 0 0 1 ${w} ${r}`,
+    `L ${w} ${h - r}`,
+    `A ${r} ${r} 0 0 1 ${w - r} ${h}`,
+    `L ${r} ${h}`,
+    `A ${r} ${r} 0 0 1 0 ${h - r}`,
+    `L 0 ${r}`,
+    `A ${r} ${r} 0 0 1 ${r} 0`,
+    'Z',
+  ].join(' ');
+}
+
+/** Each tab sits in the middle of its side of the notch. */
+function tabCenters(w: number): [number, number] {
+  const left = (w / 2 - NOTCH_HALF) / 2;
+  return [left, w - left];
+}
 
 // The last tab a real tab route resolved to. Screens outside the tabs (a
-// note's detail view) keep the tab you came from highlighted, rather than
-// always snapping back to Home.
+// thread) keep the tab you came from marked, rather than snapping to Home.
 let lastTabIndex = 0;
 
 /** Which tab a pathname belongs to; for non-tab routes, the tab you were last on. */
@@ -56,206 +106,189 @@ export function activeTabIndex(pathname: string): number {
   return lastTabIndex;
 }
 
-type Rect = { x: number; y: number; width: number };
+const DOT = 6;
+const DOT_STRETCH = 18;
+const ICON_Y = NAV_BAR_HEIGHT / 2 - 5;
+const DOT_Y = NAV_BAR_HEIGHT - 15;
+const TOUCH = 64;
 
 /**
- * FloatingTabBar — Floaty, minimal pill navigation bar.
- *
- * The active pill is a single element owned by the bar, not one per tab, so
- * it *travels* between tabs on a spring instead of cross-fading. Tracking one
- * object through space costs the user far less than re-finding a new one on
- * every screen change — that continuity is the whole point.
+ * FloatingTabBar: a floating bar with a notch the capture button sits in.
+ * The active tab is its accent colour and a dot underneath; the dot is one
+ * element that springs between tabs (stretching as it travels), and slides
+ * under the capture button while that's in use.
  */
 export function FloatingTabBar() {
   const insets = useSafeAreaInsets();
   const pathname = usePathname();
   const colors = useThemeColors();
-  const themeName = useThemeName();
+  const dark = useThemeName() === 'dark';
   const reduceMotion = useReduceMotion();
-
-  // Measured per-tab geometry, so the pill's travel needs no assumptions
-  // about bar padding or how flex divides the row.
-  const [rects, setRects] = useState<Record<number, Rect>>({});
-  const onItemLayout = useCallback((index: number, e: LayoutChangeEvent) => {
-    const { x, y, width } = e.nativeEvent.layout;
-    setRects((prev) => {
-      const prevRect = prev[index];
-      if (prevRect && prevRect.x === x && prevRect.y === y && prevRect.width === width) {
-        return prev;
-      }
-      return { ...prev, [index]: { x, y, width } };
-    });
-  }, []);
+  const captureActive = useCaptureActive();
+  const [width, setWidth] = useState(0);
 
   const activeIndex = activeTabIndex(pathname);
-  const activeRect = rects[activeIndex];
+  const centers = width ? tabCenters(width) : null;
+  const dotTarget = !centers ? 0 : captureActive ? width / 2 : centers[activeIndex];
+
+  const dotX = useSharedValue(0);
+  const dotW = useSharedValue(DOT);
+  const placed = React.useRef(false);
+  useEffect(() => {
+    if (!centers) return;
+    if (!placed.current || reduceMotion) {
+      // First layout: put the dot in place without travelling there.
+      dotX.value = dotTarget;
+      placed.current = true;
+      return;
+    }
+    dotX.value = withSpring(dotTarget, { damping: 15, stiffness: 170, mass: 0.7 });
+    dotW.value = withSequence(
+      withTiming(DOT_STRETCH, { duration: 120 }),
+      withSpring(DOT, { damping: 11, stiffness: 240 }),
+    );
+  }, [dotTarget, width]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const dotStyle = useAnimatedStyle(() => ({
+    width: dotW.value,
+    transform: [{ translateX: dotX.value - dotW.value / 2 }],
+  }));
+
+  const onLayout = (e: LayoutChangeEvent) => setWidth(Math.round(e.nativeEvent.layout.width));
+  const path = width ? barPath(width, NAV_BAR_HEIGHT) : '';
 
   return (
     <View
-      className="absolute left-6 right-6 z-40"
-      style={[
-        styles.bar,
-        themeName === 'dark' ? styles.barShadowDark : styles.barShadowLight,
-        {
-          bottom: Math.max(insets.bottom, 16),
-          height: NAV_BAR_HEIGHT,
-          backgroundColor: colors.surfaceLowest,
-          borderColor: colors.border,
-        },
-      ]}
+      onLayout={onLayout}
+      pointerEvents="box-none"
+      style={[styles.bar, { bottom: navBottom(insets.bottom), height: NAV_BAR_HEIGHT }]}
     >
-      {/* Traveling active indicator — rendered once, behind every tab. */}
-      {activeRect && (
-        <MotiView
+      {width > 0 && (
+        <Svg
+          width={width}
+          height={NAV_BAR_HEIGHT + 4}
+          style={StyleSheet.absoluteFill}
           pointerEvents="none"
-          style={[
-            styles.indicator,
-            {
-              backgroundColor: colors.primaryContainer,
-              top: activeRect.y + ITEM_PAD_Y,
-            },
-          ]}
-          animate={{
-            translateX: activeRect.x + (activeRect.width - PILL_WIDTH) / 2,
-            opacity: 1,
-          }}
-          transition={motion(SPRING_NAV, reduceMotion)}
-        />
+        >
+          {/* A soft shadow that follows the notch (a platform shadow would be a plain rectangle). */}
+          <Path d={path} fill="#000" opacity={dark ? 0.4 : 0.05} transform="translate(0 3)" />
+          <Path d={path} fill="#000" opacity={dark ? 0.25 : 0.04} transform="translate(0 1.5)" />
+          <Path d={path} fill={colors.surfaceLowest} stroke={colors.border} strokeWidth={1} />
+        </Svg>
       )}
 
-      {TABS.map((item, index) => (
-        <React.Fragment key={item.name}>
-        {index === 1 && <View style={{ width: CENTER_SLOT_WIDTH }} pointerEvents="none" />}
-        <NavItem
-          name={item.name}
-          icon={item.icon}
-          isActive={index === activeIndex}
-          onLayout={(e) => onItemLayout(index, e)}
-          onPress={() => {
-            // Re-tapping the current tab shouldn't fire feedback for a
-            // navigation that isn't happening.
-            if (index === activeIndex) return;
-            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-            router.push(item.route as any);
-          }}
+      {centers &&
+        TABS.map((tab, index) => (
+          <TabButton
+            key={tab.name}
+            name={tab.name}
+            icon={tab.icon}
+            x={centers[index]}
+            active={!captureActive && index === activeIndex}
+            reduceMotion={reduceMotion}
+            onPress={() => {
+              if (captureActive) closeCapture();
+              if (index === activeIndex) return;
+              Haptics.selectionAsync();
+              router.push(tab.route as any);
+            }}
+          />
+        ))}
+
+      {centers && (
+        <Animated.View
+          pointerEvents="none"
+          style={[styles.dot, { top: DOT_Y, backgroundColor: colors.accent }, dotStyle]}
         />
-        </React.Fragment>
-      ))}
+      )}
     </View>
   );
 }
 
-function NavItem({
+function TabButton({
   name,
   icon,
-  isActive,
+  x,
+  active,
+  reduceMotion,
   onPress,
-  onLayout,
 }: {
   name: string;
   icon: IconName;
-  isActive: boolean;
+  x: number;
+  active: boolean;
+  reduceMotion: boolean;
   onPress: () => void;
-  onLayout: (e: LayoutChangeEvent) => void;
 }) {
   const colors = useThemeColors();
-  const reduceMotion = useReduceMotion();
-  const [pressed, setPressed] = useState(false);
+  const scale = useSharedValue(1);
+  const lift = useSharedValue(active ? -1 : 0);
+
+  // Becoming active: a quick squash, a springy pop back, and a small lift.
+  const wasActive = React.useRef(active);
+  useEffect(() => {
+    if (active && !wasActive.current && !reduceMotion) {
+      scale.value = withSequence(
+        withTiming(0.78, { duration: 90 }),
+        withSpring(1, { damping: 7, stiffness: 260, mass: 0.6 }),
+      );
+    }
+    lift.value = reduceMotion
+      ? active ? -1 : 0
+      : withSpring(active ? -1 : 0, { damping: 14, stiffness: 200 });
+    wasActive.current = active;
+  }, [active]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const iconStyle = useAnimatedStyle(() => ({
+    transform: [{ translateY: lift.value }, { scale: scale.value }],
+  }));
 
   return (
     <Pressable
       onPress={onPress}
-      onPressIn={() => setPressed(true)}
-      onPressOut={() => setPressed(false)}
-      pressRetentionOffset={16}
-      onLayout={onLayout}
+      onPressIn={() => {
+        if (!reduceMotion) scale.value = withSpring(0.86, { damping: 20, stiffness: 400 });
+      }}
+      onPressOut={() => {
+        if (!reduceMotion) scale.value = withSpring(1, { damping: 10, stiffness: 300 });
+      }}
       accessibilityRole="button"
-      accessibilityState={{ selected: isActive }}
+      accessibilityState={{ selected: active }}
       accessibilityLabel={name}
-      android_ripple={{ color: colors.border, borderless: true, radius: 28 }}
-      style={styles.item}
+      style={[styles.touch, { left: x - TOUCH / 2, top: ICON_Y - TOUCH / 2 }]}
     >
-      {/* Finger-down acknowledgement: the target gives before it acts, so
-          the tap is confirmed even if navigation takes a frame to land. */}
-      <MotiView
-        style={styles.itemInner}
-        animate={{ scale: reduceMotion ? 1 : pressed ? PRESS_SCALE : 1 }}
-        transition={motion(SPRING_PRESS, reduceMotion)}
-      >
-        <View style={styles.indicatorWrap}>
-          <Icon
-            name={icon}
-            size={20}
-            color={isActive ? colors.onPrimaryContainer : colors.fgSecondary}
-            stroke={isActive ? 2.1 : 1.7}
-          />
-        </View>
-        <Text
-          numberOfLines={1}
-          style={[
-            styles.label,
-            { color: isActive ? colors.fg : colors.fgSecondary },
-          ]}
-          className={isActive ? 'font-sans-semi' : 'font-sans-medium'}
-        >
-          {name}
-        </Text>
-      </MotiView>
+      <Animated.View style={iconStyle}>
+        <Icon
+          name={icon}
+          size={24}
+          color={active ? colors.accent : colors.fgTertiary}
+          stroke={active ? 2.2 : 1.8}
+        />
+      </Animated.View>
     </Pressable>
   );
 }
 
 const styles = StyleSheet.create({
   bar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-around',
-    borderRadius: 34,
-    borderWidth: 1,
-    paddingHorizontal: 12,
+    position: 'absolute',
+    left: 16,
+    right: 16,
+    // Above the capture menu's scrim (40), so the dot can travel under the
+    // button while it's open; below the button itself (50).
+    zIndex: 45,
   },
-  // Soft floating shadow lift — split by theme since the design system's
-  // shadow recipe uses a darker/heavier shadow on Ink than on Paper.
-  barShadowLight: {
-    shadowColor: '#000000',
-    shadowOffset: { width: 0, height: 10 },
-    shadowRadius: 24,
-    shadowOpacity: 0.12,
-    elevation: 10,
-  },
-  barShadowDark: {
-    shadowColor: '#000000',
-    shadowOffset: { width: 0, height: 10 },
-    shadowRadius: 24,
-    shadowOpacity: 0.45,
-    elevation: 10,
-  },
-  item: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: ITEM_PAD_Y,
-  },
-  itemInner: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 2,
-  },
-  indicatorWrap: {
-    width: PILL_WIDTH,
-    height: PILL_HEIGHT,
+  touch: {
+    position: 'absolute',
+    width: TOUCH,
+    height: TOUCH,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  indicator: {
+  dot: {
     position: 'absolute',
     left: 0,
-    width: PILL_WIDTH,
-    height: PILL_HEIGHT,
-    borderRadius: 14,
-  },
-  label: {
-    fontSize: 10,
-    letterSpacing: 0.1,
+    height: DOT,
+    borderRadius: DOT / 2,
   },
 });

@@ -11,12 +11,24 @@ export const UNDO_WINDOW_MS = 4000;
 interface ToastState {
   id: number;
   message: string;
-  onUndo: () => void;
+  actionLabel: string;
+  onAction: () => void;
+}
+
+export interface ToastOptions {
+  message: string;
+  /** Defaults to "Undo". */
+  actionLabel?: string;
+  onAction: () => void;
+  /** Defaults to UNDO_WINDOW_MS. */
+  durationMs?: number;
 }
 
 interface UndoToastContextType {
   toast: ToastState | null;
   showUndoToast: (message: string, onUndo: () => void) => void;
+  /** A toast with its own action ("Move", "Open") and duration. */
+  showToast: (options: ToastOptions) => void;
   dismiss: () => void;
 }
 
@@ -38,17 +50,25 @@ export function UndoToastProvider({ children }: { children: React.ReactNode }) {
     setToast(null);
   }, []);
 
-  const showUndoToast = useCallback((message: string, onUndo: () => void) => {
-    if (timerRef.current) clearTimeout(timerRef.current);
-    const id = ++idRef.current;
-    setToast({ id, message, onUndo });
-    timerRef.current = setTimeout(() => {
-      setToast((current) => (current?.id === id ? null : current));
-    }, UNDO_WINDOW_MS);
-  }, []);
+  const showToast = useCallback(
+    ({ message, actionLabel = 'Undo', onAction, durationMs = UNDO_WINDOW_MS }: ToastOptions) => {
+      if (timerRef.current) clearTimeout(timerRef.current);
+      const id = ++idRef.current;
+      setToast({ id, message, actionLabel, onAction });
+      timerRef.current = setTimeout(() => {
+        setToast((current) => (current?.id === id ? null : current));
+      }, durationMs);
+    },
+    [],
+  );
+
+  const showUndoToast = useCallback(
+    (message: string, onUndo: () => void) => showToast({ message, onAction: onUndo }),
+    [showToast],
+  );
 
   return (
-    <UndoToastContext.Provider value={{ toast, showUndoToast, dismiss }}>
+    <UndoToastContext.Provider value={{ toast, showUndoToast, showToast, dismiss }}>
       {children}
     </UndoToastContext.Provider>
   );

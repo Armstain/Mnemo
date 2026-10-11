@@ -31,8 +31,16 @@ import { useReduceMotion } from '@/hooks/use-accessibility-motion';
 import { MIN_RECORDING_MS, useQuickRecording } from '@/hooks/use-quick-recording';
 import { DUR_BASE, DUR_FAST, EASE_IN_OUT, EASE_OUT, EXIT_QUICK, REDUCED, SPRING_NAV } from '@/utils/motion';
 import { formatDuration } from '@/utils/time';
-import { CENTER_BUTTON_RISE, NAV_BAR_HEIGHT } from '@/components/ui/FloatingTabBar';
+import {
+  CAPTURE_BUTTON_SIZE,
+  CAPTURE_RING_SIZE,
+  CENTER_BUTTON_RISE,
+  NAV_BAR_HEIGHT,
+  navBottom,
+} from '@/components/ui/FloatingTabBar';
+import { setCaptureActive } from '@/hooks/use-capture-active';
 import { OpenRing } from '@/components/ui/ThreadRing';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 // How long a hold must last before it commits to recording. Long enough that
 // a normal tap never triggers it; the red fill inside the button shows the
@@ -52,8 +60,11 @@ const DETENTS_PX = [28, 56];
 const TAIL_MS = { saved: 1400, discarded: 900, tooShort: 1600 } as const;
 
 // Main button diameter, and the brand ring drawn around it.
-const FAB_SIZE = 62;
-const ORBIT_SIZE = FAB_SIZE + 22;
+const FAB_SIZE = CAPTURE_BUTTON_SIZE;
+/** The brand ring around the button; the tab bar's notch is shaped for it. */
+const ORBIT_SIZE = CAPTURE_RING_SIZE;
+/** The ring's stroke as a share of its size: about 3.5px. */
+const ORBIT_WEIGHT = 0.05;
 const BIN_SIZE = 56;
 const FAB_CENTER = FAB_SIZE / 2;
 
@@ -92,14 +103,32 @@ export function ActionCluster({ visible = true }: { visible?: boolean }) {
 
   const pathname = usePathname();
   const { id: routeId } = useGlobalSearchParams<{ id?: string }>();
-  const { items } = useMnemoStore();
+  const { items, focusThreadId, getFocusThreadId } = useMnemoStore();
   const currentThread =
     pathname.includes('context') && typeof routeId === 'string'
       ? items.find((i) => i.id === routeId)
       : undefined;
+  // Anywhere else, captures go to the focus thread if one is set (the
+  // Write and Record screens resolve that themselves).
+  const focusThread =
+    !currentThread && focusThreadId ? items.find((i) => i.id === focusThreadId) : undefined;
+  const target = currentThread ?? focusThread;
   const threadQuery = currentThread ? `?threadId=${currentThread.id}` : '';
 
   const [expanded, setExpanded] = useState(false);
+
+  // "Hold to record" hint above the button, until hold has been used once
+  // or the hint is dismissed.
+  const [showHoldHint, setShowHoldHint] = useState(false);
+  useEffect(() => {
+    AsyncStorage.getItem(HOLD_HINT_KEY)
+      .then((done) => setShowHoldHint(!done))
+      .catch(() => {});
+  }, []);
+  const retireHoldHint = () => {
+    setShowHoldHint(false);
+    AsyncStorage.setItem(HOLD_HINT_KEY, '1').catch(() => {});
+  };
   const [holdPhase, setHoldPhase] = useState<HoldPhase>('idle');
   const [tail, setTail] = useState<Tail>(null);
 
@@ -195,6 +224,7 @@ export function ActionCluster({ visible = true }: { visible?: boolean }) {
     }
     recordingSince.current = Date.now();
     setPhase('recording');
+    if (showHoldHint) retireHoldHint();
     // The click that says "you're recording now".
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Rigid);
   };
@@ -211,10 +241,18 @@ export function ActionCluster({ visible = true }: { visible?: boolean }) {
     setPhase('idle');
     setTail({ kind: 'finishing' });
 
-    finish('general', wantsSave, currentThread?.id).then((saved) => {
+    // Focus is checked again now: it may have lapsed while the app sat open.
+    const focusNow = currentThread ? undefined : focusThread && getFocusThreadId() === focusThread.id ? focusThread : undefined;
+    const saveTo = currentThread ?? focusNow;
+    finish(
+      'general',
+      wantsSave,
+      saveTo?.id,
+      currentThread ? { by: 'user' } : focusNow ? { by: 'focus' } : undefined,
+    ).then((saved) => {
       if (wantsSave && saved) {
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-        showTail({ kind: 'saved', where: currentThread?.title ?? '' });
+        showTail({ kind: 'saved', where: saveTo?.title ?? '' });
       } else if (wantsSave && tooShort) {
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
         showTail({ kind: 'tooShort' });
@@ -312,6 +350,12 @@ export function ActionCluster({ visible = true }: { visible?: boolean }) {
   };
 
   const live = holdPhase === 'recording' || holdPhase === 'cancelling';
+
+  // Lets the tab bar move its dot under this button while it's in use, and
+  // close the menu when a tab is tapped.
+  useEffect(() => {
+    setCaptureActive(expanded || live, () => setExpanded(false));
+  }, [expanded, live]);
   const cancelling = holdPhase === 'cancelling';
   const dimmed = expanded || live || tail !== null;
 
@@ -366,9 +410,9 @@ export function ActionCluster({ visible = true }: { visible?: boolean }) {
         style={[
           styles.dock,
           {
-            // Same bottom inset as FloatingTabBar, then up so the button rises
+            // Same bottom gap as FloatingTabBar, then up so the button rises
             // CENTER_BUTTON_RISE above the bar's top edge.
-            paddingBottom: Math.max(insets.bottom, 16) + NAV_BAR_HEIGHT + CENTER_BUTTON_RISE - FAB_SIZE,
+            paddingBottom: navBottom(insets.bottom) + NAV_BAR_HEIGHT + CENTER_BUTTON_RISE - FAB_SIZE,
           },
         ]}
       >
@@ -378,7 +422,7 @@ export function ActionCluster({ visible = true }: { visible?: boolean }) {
             {expanded && (
               <MenuHint
                 key="hint"
-                threadTitle={currentThread?.title}
+                threadTitle={target?.title}
                 reduceMotion={reduceMotion}
               />
             )}
@@ -410,6 +454,13 @@ export function ActionCluster({ visible = true }: { visible?: boolean }) {
             )}
           </AnimatePresence>
 
+          {/* ── First-run hint: hold is otherwise invisible ── */}
+          <AnimatePresence>
+            {showHoldHint && !expanded && holdPhase === 'idle' && tail === null && pathname === '/' && (
+              <HoldHint key="hold-hint" reduceMotion={reduceMotion} onDismiss={retireHoldHint} />
+            )}
+          </AnimatePresence>
+
           {/* ── Recording ── */}
           <AnimatePresence>
             {(live || tail !== null) && (
@@ -419,7 +470,7 @@ export function ActionCluster({ visible = true }: { visible?: boolean }) {
                 level={level}
                 cancelling={cancelling}
                 tail={tail}
-                threadTitle={currentThread?.title}
+                threadTitle={target?.title}
                 reduceMotion={reduceMotion}
               />
             )}
@@ -444,21 +495,29 @@ export function ActionCluster({ visible = true }: { visible?: boolean }) {
               />
             )}
             <Animated.View pointerEvents="box-none" style={[styles.fabSlotInner, puckStyle]}>
-              {/* The brand's open ring. Still at rest; it turns while recording. */}
+              {/* The brand's open ring. It draws in once, sits still at rest,
+                  turns red when held and spins while recording. */}
               <MotiView
                 pointerEvents="none"
                 style={styles.orbit}
+                from={{ rotate: reduceMotion ? '0deg' : '-120deg', opacity: 0 }}
                 animate={{
                   rotate: live && !reduceMotion ? '360deg' : '0deg',
-                  opacity: expanded ? 0 : live ? 0.9 : 0.55,
+                  opacity: expanded ? 0 : live || holdPhase === 'charging' ? 1 : 0.6,
+                  scale: holdPhase === 'charging' && !reduceMotion ? 1.06 : 1,
                 }}
                 transition={
                   live && !reduceMotion
                     ? { type: 'timing', duration: 3000, easing: Easing.linear, loop: true, repeatReverse: false }
-                    : { type: 'timing', duration: DUR_FAST, easing: EASE_OUT }
+                    : { type: 'spring', damping: 16, stiffness: 160 }
                 }
               >
-                <OpenRing size={ORBIT_SIZE} color={live ? colors.error : colors.accent} weight={0.022} core={false} />
+                <OpenRing
+                  size={ORBIT_SIZE}
+                  color={live || holdPhase === 'charging' ? colors.error : colors.accent}
+                  weight={ORBIT_WEIGHT}
+                  core={false}
+                />
               </MotiView>
 
               <View
@@ -527,6 +586,62 @@ export function ActionCluster({ visible = true }: { visible?: boolean }) {
         </MotiView>
       </View>
     </>
+  );
+}
+
+const HOLD_HINT_KEY = 'mnemo-hint-hold-done';
+
+/**
+ * A bubble pointing at the button: the one place that says it can be held.
+ * Shown on Home until the person records by holding, or closes it.
+ */
+function HoldHint({ reduceMotion, onDismiss }: { reduceMotion: boolean; onDismiss: () => void }) {
+  const colors = useThemeColors();
+  return (
+    <MotiView
+      from={{ opacity: 0, translateY: 6 }}
+      animate={{ opacity: 1, translateY: 0 }}
+      exit={{ opacity: 0, translateY: 4 }}
+      transition={reduceMotion ? REDUCED : { type: 'timing', duration: DUR_BASE, delay: 400, easing: EASE_OUT }}
+      exitTransition={EXIT_QUICK}
+      pointerEvents="box-none"
+      style={[styles.hintWrap, { bottom: FAB_SIZE + 16 }]}
+    >
+      {/* A slow bob draws the eye once, then keeps still under Reduce Motion. */}
+      <MotiView
+        animate={{ translateY: reduceMotion ? 0 : -3 }}
+        transition={
+          reduceMotion
+            ? REDUCED
+            : { type: 'timing', duration: 900, loop: true, repeatReverse: true, easing: EASE_IN_OUT }
+        }
+        style={styles.hintColumn}
+      >
+        <View
+          className="flex-row items-center rounded-full pl-3.5 pr-1.5 h-10"
+          style={[styles.hintBubble, { backgroundColor: colors.fg }]}
+        >
+          <Icon name="mic" size={15} color={colors.bg} stroke={2.2} />
+          <Text className="font-sans-semi text-sm ml-2" style={{ color: colors.bg }}>
+            Hold to record
+          </Text>
+          <Text className="font-sans text-sm" style={{ color: colors.bg, opacity: 0.7 }}>
+            {'  ·  tap for more'}
+          </Text>
+          <Pressable
+            onPress={onDismiss}
+            hitSlop={10}
+            accessibilityRole="button"
+            accessibilityLabel="Dismiss hint"
+            className="w-7 h-7 rounded-full items-center justify-center ml-1.5"
+          >
+            <Icon name="x" size={14} color={colors.bg} stroke={2.2} />
+          </Pressable>
+        </View>
+        {/* Arrow pointing down at the button */}
+        <View style={[styles.hintArrow, { backgroundColor: colors.fg }]} />
+      </MotiView>
+    </MotiView>
   );
 }
 
@@ -985,6 +1100,29 @@ const styles = StyleSheet.create({
   center: {
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  hintWrap: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    alignItems: 'center',
+  },
+  hintColumn: {
+    alignItems: 'center',
+  },
+  hintBubble: {
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowRadius: 10,
+    shadowOpacity: 0.18,
+    elevation: 6,
+  },
+  hintArrow: {
+    width: 12,
+    height: 12,
+    marginTop: -6,
+    transform: [{ rotate: '45deg' }],
+    borderRadius: 2,
   },
   menuHint: {
     position: 'absolute',

@@ -83,6 +83,27 @@ export type Thread = MnemoItem;
 
 export type EntrySource = 'voice' | 'text' | 'share';
 
+/** How values of one measure combine across a thread. */
+export type Rollup = 'sum' | 'latest' | 'average' | 'compare';
+
+/**
+ * One number someone reported: money spent, a distance, their weight, a
+ * price they're comparing. The AI extracts it; the device checks it was
+ * said and does all the adding up (lib/measures.ts).
+ */
+export interface Measure {
+  /** What's tracked, reused across a thread: "spent", "ran", "weight". */
+  metric: string;
+  value: number;
+  /** "EUR", "km", "kg", "pages", "h"; ISO 4217 for money. */
+  unit?: string;
+  /** What this one was: "dinner", "morning run", "Dell XPS". */
+  label?: string;
+  /** A group to break totals down by: "food", "transport". */
+  group?: string;
+  rollup: Rollup;
+}
+
 export type Block =
   | { kind: 'text'; markdown: string }
   | { kind: 'checklist'; items: ChecklistItem[] }
@@ -93,6 +114,7 @@ export type Block =
       unit?: string;
       points: { label: string; value: number }[];
     }
+  | { kind: 'measures'; items: Measure[] }
   | {
       kind: 'link';
       url: string;
@@ -104,9 +126,14 @@ export type Block =
       why?: string;
     };
 
-/** How an entry got into its thread. */
+/**
+ * How an entry got into its thread. `new` is a quick capture that started
+ * its own thread and may still be filed elsewhere; `focus` went to the
+ * thread the person is focused on (see `focusThreadId` in the store).
+ */
 export type Filing =
   | { by: 'user' }
+  | { by: 'focus' }
   | { by: 'auto'; confidence: number }
   | { by: 'suggested'; threadId: string; confidence: number }
   | { by: 'new' };

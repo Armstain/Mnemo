@@ -6,6 +6,8 @@ import { Button, IconButton } from '@/components/ui/Button';
 import { ChecklistEditor } from '@/components/ui/ChecklistEditor';
 import { Icon, type IconName } from '@/components/ui/Icon';
 import { ExternalLink } from '@/components/ExternalLink';
+import { MeasureRows } from '@/components/thread/Measures';
+import { MoveSheet } from '@/components/thread/MoveSheet';
 import { useMnemoStore } from '@/hooks/use-mnemo-store';
 import { useThemeColors, type ThemeColors } from '@/hooks/use-theme';
 import { formatEntryTime } from '@/utils/time';
@@ -121,12 +123,22 @@ function LinkBlock({ block }: { block: Extract<Block, { kind: 'link' }> }) {
  * One capture in a thread's timeline: when and how it arrived, then its
  * blocks. Its menu edits the text or deletes the entry.
  */
-export function EntryCard({ entry, onRetry }: { entry: Entry; onRetry?: () => void }) {
+export function EntryCard({
+  entry,
+  onRetry,
+  onMoved,
+}: {
+  entry: Entry;
+  onRetry?: () => void;
+  /** After a move: the thread the entry now lives in. */
+  onMoved?: (threadId: string) => void;
+}) {
   const colors = useThemeColors();
   const md = useMarkdownStyles();
   const { updateEntry, deleteEntry } = useMnemoStore();
   const [menuOpen, setMenuOpen] = React.useState(false);
   const [editing, setEditing] = React.useState(false);
+  const [moving, setMoving] = React.useState(false);
 
   const textIndex = entry.blocks.findIndex((b) => b.kind === 'text');
   const text = textIndex >= 0 ? (entry.blocks[textIndex] as Extract<Block, { kind: 'text' }>).markdown : '';
@@ -151,6 +163,9 @@ export function EntryCard({ entry, onRetry }: { entry: Entry; onRetry?: () => vo
         <Icon name={source.icon} size={14} color={colors.fgTertiary} />
         <Text className="font-sans-medium text-sm ml-1.5 flex-1" style={{ color: colors.fgTertiary }}>
           {source.label} · {formatEntryTime(entry.createdAt)}
+          {entry.filing.by === 'auto' || entry.filing.by === 'focus' ? (
+            <Text style={{ color: colors.accent }}>{'  ·  Filed for you'}</Text>
+          ) : null}
         </Text>
         {entry.pending ? (
           <Pressable
@@ -191,6 +206,17 @@ export function EntryCard({ entry, onRetry }: { entry: Entry; onRetry?: () => vo
             }}
           >
             Edit
+          </Button>
+          <Button
+            variant="quiet"
+            size="sm"
+            icon="arrowUpRight"
+            onPress={() => {
+              setMenuOpen(false);
+              setMoving(true);
+            }}
+          >
+            Move
           </Button>
           <Button
             variant="danger"
@@ -268,6 +294,7 @@ export function EntryCard({ entry, onRetry }: { entry: Entry; onRetry?: () => vo
             );
           }
           if (block.kind === 'link') return <LinkBlock key={index} block={block} />;
+          if (block.kind === 'measures') return <MeasureRows key={index} items={block.items} />;
           // Charts arrive with smart captures (spec step 3); until then show their title.
           return (
             <Text key={index} className="font-sans-medium text-sm" style={{ color: colors.fgSecondary }}>
@@ -277,6 +304,7 @@ export function EntryCard({ entry, onRetry }: { entry: Entry; onRetry?: () => vo
         })}
 
       </View>
+      <MoveSheet entry={entry} visible={moving} onClose={() => setMoving(false)} onMoved={onMoved} />
     </View>
   );
 }

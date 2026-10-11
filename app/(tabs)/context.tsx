@@ -14,7 +14,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams } from 'expo-router';
 import { File } from 'expo-file-system';
-import { MotiView } from 'moti';
+import { AnimatePresence, MotiView } from 'moti';
 import { formatDistanceToNow } from 'date-fns';
 
 import { NAV_CLEARANCE } from '@/components/ui/FloatingTabBar';
@@ -30,14 +30,16 @@ import { DetailSkeleton } from '@/components/ui/NoteListSkeleton';
 import { DueDatePicker, DueDateLabel } from '@/components/ui/DueDatePicker';
 import { ThreadRing } from '@/components/ui/ThreadRing';
 import { EntryCard } from '@/components/thread/EntryCard';
+import { NumbersSection } from '@/components/thread/Measures';
 import { useMnemoStore } from '@/hooks/use-mnemo-store';
 import { useRebrief } from '@/hooks/use-rebrief';
 import { useUndoToast } from '@/hooks/use-undo-toast';
 import { useThemeColors } from '@/hooks/use-theme';
 import { summarizeContext } from '@/lib/gemini';
 import { structurePendingEntry } from '@/lib/capture';
-import { relatedItems } from '@/lib/search';
+import { relatedThreads, type RelatedThread } from '@/lib/search';
 import { entryText } from '@/lib/threads';
+import { summarizeMeasures } from '@/lib/measures';
 import { useCategories, useStatusConfig } from '@/utils/categories';
 import { EASE_IN_OUT, useEnter } from '@/utils/motion';
 import { freshness } from '@/utils/time';
@@ -65,6 +67,11 @@ export default function ThreadScreen() {
     archiveItem,
     getEntries,
     isLoaded,
+    focusThreadId,
+    setFocusThread,
+    moveEntry,
+    removeThreadNow,
+    snapshot,
   } = store;
   const { showUndoToast } = useUndoToast();
   const rebrief = useRebrief();
@@ -74,6 +81,14 @@ export default function ThreadScreen() {
 
   const thread = items.find((c) => c.id === id);
   const entries = thread ? getEntries(thread.id) : [];
+  const numbers = React.useMemo(() => summarizeMeasures(entries), [entries]);
+  const isFocus = !!thread && focusThreadId === thread.id;
+  // An entry auto-filing thought might belong elsewhere (lib/filing.ts).
+  const suggestion = entries.find((e) => e.filing.by === 'suggested');
+  const suggestedThread =
+    suggestion && suggestion.filing.by === 'suggested'
+      ? items.find((i) => i.id === (suggestion.filing as { threadId: string }).threadId)
+      : undefined;
 
   const [isEditing, setIsEditing] = React.useState(false);
   const [isGenerating, setIsGenerating] = React.useState(false);
@@ -91,14 +106,14 @@ export default function ThreadScreen() {
 
   // Nearest threads by meaning — a supplementary section that stays empty
   // until this thread has a vector, and on any failure.
-  const [related, setRelated] = React.useState<MnemoItem[]>([]);
+  const [related, setRelated] = React.useState<RelatedThread[]>([]);
   React.useEffect(() => {
     if (!thread) {
       setRelated([]);
       return;
     }
     let cancelled = false;
-    relatedItems(thread.id, items).then((found) => {
+    relatedThreads(thread.id, items).then((found) => {
       if (!cancelled) setRelated(found);
     });
     return () => {
@@ -219,6 +234,20 @@ export default function ThreadScreen() {
     }
   };
 
+  /** After an entry moved out: follow it if this thread is now gone. */
+  const followMove = (toThreadId: string) => {
+    if (!snapshot().items.some((i) => i.id === thread.id)) {
+      router.replace(`/(tabs)/context?id=${toThreadId}` as any);
+    }
+  };
+
+  const acceptSuggestion = () => {
+    if (!suggestion || !suggestedThread) return;
+    moveEntry(suggestion.id, suggestedThread.id, { by: 'user' });
+    if (!snapshot().entries.some((e) => e.threadId === thread.id)) removeThreadNow(thread.id);
+    followMove(suggestedThread.id);
+  };
+
   const addUpdate = (mode: 'write' | 'record') =>
     router.push(`/${mode === 'write' ? 'capture' : 'dump'}?threadId=${thread.id}` as any);
 
@@ -329,6 +358,29 @@ export default function ThreadScreen() {
             )}
           </MotiView>
 
+          {!isEditing && suggestion && suggestedThread && (
+            <MotiView {...enter.rise(1)} className="mx-6 mt-5 rounded-lg p-4" style={{ backgroundColor: colors.accentSoft }}>
+              <Text className="font-sans-semi text-body" style={{ color: colors.fg }}>
+                Part of {suggestedThread.title}?
+              </Text>
+              <Text className="font-sans text-sm mt-1" style={{ color: colors.fgSecondary }}>
+                This looks like it continues that thread. Move it there to keep everything together.
+              </Text>
+              <View className="flex-row gap-2 mt-3">
+                <Button variant="primary" size="sm" icon="arrowRight" onPress={acceptSuggestion}>
+                  Move there
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onPress={() => store.updateEntry(suggestion.id, { filing: { by: 'user' } })}
+                >
+                  Keep separate
+                </Button>
+              </View>
+            </MotiView>
+          )}
+
           {!isEditing && (
             <>
               {/* ─── Where you are ──────────────────────── */}
@@ -422,6 +474,54 @@ export default function ThreadScreen() {
                 </View>
               )}
 
+              {/* ─── Focus: quick captures land here ───── */}
+              {(thread.status === 'active' || thread.status === 'paused') && (
+                <View className="px-6 mt-3">
+                  <Pressable
+                    onPress={() => setFocusThread(isFocus ? null : thread.id)}
+                    accessibilityRole="switch"
+                    accessibilityState={{ checked: isFocus }}
+                    className="flex-row items-center rounded-md px-4 py-3 active:opacity-80"
+                    style={{
+                      backgroundColor: isFocus ? colors.accentSoft : colors.surface,
+                      borderWidth: 1,
+                      borderColor: isFocus ? colors.accent : colors.border,
+                    }}
+                  >
+                    <Icon name="pin" size={18} color={isFocus ? colors.accent : colors.fgTertiary} stroke={2} />
+                    <View className="flex-1 mx-3">
+                      <Text className="font-sans-semi text-body" style={{ color: colors.fg }}>
+                        {isFocus ? 'Quick captures go here' : 'Send quick captures here'}
+                      </Text>
+                      <Text className="font-sans text-sm" style={{ color: colors.fgTertiary }}>
+                        {isFocus
+                          ? 'Anything you record or write from Home joins this thread.'
+                          : 'For a trip or project: no need to open it each time.'}
+                      </Text>
+                    </View>
+                    <MotiView
+                      className="w-11 h-6 rounded-full p-0.5"
+                      animate={{ backgroundColor: isFocus ? colors.accent : colors.outline }}
+                      transition={{ type: 'timing', duration: 180 }}
+                    >
+                      <MotiView
+                        className="w-5 h-5 rounded-full"
+                        style={{ backgroundColor: colors.surfaceLowest }}
+                        animate={{ translateX: isFocus ? 20 : 0 }}
+                        transition={{ type: 'spring', damping: 15, stiffness: 260, mass: 0.6 }}
+                      />
+                    </MotiView>
+                  </Pressable>
+                </View>
+              )}
+
+              {/* ─── Numbers it tracks ──────────────────── */}
+              {numbers.length > 0 && (
+                <MotiView {...enter.rise(2)} className="px-6 mt-9">
+                  <NumbersSection summaries={numbers} />
+                </MotiView>
+              )}
+
               {/* ─── Timeline ───────────────────────────── */}
               <MotiView {...enter.rise(2)} className="px-6 mt-9">
                 <Eyebrow>Timeline</Eyebrow>
@@ -436,13 +536,17 @@ export default function ThreadScreen() {
                 </View>
 
                 <View className="gap-3">
-                  {entries.map((entry) => (
-                    <EntryCard
-                      key={entry.id}
-                      entry={entry}
-                      onRetry={entry.pending && !isGenerating ? () => handleRetryProcessing() : undefined}
-                    />
-                  ))}
+                  <AnimatePresence initial={false}>
+                    {entries.map((entry, i) => (
+                      <MotiView key={entry.id} {...enter.row(i)} {...enter.rowExit()}>
+                        <EntryCard
+                          entry={entry}
+                          onRetry={entry.pending && !isGenerating ? () => handleRetryProcessing() : undefined}
+                          onMoved={followMove}
+                        />
+                      </MotiView>
+                    ))}
+                  </AnimatePresence>
                 </View>
               </MotiView>
 
@@ -485,10 +589,11 @@ export default function ThreadScreen() {
                 <View className="px-6 mt-9">
                   <Eyebrow>Related threads</Eyebrow>
                   <ThreadList>
-                    {related.map((r, i) => (
+                    {related.map(({ item: r, reason }, i) => (
                       <ThreadRow
                         key={r.id}
                         item={r}
+                        detail={reason}
                         index={i}
                         last={i === related.length - 1}
                         onPress={() => router.push(`/(tabs)/context?id=${r.id}` as any)}
