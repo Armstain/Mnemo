@@ -31,15 +31,19 @@ const TABS = [
 export const NAV_BAR_HEIGHT = 64;
 /** Diameter of the capture button. */
 export const CAPTURE_BUTTON_SIZE = 56;
+/** Diameter of the brand ring around it; the notch is shaped for this. */
+export const CAPTURE_RING_SIZE = CAPTURE_BUTTON_SIZE + 14;
 const CORNER = 28;
 /** Half the notch's opening along the bar's top edge. */
-const NOTCH_HALF = 54;
+const NOTCH_HALF = 62;
 /** How deep the notch dips below the top edge. */
-const NOTCH_DEPTH = 30;
-/** Space between the button and the bottom of the notch. */
-const NOTCH_GAP = 5;
+const NOTCH_DEPTH = 34;
+/** Space between the ring and the bottom of the notch. */
+const NOTCH_GAP = 4;
+/** Centre of the button, measured down from the bar's top edge (negative: above it). */
+const BUTTON_CENTER_Y = NOTCH_DEPTH - NOTCH_GAP - CAPTURE_RING_SIZE / 2;
 /** How far the capture button rises above the bar's top edge. */
-export const CENTER_BUTTON_RISE = CAPTURE_BUTTON_SIZE - NOTCH_DEPTH + NOTCH_GAP;
+export const CENTER_BUTTON_RISE = CAPTURE_BUTTON_SIZE / 2 - BUTTON_CENTER_Y;
 
 /**
  * Distance from the screen's bottom edge to the bar: clear of the system
@@ -62,7 +66,7 @@ function barPath(w: number, h: number): string {
   const cx = w / 2;
   const x1 = cx - NOTCH_HALF;
   const x2 = cx + NOTCH_HALF;
-  const bowl = CAPTURE_BUTTON_SIZE / 2 + 2;
+  const bowl = CAPTURE_RING_SIZE / 2 + 2;
   const r = CORNER;
   return [
     `M ${r} 0`,

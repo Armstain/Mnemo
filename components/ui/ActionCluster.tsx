@@ -33,11 +33,13 @@ import { DUR_BASE, DUR_FAST, EASE_IN_OUT, EASE_OUT, EXIT_QUICK, REDUCED, SPRING_
 import { formatDuration } from '@/utils/time';
 import {
   CAPTURE_BUTTON_SIZE,
+  CAPTURE_RING_SIZE,
   CENTER_BUTTON_RISE,
   NAV_BAR_HEIGHT,
   navBottom,
 } from '@/components/ui/FloatingTabBar';
 import { setCaptureActive } from '@/hooks/use-capture-active';
+import { OpenRing } from '@/components/ui/ThreadRing';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 // How long a hold must last before it commits to recording. Long enough that
@@ -59,8 +61,10 @@ const TAIL_MS = { saved: 1400, discarded: 900, tooShort: 1600 } as const;
 
 // Main button diameter, and the brand ring drawn around it.
 const FAB_SIZE = CAPTURE_BUTTON_SIZE;
-/** Room around the button for its press and voice halo. */
-const ORBIT_SIZE = FAB_SIZE + 14;
+/** The brand ring around the button; the tab bar's notch is shaped for it. */
+const ORBIT_SIZE = CAPTURE_RING_SIZE;
+/** The ring's stroke as a share of its size: about 3.5px. */
+const ORBIT_WEIGHT = 0.05;
 const BIN_SIZE = 56;
 const FAB_CENTER = FAB_SIZE / 2;
 
@@ -491,6 +495,31 @@ export function ActionCluster({ visible = true }: { visible?: boolean }) {
               />
             )}
             <Animated.View pointerEvents="box-none" style={[styles.fabSlotInner, puckStyle]}>
+              {/* The brand's open ring. It draws in once, sits still at rest,
+                  turns red when held and spins while recording. */}
+              <MotiView
+                pointerEvents="none"
+                style={styles.orbit}
+                from={{ rotate: reduceMotion ? '0deg' : '-120deg', opacity: 0 }}
+                animate={{
+                  rotate: live && !reduceMotion ? '360deg' : '0deg',
+                  opacity: expanded ? 0 : live || holdPhase === 'charging' ? 1 : 0.6,
+                  scale: holdPhase === 'charging' && !reduceMotion ? 1.06 : 1,
+                }}
+                transition={
+                  live && !reduceMotion
+                    ? { type: 'timing', duration: 3000, easing: Easing.linear, loop: true, repeatReverse: false }
+                    : { type: 'spring', damping: 16, stiffness: 160 }
+                }
+              >
+                <OpenRing
+                  size={ORBIT_SIZE}
+                  color={live || holdPhase === 'charging' ? colors.error : colors.accent}
+                  weight={ORBIT_WEIGHT}
+                  core={false}
+                />
+              </MotiView>
+
               <View
                 accessible
                 accessibilityRole="button"
@@ -1034,6 +1063,11 @@ const styles = StyleSheet.create({
     height: ORBIT_SIZE,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  orbit: {
+    position: 'absolute',
+    width: ORBIT_SIZE,
+    height: ORBIT_SIZE,
   },
   halo: {
     position: 'absolute',

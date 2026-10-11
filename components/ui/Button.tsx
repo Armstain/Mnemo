@@ -3,6 +3,7 @@ import { Pressable, Text, View } from 'react-native';
 import * as Haptics from 'expo-haptics';
 
 import { useThemeColors } from '@/hooks/use-theme';
+import { Animated, usePressScale } from '@/hooks/use-press-scale';
 import { Icon, type IconName } from '@/components/ui/Icon';
 
 type ButtonVariant = 'primary' | 'tonal' | 'quiet' | 'ghost' | 'danger';
@@ -49,6 +50,7 @@ export function Button({
   className = '',
 }: ButtonProps) {
   const colors = useThemeColors();
+  const press = usePressScale();
 
   const handlePress = () => {
     if (disabled) return;
@@ -81,23 +83,33 @@ export function Button({
     }
   })();
 
-  const rippleColor = variant === 'primary' || variant === 'danger' ? 'rgba(255,255,255,0.18)' : colors.border;
-
   return (
+    // The Pressable handles layout (callers pass flex-1 and friends); the
+    // pill inside is what springs under the finger.
     <Pressable
       onPress={handlePress}
+      onPressIn={press.onPressIn}
+      onPressOut={press.onPressOut}
       disabled={disabled}
-      android_ripple={disabled ? undefined : { color: rippleColor }}
-      className={`flex-row items-center rounded-full overflow-hidden font-sans-semi ${
-        spread ? 'justify-between' : 'justify-center gap-2'
-      } ${fullWidth ? 'w-full' : ''} ${disabled ? '' : 'active:opacity-90'} ${className}`}
-      style={{
-        height: HEIGHT[size],
-        paddingHorizontal: H_PADDING[size],
-        backgroundColor: background,
-        opacity: disabled ? 0.42 : 1,
-      }}
+      accessibilityRole="button"
+      className={`${fullWidth ? 'w-full' : ''} ${className}`}
+      style={{ opacity: disabled ? 0.42 : 1 }}
     >
+      <Animated.View
+        style={[
+          {
+            flexDirection: 'row',
+            alignItems: 'center',
+            justifyContent: spread ? 'space-between' : 'center',
+            gap: spread ? 0 : 8,
+            height: HEIGHT[size],
+            paddingHorizontal: H_PADDING[size],
+            backgroundColor: background,
+            borderRadius: 999,
+          },
+          press.style,
+        ]}
+      >
       {icon ? <Icon name={icon} size={ICON_SIZE[size]} stroke={2} color={textColor} /> : null}
       <Text className={`font-sans-semi ${TEXT_CLASS[size]}`} style={{ color: textColor }} numberOfLines={1}>
         {children}
@@ -107,6 +119,7 @@ export function Button({
           <Icon name={trailingIcon} size={ICON_SIZE[size] - 2} stroke={2} color={textColor} />
         </View>
       ) : null}
+      </Animated.View>
     </Pressable>
   );
 }
@@ -127,6 +140,7 @@ interface IconButtonProps {
 /** Circular control for toolbar actions. */
 export function IconButton({ icon, label, variant = 'default', size = 44, disabled = false, onPress }: IconButtonProps) {
   const colors = useThemeColors();
+  const press = usePressScale(0.88);
 
   const handlePress = () => {
     if (disabled) return;
@@ -149,13 +163,29 @@ export function IconButton({ icon, label, variant = 'default', size = 44, disabl
   return (
     <Pressable
       onPress={handlePress}
+      onPressIn={press.onPressIn}
+      onPressOut={press.onPressOut}
       disabled={disabled}
+      accessibilityRole="button"
       accessibilityLabel={label}
       hitSlop={4}
-      className="items-center justify-center rounded-full active:opacity-80"
-      style={{ width: size, height: size, backgroundColor: background, opacity: disabled ? 0.42 : 1 }}
+      style={{ opacity: disabled ? 0.42 : 1 }}
     >
-      <Icon name={icon} size={Math.round(size * 0.42)} color={color} />
+      <Animated.View
+        style={[
+          {
+            width: size,
+            height: size,
+            borderRadius: size / 2,
+            alignItems: 'center',
+            justifyContent: 'center',
+            backgroundColor: background,
+          },
+          press.style,
+        ]}
+      >
+        <Icon name={icon} size={Math.round(size * 0.42)} color={color} />
+      </Animated.View>
     </Pressable>
   );
 }

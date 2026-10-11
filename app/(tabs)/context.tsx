@@ -14,7 +14,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams } from 'expo-router';
 import { File } from 'expo-file-system';
-import { MotiView } from 'moti';
+import { AnimatePresence, MotiView } from 'moti';
 import { formatDistanceToNow } from 'date-fns';
 
 import { NAV_CLEARANCE } from '@/components/ui/FloatingTabBar';
@@ -359,7 +359,7 @@ export default function ThreadScreen() {
           </MotiView>
 
           {!isEditing && suggestion && suggestedThread && (
-            <View className="mx-6 mt-5 rounded-lg p-4" style={{ backgroundColor: colors.accentSoft }}>
+            <MotiView {...enter.rise(1)} className="mx-6 mt-5 rounded-lg p-4" style={{ backgroundColor: colors.accentSoft }}>
               <Text className="font-sans-semi text-body" style={{ color: colors.fg }}>
                 Part of {suggestedThread.title}?
               </Text>
@@ -378,7 +378,7 @@ export default function ThreadScreen() {
                   Keep separate
                 </Button>
               </View>
-            </View>
+            </MotiView>
           )}
 
           {!isEditing && (
@@ -499,12 +499,18 @@ export default function ThreadScreen() {
                           : 'For a trip or project: no need to open it each time.'}
                       </Text>
                     </View>
-                    <View
+                    <MotiView
                       className="w-11 h-6 rounded-full p-0.5"
-                      style={{ backgroundColor: isFocus ? colors.accent : colors.outline, alignItems: isFocus ? 'flex-end' : 'flex-start' }}
+                      animate={{ backgroundColor: isFocus ? colors.accent : colors.outline }}
+                      transition={{ type: 'timing', duration: 180 }}
                     >
-                      <View className="w-5 h-5 rounded-full" style={{ backgroundColor: colors.surfaceLowest }} />
-                    </View>
+                      <MotiView
+                        className="w-5 h-5 rounded-full"
+                        style={{ backgroundColor: colors.surfaceLowest }}
+                        animate={{ translateX: isFocus ? 20 : 0 }}
+                        transition={{ type: 'spring', damping: 15, stiffness: 260, mass: 0.6 }}
+                      />
+                    </MotiView>
                   </Pressable>
                 </View>
               )}
@@ -530,14 +536,17 @@ export default function ThreadScreen() {
                 </View>
 
                 <View className="gap-3">
-                  {entries.map((entry) => (
-                    <EntryCard
-                      key={entry.id}
-                      entry={entry}
-                      onRetry={entry.pending && !isGenerating ? () => handleRetryProcessing() : undefined}
-                      onMoved={followMove}
-                    />
-                  ))}
+                  <AnimatePresence initial={false}>
+                    {entries.map((entry, i) => (
+                      <MotiView key={entry.id} {...enter.row(i)} {...enter.rowExit()}>
+                        <EntryCard
+                          entry={entry}
+                          onRetry={entry.pending && !isGenerating ? () => handleRetryProcessing() : undefined}
+                          onMoved={followMove}
+                        />
+                      </MotiView>
+                    ))}
+                  </AnimatePresence>
                 </View>
               </MotiView>
 

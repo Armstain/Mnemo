@@ -1,6 +1,7 @@
 import React from 'react';
 import { Pressable, Text, View } from 'react-native';
 import { MotiView } from 'moti';
+import { Animated, usePressScale } from '@/hooks/use-press-scale';
 
 import { ThreadRing } from '@/components/ui/ThreadRing';
 import { useThemeColors } from '@/hooks/use-theme';
@@ -56,17 +57,20 @@ export function ThreadRow({ item, onPress, detail, trailing, trailingTone, last 
   const CategoryIcon = category.icon;
 
   const statusPrefix = item.status === 'active' ? '' : `${statusConfig[item.status].label} · `;
+  const press = usePressScale(0.985);
   const secondLine = detail ?? `${statusPrefix}${threadPreview(item)}`.replace(/ · $/, '');
 
   return (
     <MotiView {...enter.row(index)} {...enter.rowExit()}>
       <Pressable
         onPress={onPress}
+        onPressIn={press.onPressIn}
+        onPressOut={press.onPressOut}
         accessibilityRole="button"
         accessibilityLabel={`${item.title}. ${secondLine}`}
         style={({ pressed }) => ({ backgroundColor: pressed ? colors.surfaceHigh : 'transparent' })}
       >
-        <View className="flex-row items-center px-4 py-3.5">
+        <Animated.View style={[{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 14 }, press.style]}>
           <View className="mr-3.5">
             <ThreadRing size={40} progress={freshness(item.updatedAt)} color={category.color} trackColor={category.bgTint}>
               <CategoryIcon size={15} color={category.color} strokeWidth={2} />
@@ -85,7 +89,7 @@ export function ThreadRow({ item, onPress, detail, trailing, trailingTone, last 
           <Text className="font-sans-medium text-sm" style={{ color: trailingTone ?? colors.fgTertiary }}>
             {trailing ?? formatCompactDistance(item.updatedAt)}
           </Text>
-        </View>
+        </Animated.View>
         {!last && <View style={{ marginLeft: 70, marginRight: 16, height: 1, backgroundColor: colors.border }} />}
       </Pressable>
     </MotiView>

@@ -1,6 +1,9 @@
 import React from 'react';
 import { Text, View } from 'react-native';
 import Svg, { Circle, Polyline } from 'react-native-svg';
+import { MotiView } from 'moti';
+
+import { useCountUp } from '@/hooks/use-count-up';
 
 import { Eyebrow } from '@/components/ui/Eyebrow';
 import { useThemeColors, type ThemeColors } from '@/hooks/use-theme';
@@ -91,7 +94,13 @@ function BarRow({ label, value, share, color, unit, note }: { label: string; val
         </Text>
       </View>
       <View className="h-1.5 rounded-full overflow-hidden" style={{ backgroundColor: colors.surfaceHigh }}>
-        <View className="h-full rounded-full" style={{ width: `${Math.max(3, share * 100)}%`, backgroundColor: color }} />
+        {/* Grows in from the left: a transform, so it stays on the UI thread. */}
+        <MotiView
+          from={{ scaleX: 0 }}
+          animate={{ scaleX: Math.max(0.03, share) }}
+          transition={{ type: 'spring', damping: 20, stiffness: 140 }}
+          style={{ height: '100%', width: '100%', borderRadius: 999, backgroundColor: color, transformOrigin: 'left' } as any}
+        />
       </View>
     </View>
   );
@@ -109,12 +118,30 @@ export function MetricCard({ summary }: { summary: MetricSummary }) {
   const values = summary.points.map((p) => p.value);
   const n = summary.points.length;
 
+  // The headline figure counts up to its value rather than appearing.
+  const headlineTarget =
+    summary.rollup === 'sum'
+      ? summary.total ?? 0
+      : summary.rollup === 'latest'
+        ? summary.latest ?? 0
+        : summary.rollup === 'average'
+          ? summary.average ?? 0
+          : summary.options?.[0]?.value ?? 0;
+  const counted = useCountUp(headlineTarget);
+  const whole = Math.abs(headlineTarget % 1) < 0.005;
+  const shown =
+    Math.abs(counted - headlineTarget) < 0.005
+      ? headlineTarget
+      : whole
+        ? Math.round(counted)
+        : Math.round(counted * 100) / 100;
+
   let headline = '';
   let detail = '';
   let body: React.ReactNode = null;
 
   if (summary.rollup === 'sum') {
-    headline = formatValue(summary.total ?? 0, unit);
+    headline = formatValue(shown, unit);
     detail = [
       `${n} ${n === 1 ? 'item' : 'items'}`,
       summary.days && summary.days > 1 ? `${summary.days} days` : '',
@@ -128,11 +155,17 @@ export function MetricCard({ summary }: { summary: MetricSummary }) {
       body = (
         <View className="mt-4">
           {/* Where it went, at a glance */}
-          <View className="flex-row h-2.5 rounded-full overflow-hidden mb-3" style={{ backgroundColor: colors.surfaceHigh }}>
+          <MotiView
+            from={{ scaleX: 0 }}
+            animate={{ scaleX: 1 }}
+            transition={{ type: 'spring', damping: 22, stiffness: 120 }}
+            className="flex-row h-2.5 rounded-full overflow-hidden mb-3"
+            style={{ backgroundColor: colors.surfaceHigh, transformOrigin: 'left' } as any}
+          >
             {groups.map((g, i) => (
               <View key={g.group} style={{ flex: g.total / total, backgroundColor: palette[i % palette.length] }} />
             ))}
-          </View>
+          </MotiView>
           {groups.map((g, i) => (
             <BarRow
               key={g.group}
@@ -147,20 +180,20 @@ export function MetricCard({ summary }: { summary: MetricSummary }) {
       );
     }
   } else if (summary.rollup === 'latest') {
-    headline = formatValue(summary.latest ?? 0, unit);
+    headline = formatValue(shown, unit);
     detail =
       summary.change !== undefined
         ? `${signed(summary.change, unit)} since the first reading (${formatValue(summary.first ?? 0, unit)})`
         : 'First reading';
     body = n > 1 ? <View className="mt-3"><Sparkline values={values} color={colors.accent} width={260} height={44} /></View> : null;
   } else if (summary.rollup === 'average') {
-    headline = formatValue(summary.average ?? 0, unit);
+    headline = formatValue(shown, unit);
     detail = `average of ${n} · ${formatValue(summary.min ?? 0, unit)} to ${formatValue(summary.max ?? 0, unit)}`;
     body = n > 1 ? <View className="mt-3"><Sparkline values={values} color={colors.accent} width={260} height={44} /></View> : null;
   } else {
     const options = summary.options ?? [];
     const max = Math.max(...options.map((o) => o.value), 1);
-    headline = options.length > 0 ? formatValue(options[0].value, unit) : '';
+    headline = options.length > 0 ? formatValue(shown, unit) : '';
     detail = options.length > 1 ? `lowest of ${options.length} options` : 'one option so far';
     body = (
       <View className="mt-3">
