@@ -145,6 +145,8 @@ export interface ThreadCandidate {
   focused?: boolean;
   /** What it already tracks, e.g. "spent (EUR, sum)". */
   tracks?: string[];
+  /** Whole days since anything was added. */
+  idleDays?: number;
 }
 
 export interface CaptureContext {
@@ -191,11 +193,18 @@ function trackRules(ctx?: CaptureContext): string {
   return tracks.length > 0 ? `Already tracked (reuse these names and units): ${tracks.join('; ')}.` : '';
 }
 
+function idleText(days?: number): string {
+  if (!days) return 'today';
+  if (days === 1) return 'yesterday';
+  if (days < 14) return `${days} days ago`;
+  return `${Math.round(days / 7)} weeks ago`;
+}
+
 function threadRules(ctx?: CaptureContext): string {
   if (!ctx || ctx.candidates.length === 0) return '';
   const list = ctx.candidates
     .map((c) => {
-      const parts = [`id=${c.id}`, `"${c.title}"`, c.category];
+      const parts = [`id=${c.id}`, `"${c.title}"`, c.category, `last update: ${idleText(c.idleDays)}`];
       if (c.nextStep) parts.push(`next: ${c.nextStep}`);
       if (c.latest) parts.push(`latest: ${c.latest}`);
       if (c.tracks?.length) parts.push(`tracks: ${c.tracks.join(', ')}`);
@@ -204,13 +213,14 @@ function threadRules(ctx?: CaptureContext): string {
     .join('\n');
   return `
 THREAD ("thread"):
-The person has these ongoing threads in their life:
+Today is ${new Date().toDateString()}. The person has these ongoing threads in their life:
 ${list}
 
 Decide whether this capture continues one of them: the same trip, task, project, purchase or person, not merely a similar topic.
 - "match": "existing" with that thread's exact id, or "new" with threadId "".
 - A quick update, expense or reading made during a trip, project or routine belongs to it when it plausibly happened as part of it.
 - If a thread is FOCUSED, choose it for anything plausibly related to it; answer "new" only when the capture is clearly about something else.
+- Time matters. A trip, event or project with no update for weeks is probably over: a routine update (an expense, a reading, an errand) now belongs to a new thread, unless the capture names that thread or clearly refers back to it.
 - "confidence": 0 to 1, how sure you are it belongs there (not how similar the words are).
 - "reason": one short line they will read, e.g. "Sounds like part of your Lisbon trip".`;
 }

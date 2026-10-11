@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 
 import { useMnemoStore } from '@/hooks/use-mnemo-store';
 import type { Filing, MnemoItem } from '@/types/mnemo';
@@ -9,8 +9,13 @@ import type { Filing, MnemoItem } from '@/types/mnemo';
  * person taps "Keep separate" for this one capture; then a new thread.
  */
 export function useCaptureTarget(threadIdParam?: string | string[]) {
-  const { items, focusThreadId } = useMnemoStore();
+  const { items, focusThreadId, getFocusThreadId } = useMnemoStore();
   const [separate, setSeparate] = useState(false);
+
+  // Lets an idle focus lapse before this screen offers it.
+  useEffect(() => {
+    getFocusThreadId();
+  }, [getFocusThreadId]);
 
   const explicitId = typeof threadIdParam === 'string' && threadIdParam ? threadIdParam : undefined;
   const explicit = explicitId ? items.find((i) => i.id === explicitId) : undefined;

@@ -92,7 +92,7 @@ export function ActionCluster({ visible = true }: { visible?: boolean }) {
 
   const pathname = usePathname();
   const { id: routeId } = useGlobalSearchParams<{ id?: string }>();
-  const { items, focusThreadId } = useMnemoStore();
+  const { items, focusThreadId, getFocusThreadId } = useMnemoStore();
   const currentThread =
     pathname.includes('context') && typeof routeId === 'string'
       ? items.find((i) => i.id === routeId)
@@ -216,15 +216,18 @@ export function ActionCluster({ visible = true }: { visible?: boolean }) {
     setPhase('idle');
     setTail({ kind: 'finishing' });
 
+    // Focus is checked again now: it may have lapsed while the app sat open.
+    const focusNow = currentThread ? undefined : focusThread && getFocusThreadId() === focusThread.id ? focusThread : undefined;
+    const saveTo = currentThread ?? focusNow;
     finish(
       'general',
       wantsSave,
-      target?.id,
-      currentThread ? { by: 'user' } : focusThread ? { by: 'focus' } : undefined,
+      saveTo?.id,
+      currentThread ? { by: 'user' } : focusNow ? { by: 'focus' } : undefined,
     ).then((saved) => {
       if (wantsSave && saved) {
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-        showTail({ kind: 'saved', where: target?.title ?? '' });
+        showTail({ kind: 'saved', where: saveTo?.title ?? '' });
       } else if (wantsSave && tooShort) {
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
         showTail({ kind: 'tooShort' });

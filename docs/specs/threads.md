@@ -197,7 +197,18 @@ For a trip or a project, a thread can be set to *Send quick captures here*
   own (toast: *Kept apart from Lisbon trip* · Undo); a confident match to a
   different thread becomes a suggestion.
 - Home shows *Capturing into Lisbon trip* · Stop. Completing, archiving or
-  deleting the thread turns focus off.
+  deleting the thread turns focus off, and so do 3 days with nothing new in
+  it (checked on launch, on returning to the app, and at each capture), so a
+  trip you came back from stops collecting captures.
+
+### Time
+
+Each candidate is sent with when it was last updated, plus today's date; the
+prompt says a trip or project quiet for weeks is probably over. On the
+device, a thread quiet for more than 14 days is never filed into
+automatically, only suggested. Voice captures only see threads active in the
+last 14 days (plus the focus); typed ones can also reach older threads by
+keyword, which is where that cap matters.
 
 ---
 
@@ -219,8 +230,10 @@ over time. Each entry can carry a `measures` block:
 
 - The model extracts; the device checks and does all the maths
   (`lib/measures.ts`). A value must appear in what the person said or typed
-  (digits in any script, `1,200`, `12,50`, `5k`, English number words), so a
-  total or conversion the model made up is dropped.
+  (digits in any script, `1,200`, `12,50`, `5k`, and number words in
+  English, Bangla and Banglish: *der hajar*, *দেড় হাজার*, *পনেরোশো*,
+  *সাড়ে তিন হাজার*, *2 lakh*), so a total or conversion the model made up is
+  dropped.
 - The model is told what the thread already tracks (`spent (EUR, sum)`) so
   names and units stay consistent. Readings in another unit or currency are
   listed separately; nothing is converted.

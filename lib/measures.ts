@@ -35,39 +35,195 @@ function toAsciiDigits(text: string): string {
   });
 }
 
-const SMALL: Record<string, number> = {
-  zero: 0, one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9,
-  ten: 10, eleven: 11, twelve: 12, thirteen: 13, fourteen: 14, fifteen: 15, sixteen: 16,
-  seventeen: 17, eighteen: 18, nineteen: 19, twenty: 20, thirty: 30, forty: 40, fifty: 50,
-  sixty: 60, seventy: 70, eighty: 80, ninety: 90, half: 0.5, dozen: 12,
-};
-const SCALE: Record<string, number> = { thousand: 1000, million: 1_000_000 };
+// ─── Number words: English, Bangla and Banglish ────────────────
 
-/** English number words ("forty five", "two hundred") as values. */
+type Word =
+  | { kind: 'unit'; value: number }
+  | { kind: 'hundred' }
+  | { kind: 'scale'; value: number }
+  /** Adjusts the next unit: সাড়ে তিন = 3.5, পৌনে দুই = 1.75. */
+  | { kind: 'offset'; value: number }
+  | { kind: 'and' };
+
+const WORDS = new Map<string, Word>();
+const unit = (value: number, ...words: string[]) => words.forEach((w) => WORDS.set(w, { kind: 'unit', value }));
+const scale = (value: number, ...words: string[]) => words.forEach((w) => WORDS.set(w, { kind: 'scale', value }));
+const offset = (value: number, ...words: string[]) => words.forEach((w) => WORDS.set(w, { kind: 'offset', value }));
+
+// English
+'zero one two three four five six seven eight nine ten eleven twelve thirteen fourteen fifteen sixteen seventeen eighteen nineteen'
+  .split(' ')
+  .forEach((w, i) => unit(i, w));
+'twenty thirty forty fifty sixty seventy eighty ninety'.split(' ').forEach((w, i) => unit((i + 2) * 10, w));
+unit(0.5, 'half');
+unit(12, 'dozen');
+WORDS.set('hundred', { kind: 'hundred' });
+WORDS.set('and', { kind: 'and' });
+scale(1000, 'thousand');
+scale(1_000_000, 'million');
+
+// Bangla: every number from 1 to 99 is its own word. Spelling variants
+// separated by "|".
+const BANGLA_1_TO_99 = [
+  'এক', 'দুই|দুই|দু', 'তিন', 'চার', 'পাঁচ|পাচ', 'ছয়|ছয়|ছয়|ছ', 'সাত', 'আট', 'নয়|নয়|নয়', 'দশ',
+  'এগারো|এগার', 'বারো|বার', 'তেরো|তের', 'চৌদ্দ|চোদ্দ', 'পনেরো|পনের', 'ষোলো|ষোল', 'সতেরো|সতের', 'আঠারো|আঠার', 'উনিশ|ঊনিশ', 'বিশ|কুড়ি',
+  'একুশ', 'বাইশ', 'তেইশ', 'চব্বিশ', 'পঁচিশ|পচিশ', 'ছাব্বিশ', 'সাতাশ', 'আটাশ', 'ঊনত্রিশ|উনত্রিশ', 'ত্রিশ|তিরিশ',
+  'একত্রিশ', 'বত্রিশ', 'তেত্রিশ', 'চৌত্রিশ', 'পঁয়ত্রিশ', 'ছত্রিশ', 'সাঁইত্রিশ', 'আটত্রিশ', 'ঊনচল্লিশ|উনচল্লিশ', 'চল্লিশ',
+  'একচল্লিশ', 'বিয়াল্লিশ', 'তেতাল্লিশ', 'চুয়াল্লিশ', 'পঁয়তাল্লিশ', 'ছেচল্লিশ', 'সাতচল্লিশ', 'আটচল্লিশ', 'ঊনপঞ্চাশ|উনপঞ্চাশ', 'পঞ্চাশ',
+  'একান্ন', 'বাহান্ন|বায়ান্ন', 'তিপ্পান্ন', 'চুয়ান্ন', 'পঞ্চান্ন', 'ছাপ্পান্ন', 'সাতান্ন', 'আটান্ন', 'ঊনষাট|উনষাট', 'ষাট',
+  'একষট্টি', 'বাষট্টি', 'তেষট্টি', 'চৌষট্টি', 'পঁয়ষট্টি', 'ছেষট্টি', 'সাতষট্টি', 'আটষট্টি', 'ঊনসত্তর|উনসত্তর', 'সত্তর',
+  'একাত্তর', 'বাহাত্তর', 'তিয়াত্তর', 'চুয়াত্তর', 'পঁচাত্তর', 'ছিয়াত্তর', 'সাতাত্তর', 'আটাত্তর', 'ঊনআশি|উনআশি', 'আশি',
+  'একাশি', 'বিরাশি', 'তিরাশি', 'চুরাশি', 'পঁচাশি', 'ছিয়াশি', 'সাতাশি', 'অষ্টাশি', 'ঊননব্বই|উননব্বই', 'নব্বই',
+  'একানব্বই', 'বিরানব্বই', 'তিরানব্বই', 'চুরানব্বই', 'পঁচানব্বই', 'ছিয়ানব্বই', 'সাতানব্বই', 'আটানব্বই', 'নিরানব্বই',
+];
+BANGLA_1_TO_99.forEach((variants, i) => unit(i + 1, ...variants.split('|').map(nfc)));
+unit(1.5, nfc('দেড়'));
+unit(2.5, nfc('আড়াই'));
+offset(0.5, nfc('সাড়ে'));
+offset(-0.25, nfc('পৌনে'));
+offset(0.25, nfc('সোয়া'));
+['শো', 'শ', 'শত'].forEach((w) => WORDS.set(nfc(w), { kind: 'hundred' }));
+scale(1000, nfc('হাজার'));
+scale(100_000, nfc('লাখ'), nfc('লক্ষ'));
+scale(10_000_000, nfc('কোটি'));
+
+// Banglish (Bangla typed in Latin letters). Only spellings that don't
+// collide with common English words ("at", "so", "share" are left out).
+unit(1, 'ek');
+unit(2, 'dui', 'du');
+unit(3, 'tin', 'teen');
+unit(4, 'char', 'chaar');
+unit(5, 'pach', 'panch', 'paach', 'paanch');
+unit(6, 'choy', 'chhoy');
+unit(7, 'sat', 'saat');
+unit(8, 'aat');
+unit(9, 'noy', 'nou');
+unit(10, 'dosh', 'dos');
+unit(11, 'egaro');
+unit(12, 'baro');
+unit(13, 'tero');
+unit(14, 'choddo', 'chouddo');
+unit(15, 'ponero', 'pnero', 'ponro');
+unit(16, 'sholo', 'solo');
+unit(17, 'shotero', 'sotero');
+unit(18, 'atharo', 'aatharo');
+unit(19, 'unish');
+unit(20, 'bish', 'kuri');
+unit(25, 'pochish', 'ponchish');
+unit(30, 'tirish', 'trish');
+unit(40, 'chollish');
+unit(50, 'ponchash', 'panchash');
+unit(70, 'sottor', 'shottor');
+unit(80, 'ashi');
+unit(90, 'nobboi', 'nabboi');
+unit(1.5, 'der', 'dedh', 'derh');
+unit(2.5, 'arai', 'arhai', 'adai');
+offset(0.5, 'sare', 'saare', 'shaare', 'sarhe');
+offset(-0.25, 'poune', 'pone');
+offset(0.25, 'shoa', 'sowa', 'soa');
+['sho', 'shoo', 'shoto', 'hundred'].forEach((w) => WORDS.set(w, { kind: 'hundred' }));
+scale(1000, 'hajar', 'hazar', 'hajaar', 'hazaar');
+scale(100_000, 'lakh', 'lac', 'lak', 'lakhs');
+scale(10_000_000, 'koti', 'crore', 'cr');
+
+function nfc(text: string): string {
+  try {
+    return text.normalize('NFC');
+  } catch {
+    return text;
+  }
+}
+
+// Endings a number word can carry in a sentence: "হাজারের", "hajarer".
+const SUFFIXES = ['ের', 'এর', 'টা', 'টি', 'খানেক', 'র', 'ে', 'er', 'ta', 'r', 'e'].map(nfc);
+
+/** A token as number words: itself, minus an ending, or split ("পনেরোশো", "derhajar"). */
+function lookup(token: string): Word[] | null {
+  const direct = WORDS.get(token);
+  if (direct) return [direct];
+  for (const suffix of SUFFIXES) {
+    if (token.length > suffix.length + 1 && token.endsWith(suffix)) {
+      const found = WORDS.get(token.slice(0, -suffix.length));
+      if (found) return [found];
+    }
+  }
+  for (let i = 1; i < token.length; i++) {
+    const left = WORDS.get(token.slice(0, i));
+    if (!left || (left.kind !== 'unit' && left.kind !== 'offset')) continue;
+    const rest = lookup(token.slice(i));
+    if (rest && rest.every((w) => w.kind === 'hundred' || w.kind === 'scale')) return [left, ...rest];
+  }
+  return null;
+}
+
+/**
+ * Numbers said in words, in any mix of English, Bangla and Banglish, and
+ * digits followed by a scale word ("১৫ হাজার", "2 lakh", "der hajar").
+ */
 function wordNumbers(text: string): number[] {
   const found: number[] = [];
-  let current = 0;
   let total = 0;
+  let current = 0;
+  let pending = 0;
   let inNumber = false;
+  let lastUnit: number | null = null;
+  let lastWasDigits = false;
+
   const flush = () => {
     if (inNumber) found.push(total + current);
-    current = 0;
     total = 0;
+    current = 0;
+    pending = 0;
     inNumber = false;
+    lastUnit = null;
+    lastWasDigits = false;
   };
-  for (const word of text.toLowerCase().split(/[^a-z]+/)) {
-    if (word in SMALL) {
-      current += SMALL[word];
+
+  const tokens = nfc(toAsciiDigits(text).toLowerCase())
+    .split(/[\s,;:!?()"'“”‘’।|/\\–—-]+/)
+    .flatMap((t) => t.match(/\d+(?:\.\d+)?|[^\d]+/g) ?? []);
+
+  for (const token of tokens) {
+    if (/^\d/.test(token)) {
+      // A new figure always starts a new number ("1 200" isn't 201).
+      if (inNumber && (lastUnit !== null || lastWasDigits)) flush();
+      current += parseFloat(token) + pending;
+      pending = 0;
       inNumber = true;
-    } else if (word === 'hundred' && inNumber) {
-      current *= 100;
-    } else if (word in SCALE && inNumber) {
-      total += current * SCALE[word];
-      current = 0;
-    } else if (word === 'and' && inNumber) {
-      // "one hundred and twenty"
-    } else {
+      lastUnit = null;
+      lastWasDigits = true;
+      continue;
+    }
+    const words = lookup(token);
+    if (!words) {
       flush();
+      continue;
+    }
+    for (const word of words) {
+      if (word.kind === 'unit') {
+        // "twenty five" adds up; two units in any other order are two numbers.
+        const joins = lastUnit !== null && lastUnit >= 20 && lastUnit % 10 === 0 && word.value < 10;
+        if (inNumber && (lastWasDigits || (lastUnit !== null && !joins))) flush();
+        current += word.value + pending;
+        pending = 0;
+        inNumber = true;
+        lastUnit = word.value;
+        lastWasDigits = false;
+      } else if (word.kind === 'hundred') {
+        if (inNumber) current = (current || 1) * 100;
+        lastUnit = null;
+        lastWasDigits = false;
+      } else if (word.kind === 'scale') {
+        total += (inNumber ? current || 1 : 1) * word.value;
+        current = 0;
+        inNumber = true;
+        lastUnit = null;
+        lastWasDigits = false;
+      } else if (word.kind === 'offset') {
+        if (inNumber) flush();
+        pending = word.value;
+      }
+      // 'and' just continues the number: "one hundred and twenty".
     }
   }
   flush();
@@ -321,15 +477,19 @@ export function trackedMetrics(entries: Entry[], limit = 5): string[] {
 export function formatValue(value: number, unit?: string): string {
   const whole = Math.abs(value % 1) < 0.005;
   if (isCurrency(unit)) {
-    try {
-      return new Intl.NumberFormat(undefined, {
-        style: 'currency',
-        currency: unit,
-        minimumFractionDigits: whole ? 0 : 2,
-        maximumFractionDigits: whole ? 0 : 2,
-      }).format(value);
-    } catch {
-      // No Intl support for this code: fall through to "40 EUR".
+    // "৳1,500" rather than "BDT 1,500"; older Intl builds lack narrowSymbol.
+    for (const currencyDisplay of ['narrowSymbol', 'symbol'] as const) {
+      try {
+        return new Intl.NumberFormat(undefined, {
+          style: 'currency',
+          currency: unit,
+          currencyDisplay,
+          minimumFractionDigits: whole ? 0 : 2,
+          maximumFractionDigits: whole ? 0 : 2,
+        }).format(value);
+      } catch {
+        // Try the next display, then fall through to "40 EUR".
+      }
     }
   }
   const number = whole ? String(Math.round(value)) : String(round2(value));

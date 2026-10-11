@@ -15,9 +15,37 @@ export const SUGGEST_CONFIDENCE = 0.5;
 /** A focused thread only lets go of a capture the model is this sure about. */
 const FOCUS_RELEASE_CONFIDENCE = 0.8;
 
+const DAY_MS = 24 * 60 * 60 * 1000;
 const MAX_CANDIDATES = 12;
-const RECENT_MS = 14 * 24 * 60 * 60 * 1000;
+const RECENT_MS = 14 * DAY_MS;
 const SNIPPET_CHARS = 140;
+/** A thread quiet this long is never filed into automatically, only suggested. */
+export const STALE_DAYS = 14;
+/** Focus lapses after this long with nothing new in the thread. */
+export const FOCUS_IDLE_MS = 3 * DAY_MS;
+
+/** When a thread last got an entry (or was otherwise updated). */
+function lastActivity(thread: MnemoItem, entries: Entry[]): number {
+  let latest = thread.updatedAt;
+  for (const e of entries) if (e.threadId === thread.id && e.createdAt > latest) latest = e.createdAt;
+  return latest;
+}
+
+/**
+ * True once a focus thread has gone `FOCUS_IDLE_MS` with nothing new since
+ * focus was turned on (or since its last entry, whichever is later).
+ */
+export function focusIsIdle(input: {
+  threadId: string;
+  since: number;
+  entries: Entry[];
+  now?: number;
+}): boolean {
+  const now = input.now ?? Date.now();
+  let last = input.since;
+  for (const e of input.entries) if (e.threadId === input.threadId && e.createdAt > last) last = e.createdAt;
+  return now - last > FOCUS_IDLE_MS;
+}
 
 function snippet(text: string): string {
   const flat = text.replace(/\s+/g, ' ').trim();
@@ -54,7 +82,7 @@ export function gatherCandidates(input: {
   }
   for (const t of [...open].sort((a, b) => b.updatedAt - a.updatedAt)) {
     if (picked.size >= MAX_CANDIDATES) break;
-    if (now - t.updatedAt <= RECENT_MS) picked.set(t.id, t);
+    if (now - lastActivity(t, input.entries) <= RECENT_MS) picked.set(t.id, t);
   }
 
   return [...picked.values()].map((t) => {
@@ -62,6 +90,7 @@ export function gatherCandidates(input: {
     const latest = newestFirst(threadEntries)[0];
     const tracks = trackedMetrics(threadEntries, 3);
     return {
+      idleDays: Math.max(0, Math.floor((now - lastActivity(t, input.entries)) / DAY_MS)),
       id: t.id,
       title: t.title,
       category: t.category,
@@ -114,7 +143,12 @@ export function decideFiling(input: {
 
   if (input.filedBy !== 'new' || !known) return { action: 'stay' };
 
-  if (confidence >= ATTACH_CONFIDENCE) {
+  // A thread that's been quiet for weeks (last month's trip) can be
+  // suggested, never filed into without asking.
+  const chosen = candidates.find((c) => c.id === match.threadId);
+  const stale = (chosen?.idleDays ?? 0) > STALE_DAYS;
+
+  if (confidence >= ATTACH_CONFIDENCE && !stale) {
     if (!similarity || similarity.size === 0 || !similarity.has(match.threadId)) {
       return { action: 'attach', threadId: match.threadId, confidence, reason };
     }
