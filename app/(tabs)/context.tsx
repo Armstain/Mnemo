@@ -37,7 +37,7 @@ import { useUndoToast } from '@/hooks/use-undo-toast';
 import { useThemeColors } from '@/hooks/use-theme';
 import { summarizeContext } from '@/lib/gemini';
 import { structurePendingEntry } from '@/lib/capture';
-import { relatedItems } from '@/lib/search';
+import { relatedThreads, type RelatedThread } from '@/lib/search';
 import { entryText } from '@/lib/threads';
 import { summarizeMeasures } from '@/lib/measures';
 import { useCategories, useStatusConfig } from '@/utils/categories';
@@ -106,14 +106,14 @@ export default function ThreadScreen() {
 
   // Nearest threads by meaning — a supplementary section that stays empty
   // until this thread has a vector, and on any failure.
-  const [related, setRelated] = React.useState<MnemoItem[]>([]);
+  const [related, setRelated] = React.useState<RelatedThread[]>([]);
   React.useEffect(() => {
     if (!thread) {
       setRelated([]);
       return;
     }
     let cancelled = false;
-    relatedItems(thread.id, items).then((found) => {
+    relatedThreads(thread.id, items).then((found) => {
       if (!cancelled) setRelated(found);
     });
     return () => {
@@ -580,10 +580,11 @@ export default function ThreadScreen() {
                 <View className="px-6 mt-9">
                   <Eyebrow>Related threads</Eyebrow>
                   <ThreadList>
-                    {related.map((r, i) => (
+                    {related.map(({ item: r, reason }, i) => (
                       <ThreadRow
                         key={r.id}
                         item={r}
+                        detail={reason}
                         index={i}
                         last={i === related.length - 1}
                         onPress={() => router.push(`/(tabs)/context?id=${r.id}` as any)}

@@ -98,48 +98,54 @@ export async function hybridSearch(query: string, items: MnemoItem[]): Promise<M
   return reciprocalRankFusion([keywordRanking, semanticRanking]);
 }
 
-// Note-to-note (document-document) similarity is noisier than
-// query-to-document: calibrated samples showed a genuinely related pair
-// scoring as low as 0.60 while an unrelated pair scored 0.61 — the two
-// distributions overlap, so no single cutoff cleanly separates them for
-// short, topically-varied notes. 0.75 (the original value here) was
-// higher than every related sample observed, meaning this almost never
-// matched anything. Set low enough to admit real matches; `limit` below
-// is what actually keeps this useful — ranking (closest few notes) is
-// more reliable than an absolute quality gate in this embedding space.
-const DOC_MIN_SIMILARITY = 0.6;
+// Shown on a thread as "Related threads", so each one needs a reason the
+// person can see. Note-to-note similarity is noisy: calibrated samples had
+// a genuinely related pair as low as 0.60 and an unrelated pair at 0.61,
+// so no single cutoff separates them for short notes. A match therefore
+// needs a shared tag on top of fair similarity, or very high similarity on
+// its own.
+const RELATED_WITH_TAG = 0.66;
+const RELATED_ALONE = 0.8;
 
-/**
- * Related notes for the detail screen: nearest neighbors by embedding
- * similarity, excluding the note itself. Returns `[]` if the note has no
- * vector yet (still pending, or embedding failed and hasn't been
- * backfilled) rather than throwing — this is a supplementary UI section,
- * never a blocking one.
- */
-export async function relatedItems(
+export interface RelatedThread {
+  item: MnemoItem;
+  /** One line saying why, e.g. "Also tagged #travel". */
+  reason: string;
+}
+
+/** A few threads clearly connected to this one, each with its reason. */
+export async function relatedThreads(
   itemId: string,
   items: MnemoItem[],
-  limit = 5,
-  minSimilarity = DOC_MIN_SIMILARITY,
-): Promise<MnemoItem[]> {
+  limit = 3,
+): Promise<RelatedThread[]> {
   try {
+    const self = items.find((i) => i.id === itemId);
     const rows = await getAllEmbeddings();
     const selfRow = rows.find((r) => r.itemId === itemId);
-    if (!selfRow) return [];
+    if (!self || !selfRow) return [];
 
     const selfVector = fromBlob(selfRow.vector);
+    const selfTags = new Set(self.tags.map((t) => t.toLowerCase()));
     const byId = new Map(items.map((item) => [item.id, item]));
+    const found: (RelatedThread & { score: number })[] = [];
 
-    return rows
-      .filter((row) => row.itemId !== itemId)
-      .map((row) => {
-        const item = byId.get(row.itemId);
-        return item ? { doc: item, score: dot(selfVector, fromBlob(row.vector)) } : null;
-      })
-      .filter((x): x is { doc: MnemoItem; score: number } => x !== null && x.score >= minSimilarity)
+    for (const row of rows) {
+      if (row.itemId === itemId) continue;
+      const item = byId.get(row.itemId);
+      if (!item || item.status === 'archived') continue;
+      const score = dot(selfVector, fromBlob(row.vector));
+      const shared = item.tags.filter((t) => selfTags.has(t.toLowerCase()));
+      if (shared.length > 0 && score >= RELATED_WITH_TAG) {
+        found.push({ item, score, reason: `Also tagged ${shared.slice(0, 2).map((t) => `#${t}`).join(' ')}` });
+      } else if (score >= RELATED_ALONE) {
+        found.push({ item, score, reason: 'Very similar topic' });
+      }
+    }
+    return found
       .sort((a, b) => b.score - a.score)
       .slice(0, limit)
-      .map(({ doc }) => doc);
+      .map(({ item, reason }) => ({ item, reason }));
   } catch {
     return [];
   }
