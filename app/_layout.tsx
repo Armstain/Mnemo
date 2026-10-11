@@ -8,7 +8,7 @@ import {
   Literata_400Regular_Italic,
   Literata_500Medium,
 } from '@expo-google-fonts/literata';
-import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native';
+import { DarkTheme, DefaultTheme, ThemeProvider } from 'expo-router/react-navigation';
 import { useFonts } from 'expo-font';
 import { router, Stack } from 'expo-router';
 import * as SecureStore from 'expo-secure-store';

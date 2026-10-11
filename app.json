@@ -7,7 +7,6 @@
     "icon": "./assets/images/icon.png",
     "scheme": "mnemo",
     "userInterfaceStyle": "automatic",
-    "newArchEnabled": true,
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.mnemo.app"
@@ -18,7 +17,6 @@
         "monochromeImage": "./assets/images/adaptive-icon-monochrome.png",
         "backgroundColor": "#FAF8F3"
       },
-      "edgeToEdgeEnabled": true,
       "package": "com.mnemo.app",
       "permissions": [
         "RECORD_AUDIO"
@@ -63,7 +61,8 @@
       "expo-sqlite",
       "expo-notifications",
       "expo-quick-actions",
-      "./plugins/with-shortcut-icons"
+      "./plugins/with-shortcut-icons",
+      "expo-asset"
     ],
     "experiments": {
       "typedRoutes": true

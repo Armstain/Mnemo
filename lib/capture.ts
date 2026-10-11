@@ -98,7 +98,7 @@ export async function saveVoiceRecording(params: {
     // Directory already exists — safe to continue.
   }
   const permanentFile = new File(recordingsDir, `recording-${Date.now()}.m4a`);
-  new File(tempUri).copy(permanentFile);
+  await new File(tempUri).copy(permanentFile);
 
   const entryInput = {
     source: 'voice' as const,

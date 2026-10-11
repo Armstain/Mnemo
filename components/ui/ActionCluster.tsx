@@ -347,11 +347,11 @@ export function ActionCluster({ visible = true }: { visible?: boolean }) {
             transition={reduceMotion ? REDUCED : { type: 'timing', duration: DUR_BASE, easing: EASE_OUT }}
             exitTransition={EXIT_QUICK}
             pointerEvents={expanded ? 'auto' : 'none'}
-            style={[StyleSheet.absoluteFillObject, styles.scrimLayer]}
+            style={[StyleSheet.absoluteFill, styles.scrimLayer]}
           >
             <Pressable
               onPress={closeMenu}
-              style={[StyleSheet.absoluteFillObject, { backgroundColor: colors.bg, opacity: 0.9 }]}
+              style={[StyleSheet.absoluteFill, { backgroundColor: colors.bg, opacity: 0.9 }]}
               accessibilityElementsHidden
               importantForAccessibility="no-hide-descendants"
             />
@@ -547,7 +547,7 @@ function Glyph({
       pointerEvents="none"
       animate={{ opacity: show ? 1 : 0, scale: show ? 1 : 0.4, rotate }}
       transition={reduceMotion ? REDUCED : SPRING_NAV}
-      style={[StyleSheet.absoluteFillObject, styles.center]}
+      style={[StyleSheet.absoluteFill, styles.center]}
     >
       {children}
     </MotiView>
