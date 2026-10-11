@@ -1,5 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import * as Notifications from 'expo-notifications';
+import { Notifications } from '@/lib/notifications';
 import { Platform } from 'react-native';
 import type { MnemoItem } from '@/types/mnemo';
 

@@ -18,7 +18,7 @@ import { LogBox, Platform } from 'react-native';
 import 'react-native-reanimated';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
-import * as Notifications from 'expo-notifications';
+import { Notifications, notificationsAvailable } from '@/lib/notifications';
 import "../global.css";
 
 // moti still bundles an unused MotiSafeAreaView built on RN's deprecated
@@ -44,14 +44,16 @@ loadStoredApiKey();
 // controls how one is presented if it fires while the app is already
 // open in the foreground (otherwise, on some platforms, it would be
 // silently swallowed instead of shown).
-Notifications.setNotificationHandler({
-  handleNotification: async () => ({
-    shouldShowBanner: true,
-    shouldShowList: true,
-    shouldPlaySound: true,
-    shouldSetBadge: false,
-  }),
-});
+if (notificationsAvailable) {
+  Notifications.setNotificationHandler({
+    handleNotification: async () => ({
+      shouldShowBanner: true,
+      shouldShowList: true,
+      shouldPlaySound: true,
+      shouldSetBadge: false,
+    }),
+  });
+}
 
 export {
   // Catch any errors thrown by the Layout component.
@@ -149,6 +151,7 @@ function RootLayoutNav() {
   // identifier is the item id itself (syncReminderForItem in
   // lib/reminders.ts), so no lookup table is needed.
   useEffect(() => {
+    if (!notificationsAvailable) return;
     const subscription = Notifications.addNotificationResponseReceivedListener((response) => {
       const { identifier, content } = response.notification.request;
       const itemId = typeof content.data?.itemId === 'string' ? content.data.itemId : identifier;
