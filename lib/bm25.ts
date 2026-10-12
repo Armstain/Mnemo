@@ -2,6 +2,8 @@ import type { MnemoItem } from '@/types/mnemo';
 
 const K1 = 1.5; // Term frequency saturation — controls how quickly TF effect diminishes
 const B = 0.75;  // Document length normalization — 0 = no length norm, 1 = full length norm
+/** A word that only starts with what was typed counts this much of a whole match. */
+const PREFIX_WEIGHT = 0.7;
 
 /** Minimum number of characters for a token to be indexed. Excludes noise like "a", "I". */
 const MIN_TOKEN_LENGTH = 2;
@@ -108,18 +110,35 @@ export function bm25Scored(query: string, documents: MnemoItem[]): ScoredItem[] 
 
   const { docs, df, avgdl } = corpusOf(documents);
   const N = documents.length;
-  const idf = new Map(queryTerms.map((term) => {
+  const idfOf = (term: string) => {
     const ni = df.get(term) ?? 0;
-    return [term, Math.log((N - ni + 0.5) / (ni + 0.5) + 1)] as const;
-  }));
+    return Math.log((N - ni + 0.5) / (ni + 0.5) + 1);
+  };
+
+  // The last word may be half typed: "passp" also counts words it starts,
+  // a little less than the whole word would.
+  const last = queryTerms[queryTerms.length - 1];
+  const completions =
+    last.length >= 2 && !/^\d+$/.test(last)
+      ? [...df.keys()].filter((w) => w !== last && w.startsWith(last)).slice(0, 50)
+      : [];
+  const weighted: [string, number][] = [
+    ...queryTerms.map((t) => [t, idfOf(t)] as [string, number]),
+    ...completions.map((t) => [t, idfOf(t) * PREFIX_WEIGHT] as [string, number]),
+  ];
 
   const scored: ScoredItem[] = [];
   docs.forEach((d, i) => {
     let score = 0;
-    for (const term of queryTerms) {
+    let lastMatched = false;
+    for (const [term, weight] of weighted) {
       const tf = d.tf.get(term);
       if (!tf) continue;
-      score += idf.get(term)! * ((tf * (K1 + 1)) / (tf + K1 * (1 - B + B * (d.length / avgdl))));
+      // One completion of the last word is enough; don't add up "pass", "passport", "passed".
+      const isLast = term === last || completions.includes(term);
+      if (isLast && lastMatched && term !== last) continue;
+      if (isLast) lastMatched = true;
+      score += weight * ((tf * (K1 + 1)) / (tf + K1 * (1 - B + B * (d.length / avgdl))));
     }
     if (score > 0) scored.push({ doc: documents[i], score });
   });

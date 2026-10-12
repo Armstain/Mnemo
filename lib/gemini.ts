@@ -256,6 +256,56 @@ const ENHANCE_SCHEMA = {
   required: ['suggestedTitle', 'suggestedCategory', 'whereLeftOff', 'nextStep', 'summary'],
 };
 
+/** A note given to `askNotes`: one thread, its dated entries flattened to text. */
+export interface NoteForQuestion {
+  id: string;
+  title: string;
+  text: string;
+}
+
+const ANSWER_SCHEMA = {
+  type: Type.OBJECT,
+  properties: {
+    answer: { type: Type.STRING, description: 'The answer, in plain sentences' },
+    sourceIds: { type: Type.ARRAY, items: { type: Type.STRING }, description: 'ids of the notes the answer came from' },
+  },
+  required: ['answer', 'sourceIds'],
+};
+
+/**
+ * Answers a question from the person's own notes (the few most relevant,
+ * chosen on the phone), saying which notes it used. Never from general
+ * knowledge: if the notes don't say, it says so.
+ */
+export async function askNotes(
+  question: string,
+  notes: NoteForQuestion[],
+): Promise<{ answer: string; sourceIds: string[] }> {
+  const prompt = `Answer the person's question using only their notes below. Today is ${new Date().toDateString()}.
+- If the notes don't contain the answer, say so plainly in one sentence. Never guess or use outside knowledge.
+- Keep it short: one to three sentences. Quote amounts, dates and names exactly as written in the notes.
+- When adding numbers up, add only what the notes state, and say what you added.
+- Answer in the language and script of the question (Bangla, Banglish or English).
+- "sourceIds": the ids of the notes you used.
+
+Question: "${question}"
+
+Notes:
+${notes.map((n) => `--- id=${n.id} · "${n.title}"\n${n.text}`).join('\n')}`;
+  const response = await generateText({
+    contents: prompt,
+    config: { responseMimeType: 'application/json', responseSchema: ANSWER_SCHEMA },
+  });
+  const text = response.text;
+  if (!text) throw new Error('No answer');
+  const parsed = JSON.parse(text) as { answer?: string; sourceIds?: string[] };
+  const known = new Set(notes.map((n) => n.id));
+  return {
+    answer: (parsed.answer ?? '').trim(),
+    sourceIds: (parsed.sourceIds ?? []).filter((id) => known.has(id)),
+  };
+}
+
 export async function summarizeContext(notes: string, links: string[]) {
   const prompt = `
 You are an expert productivity assistant. A user is returning to a task after being away.

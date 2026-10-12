@@ -44,6 +44,7 @@ import { usePreferences } from '@/lib/preferences';
 import { structurePendingEntry } from '@/lib/capture';
 import { relatedThreads, type RelatedThread } from '@/lib/search';
 import { entryText } from '@/lib/threads';
+import { matchEntries } from '@/lib/find';
 import { metricKey, summarizeMeasures, type MetricSummary } from '@/lib/measures';
 import { useCategories, useStatusConfig } from '@/utils/categories';
 import { EASE_IN_OUT, useEnter } from '@/utils/motion';
@@ -87,6 +88,13 @@ export default function ThreadScreen() {
   const thread = items.find((c) => c.id === id);
   const entries = thread ? getEntries(thread.id) : [];
   usePreferences(); // re-render when AI is switched on or off
+  // Finding one note in a long thread.
+  const [finding, setFinding] = React.useState(false);
+  const [findQuery, setFindQuery] = React.useState('');
+  const shownEntries = React.useMemo(
+    () => (finding && findQuery.trim() ? matchEntries(entries, findQuery, entryText) : entries),
+    [entries, finding, findQuery],
+  );
   const ai = aiEnabled();
   // Offline digest: next steps and unticked items from the notes, newest first.
   const openSteps = React.useMemo(() => {
@@ -614,7 +622,47 @@ export default function ThreadScreen() {
 
               {/* ─── Timeline ───────────────────────────── */}
               <MotiView {...enter.rise(2)} className="px-6 mt-9">
-                <Eyebrow>Timeline</Eyebrow>
+                <View className="flex-row items-center justify-between">
+                  <Eyebrow>Timeline</Eyebrow>
+                  {entries.length > 3 ? (
+                    <Pressable
+                      onPress={() => {
+                        setFinding((v) => !v);
+                        setFindQuery('');
+                      }}
+                      hitSlop={10}
+                      accessibilityRole="button"
+                      accessibilityLabel={finding ? 'Stop searching this thread' : 'Search this thread'}
+                      className="mb-3 active:opacity-60"
+                    >
+                      <Icon name={finding ? 'x' : 'search'} size={16} color={colors.fgTertiary} />
+                    </Pressable>
+                  ) : null}
+                </View>
+                {finding ? (
+                  <View
+                    className="flex-row items-center rounded-full px-4 h-11 mb-4"
+                    style={{ backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border }}
+                  >
+                    <Icon name="search" size={15} color={colors.fgTertiary} />
+                    <TextInput
+                      value={findQuery}
+                      onChangeText={setFindQuery}
+                      autoFocus
+                      placeholder="Find in this thread"
+                      placeholderTextColor={colors.fgTertiary}
+                      accessibilityLabel="Find in this thread"
+                      selectionColor={colors.accent}
+                      className="flex-1 font-sans text-body ml-2"
+                      style={[{ color: colors.fg }, noFocusRing]}
+                    />
+                    {findQuery ? (
+                      <Text className="font-sans text-sm" style={{ color: colors.fgTertiary }}>
+                        {shownEntries.length}/{entries.length}
+                      </Text>
+                    ) : null}
+                  </View>
+                ) : null}
 
                 <View className="flex-row gap-2 mb-4">
                   <Button variant="quiet" size="sm" icon="pencil" className="flex-1" onPress={() => addUpdate('write')}>
@@ -627,7 +675,7 @@ export default function ThreadScreen() {
 
                 <View className="gap-3">
                   <AnimatePresence initial={false}>
-                    {entries.map((entry, i) => (
+                    {shownEntries.map((entry, i) => (
                       <MotiView key={entry.id} {...enter.row(i)} {...enter.rowExit()}>
                         <EntryCard
                           entry={entry}

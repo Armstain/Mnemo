@@ -15,6 +15,11 @@ import { useMnemoStore } from '@/hooks/use-mnemo-store';
 import { useThemeColors } from '@/hooks/use-theme';
 import { bm25Search } from '@/lib/bm25';
 import { hybridSearch } from '@/lib/search';
+import { readPeriod, threadsInPeriod, totalsFor } from '@/lib/find';
+import { formatValue } from '@/lib/measures';
+import { aiEnabled } from '@/lib/ai-mode';
+import { usePreferences } from '@/lib/preferences';
+import { AskCard, isQuestion } from '@/components/AskCard';
 import { CATEGORY_LIST } from '@/utils/categories';
 import { useEnter } from '@/utils/motion';
 import type { Category, ItemStatus, MnemoItem } from '@/types/mnemo';
@@ -34,7 +39,9 @@ const STATUS_FILTERS: { key: FilterStatus; label: string }[] = [
 
 export default function LibraryScreen() {
   const enter = useEnter();
-  const { items, isLoaded } = useMnemoStore();
+  const { items, entries, isLoaded } = useMnemoStore();
+  usePreferences(); // AI on or off changes what's offered
+  const ai = aiEnabled();
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<Category | 'all'>('all');
   const [selectedStatus, setSelectedStatus] = useState<FilterStatus>('all');
@@ -66,34 +73,41 @@ export default function LibraryScreen() {
   // Ranked from a deferred copy of the query: the field updates on every
   // key at once, the list catches up when there's a moment.
   const deferredQuery = useDeferredValue(searchQuery);
-  const keywordResults = useMemo(
-    () =>
-      deferredQuery.trim()
-        ? bm25Search(deferredQuery, scopedItems)
-        : [...scopedItems].sort((a, b) => b.updatedAt - a.updatedAt),
-    [deferredQuery, scopedItems],
+  // A time said in the search ("cng last week") narrows to threads with
+  // something added then; the rest of the words rank them.
+  const { period, rest: words } = useMemo(() => readPeriod(deferredQuery), [deferredQuery]);
+  const periodKey = period ? `${period.from}-${period.to}` : '';
+  const inPeriod = useMemo(
+    () => (period ? scopedItems.filter((i) => threadsInPeriod(scopedItems, entries, period).has(i.id)) : scopedItems),
+    [periodKey, scopedItems, entries], // eslint-disable-line react-hooks/exhaustive-deps
   );
+  const keywordResults = useMemo(
+    () => (words ? bm25Search(words, inPeriod) : [...inPeriod].sort((a, b) => b.updatedAt - a.updatedAt)),
+    [words, inPeriod],
+  );
+  // The matching numbers, added up across every thread.
+  const totals = useMemo(() => (words ? totalsFor(words, entries, period) : []), [words, entries, periodKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ...upgraded to the hybrid keyword + meaning ranking once it resolves,
   // so "travel documents" still finds the passport note. null = not ready
   // for this query yet.
   const [hybridResults, setHybridResults] = useState<MnemoItem[] | null>(null);
   useEffect(() => {
-    const trimmed = searchQuery.trim();
+    const trimmed = words.trim();
     // Clear immediately so a new query never shows the last one's results.
     setHybridResults(null);
-    if (!trimmed) return;
+    if (!trimmed || !ai) return;
 
     let cancelled = false;
     const handle = setTimeout(async () => {
-      const fused = await hybridSearch(trimmed, scopedItems);
+      const fused = await hybridSearch(trimmed, inPeriod);
       if (!cancelled) setHybridResults(fused);
     }, SEMANTIC_DEBOUNCE_MS);
     return () => {
       cancelled = true;
       clearTimeout(handle);
     };
-  }, [searchQuery, scopedItems]);
+  }, [words, inPeriod, ai]);
 
   const filteredItems = hybridResults ?? keywordResults;
 
@@ -141,6 +155,51 @@ export default function LibraryScreen() {
           placeholder="Search your notes"
         />
       </MotiView>
+
+      {/* What the search found besides threads: its time span, and totals. */}
+      {period || totals.length > 0 || (ai && isQuestion(deferredQuery)) ? (
+        <View className="mb-3">
+          {period ? (
+            <View className="flex-row mb-2">
+              <Pressable
+                onPress={() => setSearchQuery(words)}
+                accessibilityRole="button"
+                accessibilityLabel={`Remove the time filter: ${period.label}`}
+                className="flex-row items-center rounded-full pl-3 pr-2 h-8 active:opacity-70"
+                style={{ backgroundColor: colors.accentSoft }}
+              >
+                <Icon name="calendar" size={13} color={colors.accent} />
+                <Text className="font-sans-medium text-sm mx-1.5" style={{ color: colors.accent }}>
+                  {period.label}
+                </Text>
+                <Icon name="x" size={12} color={colors.accent} />
+              </Pressable>
+            </View>
+          ) : null}
+          {totals.map((t) => (
+            <View
+              key={`${t.label}|${t.unit}`}
+              className="flex-row items-center rounded-lg px-4 py-3 mb-2"
+              style={{ backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border }}
+            >
+              <View className="flex-1">
+                <Text className="font-sans-semi text-body" style={{ color: colors.fg }}>
+                  {t.label.charAt(0).toUpperCase() + t.label.slice(1)}
+                  {period ? ` · ${period.label.toLowerCase()}` : ''}
+                </Text>
+                <Text className="font-sans text-sm" style={{ color: colors.fgTertiary }}>
+                  {t.count} {t.count === 1 ? 'entry' : 'entries'}
+                  {t.threads > 1 ? ` in ${t.threads} threads` : ''}
+                </Text>
+              </View>
+              <Text className="font-display" style={{ color: colors.fg, fontSize: 22, fontVariant: ['tabular-nums'] }}>
+                {formatValue(t.total, t.unit)}
+              </Text>
+            </View>
+          ))}
+          {ai && isQuestion(deferredQuery) ? <AskCard question={deferredQuery} ranked={hybridResults ?? keywordResults} /> : null}
+        </View>
+      ) : null}
 
       {/* Status — a segmented control, since exactly one is always on */}
       <MotiView {...enter.fade(2)} className="mb-3">
