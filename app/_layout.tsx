@@ -36,10 +36,10 @@ import { UndoToastHost } from '@/components/ui/UndoToastHost';
 import { MnemoStoreProvider } from '@/hooks/use-mnemo-store';
 import { UndoToastProvider } from '@/hooks/use-undo-toast';
 import { applyStoredThemePreference, PALETTE, useThemeName } from '@/hooks/use-theme';
-import { loadStoredApiKey } from '@/lib/api-key';
+import { appReady } from '@/lib/ai-mode';
 
-// Load stored API key early on app start
-loadStoredApiKey();
+// Reads the saved key and preferences (AI or offline) as early as possible.
+void appReady;
 
 // Reminders (lib/reminders.ts) are scheduled local notifications — this
 // controls how one is presented if it fires while the app is already

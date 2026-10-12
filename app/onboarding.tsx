@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, ScrollView, Platform, useWindowDimensions } from 'react-native';
+import { View, Text, Platform, useWindowDimensions } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import * as SecureStore from 'expo-secure-store';
@@ -8,25 +8,17 @@ import { MotiView } from 'moti';
 import { useReduceMotion } from '@/hooks/use-accessibility-motion';
 import { EASE_OUT, REDUCED } from '@/utils/motion';
 import { Button } from '@/components/ui/Button';
-import { FirstCaptureStep, NudgeStep, RevealStep } from '@/components/OnboardingSteps';
+import { AiChoiceStep, FirstCaptureStep, KeyStep, NudgeStep, RevealStep } from '@/components/OnboardingSteps';
+import { setPreferences } from '@/lib/preferences';
 import { OpenRing } from '@/components/ui/ThreadRing';
 import { useThemeColors } from '@/hooks/use-theme';
 
 export const ONBOARDING_KEY = 'mnemo-onboarded';
 
 const features: { title: string; description: string }[] = [
-  {
-    title: 'Capture it',
-    description: 'Talk or type. A thought is saved before it can slip away, even offline.',
-  },
-  {
-    title: 'Let it settle',
-    description: 'Mnemo writes down where you left off and the one thing to do next.',
-  },
-  {
-    title: 'Pick the thread back up',
-    description: 'Open the app, see what you dropped, resume it. No restart friction.',
-  },
+  { title: 'Capture it', description: 'Talk or type. Saved before it can slip away, even offline.' },
+  { title: 'Let it settle', description: 'Mnemo notes where you left off and the one thing to do next.' },
+  { title: 'Pick it back up', description: 'Open the app, see what you dropped, carry on.' },
 ];
 
 // Onboarding is seen once, so it gets the delight budget: a longer hero
@@ -59,18 +51,16 @@ export default function OnboardingScreen() {
   const insets = useSafeAreaInsets();
   const colors = useThemeColors();
   const { width, height } = useWindowDimensions();
-  // Compact = short phones (SE-class, ~667pt) where generous fixed margins
-  // push the CTA below the fold; narrow = small-width phones (~320-360pt)
-  // where the default horizontal padding eats too much of the content.
-  const isCompact = height < 700;
+  // The welcome page never scrolls: on short phones (SE-class, ~667pt)
+  // the hero tightens and, on the shortest, the step descriptions go.
+  const isCompact = height < 720;
+  const isTiny = height < 620;
   const isNarrow = width < 360;
-  const horizontalPadding = isNarrow ? 24 : 32;
-  const featuresGap = isCompact ? 'gap-6' : 'gap-8';
-  const featuresSpacing = isCompact ? 'mb-10' : 'mb-16';
-  const heroTitleSize = isCompact ? 38 : 46;
-  // Welcome → first capture → see it structured → nudge opt-in → app.
+  const horizontalPadding = isNarrow ? 22 : 28;
+  const heroTitleSize = isTiny ? 32 : isCompact ? 36 : 44;
+  // Welcome → AI or offline (→ key) → first capture → see it → nudges → app.
   // Web has no local notifications, so it skips the nudge step.
-  const [step, setStep] = React.useState<'welcome' | 'capture' | 'reveal' | 'nudges'>('welcome');
+  const [step, setStep] = React.useState<'welcome' | 'ai' | 'key' | 'capture' | 'reveal' | 'nudges'>('welcome');
   const [capturedId, setCapturedId] = React.useState<string | null>(null);
 
   const finish = async () => {
@@ -91,6 +81,26 @@ export default function OnboardingScreen() {
   if (step !== 'welcome') {
     return (
       <View style={{ flex: 1, backgroundColor: colors.bg }}>
+        {step === 'ai' && (
+          <AiChoiceStep
+            onBack={() => setStep('welcome')}
+            onGemini={() => setStep('key')}
+            onOffline={() => {
+              setPreferences({ aiMode: 'offline' });
+              setStep('capture');
+            }}
+          />
+        )}
+        {step === 'key' && (
+          <KeyStep
+            onBack={() => setStep('ai')}
+            onDone={() => setStep('capture')}
+            onOffline={() => {
+              setPreferences({ aiMode: 'offline' });
+              setStep('capture');
+            }}
+          />
+        )}
         {step === 'capture' && (
           <FirstCaptureStep
             onCaptured={(id) => {
@@ -110,94 +120,85 @@ export default function OnboardingScreen() {
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.bg }}>
-    <View className="flex-1">
-        <ScrollView
-          className="flex-1"
-          contentContainerStyle={{
-            paddingBottom: Math.max(insets.bottom, 24) + (isCompact ? 24 : 48),
-          }}
-          showsVerticalScrollIndicator={false}
+      {/* Hero — full-bleed ink panel with the mark cropped off its corner */}
+      <View
+        className="overflow-hidden"
+        style={{
+          backgroundColor: colors.hero,
+          paddingHorizontal: horizontalPadding,
+          paddingTop: insets.top + (isTiny ? 24 : isCompact ? 36 : 64),
+          paddingBottom: isTiny ? 24 : isCompact ? 30 : 44,
+          borderBottomLeftRadius: 36,
+          borderBottomRightRadius: 36,
+        }}
+      >
+        <MotiView
+          from={{ opacity: 0, rotate: '-20deg' }}
+          animate={{ opacity: 0.14, rotate: '0deg' }}
+          transition={{ ...ONBOARD_HERO, duration: reduceMotion ? ONBOARD_HERO.duration : 1200 }}
+          pointerEvents="none"
+          style={{ position: 'absolute', top: insets.top - 30, right: -90 }}
         >
-          {/* Hero — full-bleed ink panel with the mark cropped off its corner */}
-          <View
-            className="overflow-hidden mb-10"
-            style={{
-              backgroundColor: colors.hero,
-              paddingHorizontal: horizontalPadding,
-              paddingTop: insets.top + (isCompact ? 40 : 72),
-              paddingBottom: isCompact ? 36 : 48,
-              borderBottomLeftRadius: 36,
-              borderBottomRightRadius: 36,
-            }}
+          <OpenRing size={300} color={colors.onHero} weight={0.1} />
+        </MotiView>
+
+        <MotiView from={{ opacity: 0, translateY: 20 }} animate={{ opacity: 1, translateY: 0 }} transition={ONBOARD_HERO}>
+          <View className={isCompact ? 'mb-5' : 'mb-8'}>
+            <OpenRing size={isCompact ? 34 : 40} color={colors.heroAccent} weight={0.17} />
+          </View>
+          <Text
+            className="font-display leading-tight"
+            style={{ color: colors.onHero, fontSize: heroTitleSize, letterSpacing: -0.8 }}
           >
-            <MotiView
-              from={{ opacity: 0, rotate: '-20deg' }}
-              animate={{ opacity: 0.14, rotate: '0deg' }}
-              transition={{ ...ONBOARD_HERO, duration: reduceMotion ? ONBOARD_HERO.duration : 1200 }}
-              pointerEvents="none"
-              style={{ position: 'absolute', top: insets.top - 30, right: -90 }}
-            >
-              <OpenRing size={300} color={colors.onHero} weight={0.1} />
-            </MotiView>
+            Never lose{'\n'}the{' '}
+            <Text className="font-quote" style={{ color: colors.heroAccent }}>
+              thread
+            </Text>
+            .
+          </Text>
+          <Text className="font-sans text-body leading-relaxed mt-3" style={{ color: colors.onHeroMuted }}>
+            Pause anything. Pick it back up in seconds, knowing exactly where you were.
+          </Text>
+        </MotiView>
+      </View>
 
-            <MotiView
-              from={{ opacity: 0, translateY: 20 }}
-              animate={{ opacity: 1, translateY: 0 }}
-              transition={ONBOARD_HERO}
-            >
-              <View className="mb-8">
-                <OpenRing size={40} color={colors.heroAccent} weight={0.17} />
-              </View>
-              <Text
-                className="font-display leading-tight"
-                style={{ color: colors.onHero, fontSize: heroTitleSize, letterSpacing: -0.8 }}
-              >
-                Never lose{'\n'}the{' '}
-                <Text className="font-quote" style={{ color: colors.heroAccent }}>
-                  thread
-                </Text>
-                .
-              </Text>
-              <Text className="font-sans text-body leading-relaxed mt-4" style={{ color: colors.onHeroMuted }}>
-                Pause anything. Pick it back up in seconds,{'\n'}knowing exactly where you were.
-              </Text>
-            </MotiView>
-          </View>
-
-          {/* How it works — numbered, editorial */}
-          <View className={`${featuresGap} ${featuresSpacing}`} style={{ paddingHorizontal: horizontalPadding }}>
-            {features.map((feature, i) => (
-              <MotiView
-                key={i}
-                from={{ opacity: 0, translateX: -16 }}
-                animate={{ opacity: 1, translateX: 0 }}
-                transition={onboardFeature(i)}
-                className="flex-row items-start"
-              >
-                <Text className="font-display w-12" style={{ color: colors.accent, fontSize: 22, lineHeight: 26 }}>
-                  {String(i + 1).padStart(2, '0')}
-                </Text>
-                <View className="flex-1">
-                  <Text className="font-sans-semi text-base text-fg mb-1">{feature.title}</Text>
-                  <Text className="font-sans text-sm text-fg-muted leading-relaxed">{feature.description}</Text>
-                </View>
-              </MotiView>
-            ))}
-          </View>
-
-          {/* CTA */}
+      {/* How it works — numbered, editorial. Takes the space that's left. */}
+      <View
+        className="flex-1 justify-center"
+        style={{ paddingHorizontal: horizontalPadding, gap: isTiny ? 14 : isCompact ? 18 : 26 }}
+      >
+        {features.map((feature, i) => (
           <MotiView
-            from={{ opacity: 0, translateY: 16 }}
-            animate={{ opacity: 1, translateY: 0 }}
-            transition={ONBOARD_CTA}
-            style={{ paddingHorizontal: horizontalPadding }}
+            key={i}
+            from={{ opacity: 0, translateX: -16 }}
+            animate={{ opacity: 1, translateX: 0 }}
+            transition={onboardFeature(i)}
+            className="flex-row items-start"
           >
-            <Button onPress={() => setStep('capture')} variant="primary" size="lg" fullWidth>
-              Get started
-            </Button>
+            <Text className="font-display w-11" style={{ color: colors.accent, fontSize: 20, lineHeight: 24 }}>
+              {String(i + 1).padStart(2, '0')}
+            </Text>
+            <View className="flex-1">
+              <Text className="font-sans-semi text-body text-fg">{feature.title}</Text>
+              {!isTiny ? (
+                <Text className="font-sans text-sm text-fg-secondary leading-relaxed mt-0.5">{feature.description}</Text>
+              ) : null}
+            </View>
           </MotiView>
-        </ScrollView>
-    </View>
+        ))}
+      </View>
+
+      {/* CTA, always on screen */}
+      <MotiView
+        from={{ opacity: 0, translateY: 16 }}
+        animate={{ opacity: 1, translateY: 0 }}
+        transition={ONBOARD_CTA}
+        style={{ paddingHorizontal: horizontalPadding, paddingBottom: Math.max(insets.bottom, 16) + (isCompact ? 12 : 24) }}
+      >
+        <Button onPress={() => setStep('ai')} variant="primary" size="lg" fullWidth>
+          Get started
+        </Button>
+      </MotiView>
     </View>
   );
 }

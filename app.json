@@ -45,7 +45,7 @@
       [
         "expo-audio",
         {
-          "microphonePermission": "Allow Mnemo to access your microphone to capture your thoughts."
+          "microphonePermission": "Mnemo listens while you talk so it can write your note. The audio is never saved."
         }
       ],
       "expo-secure-store",
@@ -62,7 +62,18 @@
       "expo-notifications",
       "expo-quick-actions",
       "./plugins/with-shortcut-icons",
-      "expo-asset"
+      "expo-asset",
+      [
+        "expo-speech-recognition",
+        {
+          "microphonePermission": "Mnemo listens while you talk so it can write your note. The audio is never saved.",
+          "speechRecognitionPermission": "Mnemo turns what you say into text on your phone. The audio is never saved.",
+          "androidSpeechServicePackages": [
+            "com.google.android.googlequicksearchbox",
+            "com.google.android.as"
+          ]
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true

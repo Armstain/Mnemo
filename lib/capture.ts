@@ -5,7 +5,7 @@ import {
   type CaptureContext,
   type ProcessedCapture,
 } from '@/lib/gemini';
-import { transcribeAudio } from '@/lib/groq';
+import { aiEnabled } from '@/lib/ai-mode';
 import {
   embedText,
   embeddableText,
@@ -15,7 +15,7 @@ import {
   EMBEDDING_DIMS,
 } from '@/lib/embeddings';
 import { getAllEmbeddings, upsertEmbedding } from '@/lib/db';
-import type { Block, Category, Entry, Filing } from '@/types/mnemo';
+import type { Block, Category, ChecklistItem, Entry, Filing } from '@/types/mnemo';
 import type { CaptureStore } from '@/hooks/use-mnemo-store';
 import { buildBlocks } from '@/lib/threads';
 import { trackedMetrics, verifyMeasures } from '@/lib/measures';
@@ -32,36 +32,6 @@ const CATEGORIES: Category[] = ['work', 'personal', 'study', 'shopping', 'health
 
 function asCategory(value: unknown): Category | undefined {
   return CATEGORIES.includes(value as Category) ? (value as Category) : undefined;
-}
-
-/**
- * Turn a voice recording into a structured note, degrading gracefully:
- * 1. Gemini audio understanding (transcribe + structure in one call).
- * 2. Groq Whisper transcript, structured by Gemini text.
- * 3. Groq Whisper transcript as-is — a raw note beats a lost one.
- * Throws only when every provider is unreachable; callers keep their
- * offline "process later" path for that case.
- */
-export async function processRecording(
-  input: { fileUri: string; base64: string; mimeType: string },
-  ctx?: CaptureContext,
-): Promise<ProcessedCapture> {
-  try {
-    return await processAudioDump(input.base64, input.mimeType, ctx);
-  } catch {
-    const transcript = await transcribeAudio(input.fileUri, input.mimeType);
-    try {
-      return { ...(await processVoiceDump(transcript, ctx)), transcript };
-    } catch {
-      const words = transcript.split(/\s+/);
-      return {
-        title: words.slice(0, 5).join(' ') + (words.length > 5 ? '…' : ''),
-        notes: transcript,
-        links: [],
-        transcript,
-      };
-    }
-  }
 }
 
 /**
@@ -95,62 +65,96 @@ async function embedAndStore(item: {
 }
 
 /**
- * Copies a finished recording out of its temp/cache location and saves it
- * as a pending voice entry, then kicks off background AI structuring.
- * With a `threadId` the entry joins that thread; without one it starts a
- * new thread. Shared by the full recording screen (dump.tsx), the capture
- * button's hold-to-record, and onboarding — one save path for all three.
+ * Saves what was said in a voice note (transcribed live on the phone; no
+ * audio is kept) as a voice entry. With a `threadId` it joins that thread;
+ * otherwise it starts one. When AI is on, it's then tidied up and filed in
+ * the background; offline, the words are the note.
  */
-export async function saveVoiceRecording(params: {
-  tempUri: string;
+export function saveVoiceNote(params: {
+  text: string;
   category: Category;
   threadId?: string;
   /** How it got into `threadId`: picked there by the person, or their focus thread. */
   filing?: Filing;
   store: CaptureStore;
-}): Promise<{ threadId: string; entry: Entry }> {
-  const { tempUri, category, threadId, filing, store } = params;
-
-  const recordingsDir = new Directory(Paths.document, 'recordings');
-  try {
-    recordingsDir.create({ intermediates: true, idempotent: true });
-  } catch {
-    // Directory already exists — safe to continue.
-  }
-  const permanentFile = new File(recordingsDir, `recording-${Date.now()}.m4a`);
-  await new File(tempUri).copy(permanentFile);
-
+}): { threadId: string; entry: Entry } {
+  const { text, category, threadId, filing, store } = params;
+  const words = text.trim();
+  const ai = aiEnabled();
   const entryInput = {
     source: 'voice' as const,
-    blocks: [],
-    pending: true,
-    pendingAudioUri: permanentFile.uri,
+    transcript: words,
+    blocks: buildBlocks({ text: words }),
+    pending: ai,
+    pendingRawText: ai ? words : undefined,
   };
 
+  let saved: { threadId: string; entry: Entry };
   if (threadId) {
-    const entry = store.addEntry(threadId, { ...entryInput, filing: filing ?? { by: 'user' } });
-    resolvePendingEntry(entry, store);
-    return { threadId, entry };
+    saved = { threadId, entry: store.addEntry(threadId, { ...entryInput, filing: filing ?? { by: 'user' } }) };
+  } else {
+    const firstLine = words.split(/[.!?\n]/)[0].trim();
+    const created = store.createThread(
+      {
+        title: firstLine.length > 50 ? `${firstLine.slice(0, 50)}…` : firstLine || 'Voice note',
+        category,
+        tags: [],
+        status: 'active',
+        // A placeholder title the AI replaces, when AI is on.
+        pending: ai,
+      },
+      entryInput,
+    );
+    saved = { threadId: created.thread.id, entry: created.entry };
   }
+  if (ai) resolvePendingEntry(saved.entry, store);
+  return saved;
+}
 
-  const timestamp = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-  const created = store.createThread(
-    {
-      title: `Voice note · ${timestamp}`,
-      category,
-      tags: [],
-      status: 'active',
-      // The thread itself is pending until its first entry is structured:
-      // its title is a placeholder the AI replaces.
-      pending: true,
-    },
-    entryInput,
-  );
+/**
+ * Saves a typed note. Same shape as `saveVoiceNote`: with a `threadId` it
+ * joins that thread, otherwise it starts one titled from its first line.
+ */
+export function saveTextNote(params: {
+  text: string;
+  category: Category;
+  threadId?: string;
+  filing?: Filing;
+  checklistItems?: ChecklistItem[];
+  leftOff?: string;
+  nextStep?: string;
+  dueDate?: number;
+  store: CaptureStore;
+}): { threadId: string; entry: Entry } {
+  const { text, category, threadId, filing, checklistItems, store } = params;
+  const words = text.trim();
+  const ai = aiEnabled() && words.length > 0;
+  const entryInput = {
+    source: 'text' as const,
+    transcript: words || undefined,
+    blocks: buildBlocks({ text: words, checklistItems }),
+    leftOff: params.leftOff?.trim() || undefined,
+    nextStep: params.nextStep?.trim() || undefined,
+    pending: ai,
+    pendingRawText: ai ? words : undefined,
+  };
 
-  // Fire-and-forget — the caller shouldn't wait on a network round trip to
-  // see their note land.
-  resolvePendingEntry(created.entry, store);
-  return { threadId: created.thread.id, entry: created.entry };
+  let saved: { threadId: string; entry: Entry };
+  if (threadId) {
+    saved = { threadId, entry: store.addEntry(threadId, { ...entryInput, filing: filing ?? { by: 'user' } }) };
+    if (params.dueDate) store.updateItem(threadId, { dueDate: params.dueDate });
+  } else {
+    const firstLine = words.split('\n')[0].trim();
+    const title =
+      firstLine.length > 50 ? `${firstLine.slice(0, 50)}…` : firstLine || (checklistItems?.length ? 'Checklist' : 'Quick note');
+    const created = store.createThread(
+      { title, category, tags: [], status: 'active', dueDate: params.dueDate, pending: ai },
+      entryInput,
+    );
+    saved = { threadId: created.thread.id, entry: created.entry };
+  }
+  if (ai) resolvePendingEntry(saved.entry, store);
+  return saved;
 }
 
 /** Deletes the whole recordings directory. Used by "Clear all data" in Settings. */
@@ -159,21 +163,6 @@ export function deleteAllRecordings(): void {
     new Directory(Paths.document, 'recordings').delete();
   } catch {
     // Never existed, or already gone — nothing to do.
-  }
-}
-
-/**
- * Best-effort cleanup for a recording that's being discarded (cancelled
- * hold, or too short to be intentional) rather than saved. The temp file
- * lives in a cache dir the OS reclaims anyway, so failures here are fine
- * to ignore.
- */
-export function discardRecordingFile(tempUri?: string | null): void {
-  if (!tempUri) return;
-  try {
-    new File(tempUri).delete();
-  } catch {
-    // Already gone, or never existed — nothing to do.
   }
 }
 
@@ -227,17 +216,18 @@ export async function structurePendingEntry(
   let transcript = entry.transcript;
 
   if (entry.pendingAudioUri) {
+    // Only from versions that kept recordings. Transcribe it once, then the
+    // file goes: audio is never kept now.
     const audioFile = new File(entry.pendingAudioUri);
     if (!audioFile.exists) {
       store.updateEntry(entry.id, { pending: false, pendingAudioUri: undefined });
       return;
     }
-    const base64 = await audioFile.base64();
-    processed = await processRecording(
-      { fileUri: entry.pendingAudioUri, base64, mimeType: 'audio/m4a' },
-      ctx,
-    );
-    try { audioFile.delete(); } catch { /* already deleted — safe to ignore */ }
+    try {
+      processed = await processAudioDump(await audioFile.base64(), 'audio/m4a', ctx);
+    } finally {
+      try { audioFile.delete(); } catch { /* already gone */ }
+    }
   } else if (entry.pendingRawText) {
     transcript = transcript ?? entry.pendingRawText;
     processed = await processVoiceDump(entry.pendingRawText, ctx);

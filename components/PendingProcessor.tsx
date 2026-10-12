@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { useMnemoStore } from '@/hooks/use-mnemo-store';
 import { resolvePendingEntry } from '@/lib/capture';
+import { aiEnabled, appReady } from '@/lib/ai-mode';
 import { embedBatch, embeddableText, toBlob, EMBEDDING_MODEL, EMBEDDING_DIMS } from '@/lib/embeddings';
 import { getEmbeddedItemIds, upsertEmbedding } from '@/lib/db';
 import type { MnemoItem } from '@/types/mnemo';
@@ -62,11 +63,18 @@ export function PendingProcessor() {
     if (!isLoaded || hasRun.current) return;
     hasRun.current = true;
 
-    for (const entry of entries.filter((e) => e.pending)) {
-      resolvePendingEntry(entry, store);
-    }
-
-    backfillEmbeddings(items);
+    appReady.then(() => {
+      const pending = entries.filter((e) => e.pending);
+      if (!aiEnabled()) {
+        // Offline (or the key was removed): nothing will tidy these up, so
+        // they're finished as written rather than waiting forever.
+        for (const entry of pending) store.updateEntry(entry.id, { pending: false, pendingRawText: undefined });
+        for (const item of items.filter((i) => i.pending)) store.updateItem(item.id, { pending: false });
+        return;
+      }
+      for (const entry of pending) resolvePendingEntry(entry, store);
+      backfillEmbeddings(items);
+    });
   }, [isLoaded]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return null;

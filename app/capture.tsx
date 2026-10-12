@@ -14,8 +14,7 @@ import { FocusDestination } from '@/components/ui/FocusDestination';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { MotiView } from 'moti';
 import { useMnemoStore } from '@/hooks/use-mnemo-store';
-import { resolvePendingEntry } from '@/lib/capture';
-import { buildBlocks } from '@/lib/threads';
+import { saveTextNote } from '@/lib/capture';
 import { Button, IconButton } from '@/components/ui/Button';
 import { Icon } from '@/components/ui/Icon';
 import { Eyebrow } from '@/components/ui/Eyebrow';
@@ -69,59 +68,20 @@ export default function CaptureScreen() {
 
   const handleSave = () => {
     if (!canSave) return;
-
-    const trimmedText = text.trim();
-    const hasChecklist = checklistItems.length > 0;
-
-    // Build title from the first line of text, falling back to a
-    // checklist-aware default when there's no free text at all.
-    const rawTitle = trimmedText.split('\n')[0];
-    const fallbackTitle =
-      rawTitle.length > 50
-        ? rawTitle.substring(0, 50) + '…'
-        : rawTitle || (hasChecklist ? 'Checklist' : 'Quick note');
-    const hasTextToStructure = trimmedText.length > 0;
-
-    // Save instantly with the raw text so the user never waits on the
-    // network — AI structuring (title/summary/links) happens in the
-    // background and patches the entry (and a new thread's title) in place.
-    const entryInput = {
-      source: 'text' as const,
-      transcript: trimmedText || undefined,
-      blocks: buildBlocks({ text: trimmedText, checklistItems }),
-      leftOff: whereLeftOff.trim() || undefined,
-      nextStep: nextStep.trim() || undefined,
-      pending: hasTextToStructure,
-      pendingRawText: hasTextToStructure ? trimmedText : undefined,
-    };
-
-    let savedThreadId: string;
-    let entry;
-    if (targetThread) {
-      entry = store.addEntry(targetThread.id, { ...entryInput, filing: target.filing });
-      savedThreadId = targetThread.id;
-      if (dueDate) store.updateItem(targetThread.id, { dueDate });
-    } else {
-      const created = store.createThread(
-        {
-          title: fallbackTitle,
-          category,
-          tags: [],
-          status: 'active',
-          dueDate,
-          pending: hasTextToStructure,
-        },
-        entryInput,
-      );
-      entry = created.entry;
-      savedThreadId = created.thread.id;
-    }
-
-    router.replace(`/(tabs)/context?id=${savedThreadId}` as any);
-
-    if (hasTextToStructure) {
-      resolvePendingEntry(entry, store);
-    }
+    // One save path for typed notes (lib/capture.ts): instant, and tidied
+    // up by AI in the background only when AI is on.
+    const saved = saveTextNote({
+      text,
+      category,
+      threadId: targetThread?.id,
+      filing: target.filing,
+      checklistItems,
+      leftOff: whereLeftOff,
+      nextStep,
+      dueDate,
+      store,
+    });
+    router.replace(`/(tabs)/context?id=${saved.threadId}` as any);
   };
 
   return (

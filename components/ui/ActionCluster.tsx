@@ -20,7 +20,6 @@ import Animated, {
   type SharedValue,
 } from 'react-native-reanimated';
 import * as Haptics from 'expo-haptics';
-import { useAudioRecorderState, type AudioRecorder } from 'expo-audio';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router, useGlobalSearchParams, usePathname } from 'expo-router';
 
@@ -28,7 +27,9 @@ import { useThemeColors } from '@/hooks/use-theme';
 import { useMnemoStore } from '@/hooks/use-mnemo-store';
 import { Icon, type IconName } from '@/components/ui/Icon';
 import { useReduceMotion } from '@/hooks/use-accessibility-motion';
-import { MIN_RECORDING_MS, useQuickRecording } from '@/hooks/use-quick-recording';
+import { useSpeechCapture } from '@/hooks/use-speech-capture';
+import { saveVoiceNote } from '@/lib/capture';
+import { aiEnabled } from '@/lib/ai-mode';
 import { DUR_BASE, DUR_FAST, EASE_IN_OUT, EASE_OUT, EXIT_QUICK, REDUCED, SPRING_NAV } from '@/utils/motion';
 import { formatDuration } from '@/utils/time';
 import {
@@ -99,7 +100,10 @@ export function ActionCluster({ visible = true }: { visible?: boolean }) {
   const insets = useSafeAreaInsets();
   const colors = useThemeColors();
   const reduceMotion = useReduceMotion();
-  const { audioRecorder, start, finish } = useQuickRecording();
+  // Live speech-to-text; the level drives the waveform and the voice halo.
+  const levelNow = useRef(0);
+  const speech = useSpeechCapture({ onLevel: (v) => (levelNow.current = v) });
+  const store = useMnemoStore();
 
   const pathname = usePathname();
   const { id: routeId } = useGlobalSearchParams<{ id?: string }>();
@@ -206,19 +210,22 @@ export function ActionCluster({ visible = true }: { visible?: boolean }) {
   };
 
   const beginHold = async () => {
-    const result = await start();
+    const result = await speech.start();
     if (result !== 'ok') {
       setPhase('idle');
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
       if (result === 'permission-denied') {
-        Alert.alert('Microphone is off', 'Allow microphone access in Settings to record thoughts.');
+        Alert.alert('Microphone is off', 'Allow the microphone and speech recognition in Settings to record thoughts.');
       } else {
-        Alert.alert('Could not record', 'Something went wrong starting the microphone. Try again.');
+        Alert.alert(
+          "Can't listen on this phone",
+          "Speech recognition isn't available. On Android it comes with the Google app. You can still write notes.",
+        );
       }
       return;
     }
     if (!isPressed.current) {
-      finish('general', false);
+      speech.cancel();
       setPhase('idle');
       return;
     }
@@ -237,29 +244,34 @@ export function ActionCluster({ visible = true }: { visible?: boolean }) {
       return;
     }
     const wantsSave = phaseAtRelease === 'recording';
-    const tooShort = Date.now() - recordingSince.current < MIN_RECORDING_MS;
     setPhase('idle');
+    if (!wantsSave) {
+      speech.cancel();
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+      showTail({ kind: 'discarded' });
+      return;
+    }
     setTail({ kind: 'finishing' });
 
     // Focus is checked again now: it may have lapsed while the app sat open.
     const focusNow = currentThread ? undefined : focusThread && getFocusThreadId() === focusThread.id ? focusThread : undefined;
     const saveTo = currentThread ?? focusNow;
-    finish(
-      'general',
-      wantsSave,
-      saveTo?.id,
-      currentThread ? { by: 'user' } : focusNow ? { by: 'focus' } : undefined,
-    ).then((saved) => {
-      if (wantsSave && saved) {
-        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-        showTail({ kind: 'saved', where: saveTo?.title ?? '' });
-      } else if (wantsSave && tooShort) {
+    speech.stop().then((words) => {
+      if (!words.trim()) {
+        // Nothing was heard: there's nothing to save.
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
         showTail({ kind: 'tooShort' });
-      } else {
-        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
-        showTail({ kind: 'discarded' });
+        return;
       }
+      saveVoiceNote({
+        text: words,
+        category: 'general',
+        threadId: saveTo?.id,
+        filing: currentThread ? { by: 'user' } : focusNow ? { by: 'focus' } : undefined,
+        store,
+      });
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      showTail({ kind: 'saved', where: saveTo?.title ?? '' });
     });
   };
 
@@ -466,7 +478,9 @@ export function ActionCluster({ visible = true }: { visible?: boolean }) {
             {(live || tail !== null) && (
               <RecordingCard
                 key="card"
-                recorder={audioRecorder}
+                transcript={speech.text}
+                levelNow={levelNow}
+                startedAt={recordingSince.current}
                 level={level}
                 cancelling={cancelling}
                 tail={tail}
@@ -859,20 +873,23 @@ function CancelLane({
 }
 
 const WAVEFORM_BARS = 30;
-// Rough dBFS baseline so the bars start low instead of flickering empty
-// before the first metering sample arrives.
-const METERING_BASELINE = -50;
+const WAVE_SAMPLE_MS = 80;
 
 /** Live timer and waveform while recording, then the result after release. */
 function RecordingCard({
-  recorder,
+  transcript,
+  levelNow,
+  startedAt,
   level,
   cancelling,
   tail,
   threadTitle,
   reduceMotion,
 }: {
-  recorder: AudioRecorder;
+  transcript: string;
+  /** Latest microphone level (0..1), written by the speech hook. */
+  levelNow: React.MutableRefObject<number>;
+  startedAt: number;
   level: SharedValue<number>;
   cancelling: boolean;
   tail: Tail;
@@ -881,17 +898,22 @@ function RecordingCard({
 }) {
   const colors = useThemeColors();
   const { width } = useWindowDimensions();
-  // Polls the recorder only while this card is on screen.
-  const { durationMillis, metering } = useAudioRecorderState(recorder, 60);
   const isLive = tail === null;
 
-  const [levels, setLevels] = useState<number[]>(() => Array(WAVEFORM_BARS).fill(METERING_BASELINE));
+  // Samples the mic level into a rolling waveform, and ticks the timer,
+  // only while this card is live.
+  const [levels, setLevels] = useState<number[]>(() => Array(WAVEFORM_BARS).fill(0));
+  const [elapsed, setElapsed] = useState(0);
   useEffect(() => {
     if (!isLive) return;
-    const sample = metering ?? METERING_BASELINE;
-    setLevels((prev) => [...prev.slice(1), sample]);
-    level.value = withTiming(normalise(sample), { duration: 90 });
-  }, [metering, isLive, level]);
+    const timer = setInterval(() => {
+      const sample = levelNow.current;
+      setLevels((prev) => [...prev.slice(1), sample]);
+      level.value = withTiming(sample, { duration: 90 });
+      setElapsed(Date.now() - startedAt);
+    }, WAVE_SAMPLE_MS);
+    return () => clearInterval(timer);
+  }, [isLive, level, levelNow, startedAt]);
 
   const tint = cancelling ? colors.error : colors.fg;
   const destination = threadTitle ? `to ${threadTitle}` : 'as a new thread';
@@ -942,7 +964,7 @@ function RecordingCard({
               className="font-sans-semi"
               style={{ color: tint, fontSize: 22, fontVariant: ['tabular-nums'] }}
             >
-              {formatDuration(durationMillis)}
+              {formatDuration(elapsed)}
             </Text>
           </View>
 
@@ -950,7 +972,7 @@ function RecordingCard({
             {levels.map((sample, i) => (
               <MotiView
                 key={i}
-                animate={{ scaleY: Math.max(0.1, normalise(sample)) }}
+                animate={{ scaleY: Math.max(0.1, sample) }}
                 transition={{ type: 'timing', duration: 80, easing: Easing.linear }}
                 style={[
                   styles.bar,
@@ -964,8 +986,18 @@ function RecordingCard({
             ))}
           </View>
 
+          {/* The words as they're heard: the note is what you see here. */}
+          <Text
+            className="font-sans text-body mb-2"
+            style={{ color: transcript ? colors.fg : colors.fgTertiary }}
+            numberOfLines={3}
+            ellipsizeMode="head"
+          >
+            {transcript || 'Listening…'}
+          </Text>
+
           <Text className="font-sans text-sm" style={{ color: cancelling ? colors.error : colors.fgTertiary }}>
-            {cancelling ? 'This recording will be deleted' : `Let go to save ${destination}`}
+            {cancelling ? 'This note will be thrown away' : `Let go to save ${destination}`}
           </Text>
         </>
       ) : (
@@ -984,15 +1016,19 @@ function TailContent({ tail, reduceMotion }: { tail: NonNullable<Tail>; reduceMo
           bg: colors.accent,
           ink: colors.accentInk,
           title: 'Saved',
-          detail: tail.where ? `Transcribing into ${tail.where}` : 'Transcribing into a new thread',
+          detail: tail.where
+            ? `${aiEnabled() ? 'Tidying up in' : 'Added to'} ${tail.where}`
+            : aiEnabled()
+              ? 'Tidying it up in a new thread'
+              : 'Saved as a new thread',
         }
       : tail.kind === 'tooShort'
         ? {
             icon: 'mic',
             bg: colors.surfaceHigh,
             ink: colors.fg,
-            title: 'Too short to save',
-            detail: 'Keep holding the button while you talk',
+            title: "Didn't catch that",
+            detail: 'Hold the button, speak, then let go',
           }
         : tail.kind === 'discarded'
           ? {
