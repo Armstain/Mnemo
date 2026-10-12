@@ -45,6 +45,8 @@ import { structurePendingEntry } from '@/lib/capture';
 import { relatedThreads, type RelatedThread } from '@/lib/search';
 import { entryText } from '@/lib/threads';
 import { matchEntries } from '@/lib/find';
+import { quietDays as quietFor, STILL_ON_IT_DAYS } from '@/lib/review';
+import { openStepsOf } from '@/lib/wrapup';
 import { confirmAction } from '@/utils/confirm';
 import { metricKey, summarizeMeasures, type MetricSummary } from '@/lib/measures';
 import { useCategories, useStatusConfig } from '@/utils/categories';
@@ -71,6 +73,7 @@ export default function ThreadScreen() {
     pauseItem,
     completeItem,
     archiveItem,
+    restoreItem,
     getEntries,
     isLoaded,
     focusThreadId,
@@ -97,15 +100,10 @@ export default function ThreadScreen() {
   );
   const ai = aiEnabled();
   // Offline digest: next steps and unticked items from the notes, newest first.
-  const openSteps = React.useMemo(() => {
-    const steps: string[] = [];
-    for (const e of entries) {
-      if (e.nextStep && !e.stepDone) steps.push(e.nextStep);
-      for (const b of e.blocks) if (b.kind === 'checklist') steps.push(...b.items.filter((i) => !i.checked).map((i) => i.text));
-    }
-    return [...new Set(steps.map((s) => s.trim()).filter(Boolean))].slice(0, 5);
-  }, [entries]);
+  const openSteps = React.useMemo(() => openStepsOf(entries).slice(0, 5), [entries]);
   const numbers = React.useMemo(() => summarizeMeasures(entries), [entries]);
+  // Same rule as the weekly review: active, untouched a week, no reminder still to come.
+  const quietDays = React.useMemo(() => (thread ? quietFor(thread, entries) : null), [thread, entries]);
   const isFocus = !!thread && focusThreadId === thread.id;
   // An entry auto-filing thought might belong elsewhere (lib/filing.ts).
   const suggestion = entries.find((e) => e.filing.by === 'suggested');
@@ -222,6 +220,22 @@ export default function ThreadScreen() {
       });
       if (touched) store.updateEntry(entry.id, { blocks });
     }
+  };
+
+  // A thread with some history gets a wrap-up card first; a one-liner is just done.
+  const hasHistory = entries.length >= 3 || numbers.length > 0;
+  const handleDone = () => {
+    if (hasHistory) {
+      router.push(`/wrapup?id=${thread.id}` as any);
+      return;
+    }
+    const before = thread;
+    const wasFocus = isFocus;
+    completeItem(thread.id);
+    showUndoToast(`"${thread.title}" is done`, () => {
+      restoreItem(before);
+      if (wasFocus) setFocusThread(before.id);
+    });
   };
 
   const handleStepDone = () => {
@@ -505,6 +519,38 @@ export default function ThreadScreen() {
                 </MotiView>
               ) : null}
 
+              {/* ─── Gone quiet: keep going, pause or wrap up ─── */}
+              {!isEditing && quietDays !== null ? (
+                <MotiView {...enter.fade(1)} className="mx-6 mt-5 rounded-lg p-4" style={{ backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border }}>
+                  <Text className="font-sans-semi text-body" style={{ color: colors.fg }}>
+                    Nothing new for {quietDays} days
+                  </Text>
+                  <Text className="font-sans text-sm mt-0.5" style={{ color: colors.fgSecondary }}>
+                    Still going, or is it over?
+                  </Text>
+                  <View className="flex-row gap-2 mt-3">
+                    <Button variant="tonal" size="sm" icon="check" onPress={() => router.push(`/wrapup?id=${thread.id}` as any)}>
+                      Wrap it up
+                    </Button>
+                    <Button
+                      variant="quiet"
+                      size="sm"
+                      onPress={() => {
+                        const before = thread;
+                        // Not activity: it shouldn't jump to the top of Home.
+                        updateItem(thread.id, { quietUntil: Date.now() + STILL_ON_IT_DAYS * 86_400_000 }, { touch: false });
+                        showUndoToast(`Won't ask about it for a month`, () => restoreItem(before));
+                      }}
+                    >
+                      Still on it
+                    </Button>
+                    <Button variant="ghost" size="sm" icon="pause" onPress={() => pauseItem(thread.id)}>
+                      Pause
+                    </Button>
+                  </View>
+                </MotiView>
+              ) : null}
+
               {/* ─── Status actions ─────────────────────── */}
               <MotiView {...enter.fade(1)} className="px-6 mt-5 flex-row gap-2">
                 {thread.status === 'active' ? (
@@ -527,11 +573,15 @@ export default function ThreadScreen() {
                     Resume
                   </Button>
                 )}
-                {thread.status !== 'completed' && (
-                  <Button variant="quiet" size="sm" icon="check" className="flex-1" onPress={() => completeItem(thread.id)}>
+                {thread.status !== 'completed' ? (
+                  <Button variant="quiet" size="sm" icon="check" className="flex-1" onPress={handleDone}>
                     Done
                   </Button>
-                )}
+                ) : hasHistory ? (
+                  <Button variant="quiet" size="sm" icon="share" className="flex-1" onPress={() => router.push(`/wrapup?id=${thread.id}` as any)}>
+                    Summary card
+                  </Button>
+                ) : null}
                 <IconButton
                   icon="volume"
                   label="Play spoken re-brief"

@@ -51,6 +51,8 @@ import {
   type NudgePrefs,
   type NudgeTime,
 } from '@/lib/nudges';
+import { reviewTimeLabel, scheduleWeeklyReview } from '@/lib/review-notice';
+import { loadSetup, strictPhone } from '@/lib/reliability';
 import {
   getActiveApiKey,
   getApiKeySource,
@@ -69,23 +71,27 @@ const NUDGE_TIME_KEYS = Object.keys(NUDGE_TIMES) as NudgeTime[];
 
 function NudgeSettingsCard() {
   const colors = useThemeColors();
-  const { items } = useMnemoStore();
+  const { items, entries } = useMnemoStore();
   const [prefs, setPrefs] = useState<NudgePrefs | null>(null);
   const [granted, setGranted] = useState(false);
   // Set once a turn-on attempt comes back refused — at that point only
   // the OS Settings app can change it, so say so instead of silently
   // leaving the switch off.
   const [blocked, setBlocked] = useState(false);
+  const [verified, setVerified] = useState(false);
+  const strict = strictPhone();
 
   useEffect(() => {
     loadNudgePrefs().then(setPrefs);
     hasNudgePermission().then(setGranted);
+    loadSetup().then((s) => setVerified(!!s.verifiedAt));
   }, []);
 
   const apply = async (next: NudgePrefs) => {
     setPrefs(next);
     await saveNudgePrefs(next);
     scheduleNudges(items);
+    scheduleWeeklyReview(items, entries);
   };
 
   const handleToggle = async (on: boolean) => {
@@ -146,6 +152,25 @@ function NudgeSettingsCard() {
         </View>
       )}
 
+      {isOn && (
+        <View className="flex-row items-center justify-between pt-4 border-t border-border/50">
+          <View className="flex-1 mr-3">
+            <Text className="font-sans-semi text-sm text-fg">Weekly review</Text>
+            <Text className="font-sans text-sm text-fg-secondary mt-0.5">
+              {reviewTimeLabel()}: your week, what's due and what went quiet.
+            </Text>
+          </View>
+          <Switch
+            value={prefs.weekly}
+            onValueChange={(weekly) => apply({ ...prefs, weekly })}
+            accessibilityLabel="Weekly review"
+            trackColor={{ false: colors.border, true: colors.accent }}
+            thumbColor={Platform.OS === 'android' ? colors.surfaceLowest : undefined}
+            ios_backgroundColor={colors.border}
+          />
+        </View>
+      )}
+
       {blocked && (
         <View className="flex-row items-center justify-between gap-3">
           <Text className="font-sans text-sm text-fg-tertiary flex-1">
@@ -156,6 +181,25 @@ function NudgeSettingsCard() {
           </Button>
         </View>
       )}
+
+      {/* Reminders and nudges both depend on it, so it's here whether nudges are on or not. */}
+      <Pressable
+        onPress={() => router.push('/reminders-check' as any)}
+        accessibilityRole="button"
+        className="flex-row items-center justify-between pt-4 border-t border-border/50 active:opacity-70"
+      >
+        <View className="flex-1 mr-3">
+          <Text className="font-sans-semi text-sm text-fg">Make sure reminders arrive</Text>
+          <Text className="font-sans text-sm text-fg-secondary mt-0.5">
+            {verified
+              ? 'Tested on this phone and working.'
+              : strict
+                ? `${strict} phones can hold reminders back. Check the settings and send a test.`
+                : 'Check the settings and send a test reminder.'}
+          </Text>
+        </View>
+        <Icon name="chevronRight" size={16} color={colors.fgTertiary} />
+      </Pressable>
     </View>
   );
 }

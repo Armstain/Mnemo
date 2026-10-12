@@ -109,7 +109,12 @@ interface MnemoStoreType {
 
   // CRUD
   addItem: (item: Omit<MnemoItem, 'id' | 'createdAt' | 'updatedAt'>) => MnemoItem;
-  updateItem: (id: string, updates: Partial<MnemoItem>) => void;
+  /**
+   * Changes a thread. It counts as touched (updatedAt moves) unless
+   * `touch: false`, for changes that aren't activity (a snooze) and undos
+   * that put a thread back as it was, `updatedAt` included.
+   */
+  updateItem: (id: string, updates: Partial<MnemoItem>, opts?: { touch?: boolean }) => void;
   /** Removes from view immediately; only persisted as gone after UNDO_WINDOW_MS unless undoDelete() is called first. */
   deleteItem: (id: string) => void;
   /** Restores an item removed by deleteItem, as long as its grace window hasn't lapsed. */
@@ -126,6 +131,8 @@ interface MnemoStoreType {
   pauseItem: (id: string) => void;
   completeItem: (id: string) => void;
   archiveItem: (id: string) => void;
+  /** Undo for a status change: the thread's status and timestamps as they were in `prev`. */
+  restoreItem: (prev: MnemoItem) => void;
 
   // Filtered views
   getActiveItems: () => MnemoItem[];
@@ -374,9 +381,9 @@ export function MnemoStoreProvider({ children }: { children: React.ReactNode }) 
     [],
   );
 
-  const updateItem = useCallback((id: string, updates: Partial<MnemoItem>) => {
-    const updatedAt = Date.now();
+  const updateItem = useCallback((id: string, updates: Partial<MnemoItem>, opts?: { touch?: boolean }) => {
     const current = itemsRef.current.find((item) => item.id === id);
+    const updatedAt = opts?.touch === false ? (updates.updatedAt ?? current?.updatedAt ?? Date.now()) : Date.now();
     commitItems(
       itemsRef.current.map((item) => (item.id === id ? { ...item, ...updates, updatedAt } : item)),
     );
@@ -725,7 +732,7 @@ export function MnemoStoreProvider({ children }: { children: React.ReactNode }) 
 
   const completeItem = useCallback(
     (id: string) => {
-      updateItem(id, { status: 'completed' });
+      updateItem(id, { status: 'completed', completedAt: Date.now() });
     },
     [updateItem],
   );
@@ -733,6 +740,14 @@ export function MnemoStoreProvider({ children }: { children: React.ReactNode }) 
   const archiveItem = useCallback(
     (id: string) => {
       updateItem(id, { status: 'archived' });
+    },
+    [updateItem],
+  );
+
+  const restoreItem = useCallback(
+    (prev: MnemoItem) => {
+      const { status, completedAt, quietUntil, lastResumedAt, updatedAt } = prev;
+      updateItem(prev.id, { status, completedAt, quietUntil, lastResumedAt, updatedAt }, { touch: false });
     },
     [updateItem],
   );
@@ -810,6 +825,7 @@ export function MnemoStoreProvider({ children }: { children: React.ReactNode }) 
       pauseItem,
       completeItem,
       archiveItem,
+      restoreItem,
       getActiveItems,
       getByCategory,
       getByStatus,
@@ -846,6 +862,7 @@ export function MnemoStoreProvider({ children }: { children: React.ReactNode }) 
       pauseItem,
       completeItem,
       archiveItem,
+      restoreItem,
       getActiveItems,
       getByCategory,
       getByStatus,

@@ -565,7 +565,7 @@ export function NudgeStep({ itemId, onDone }: { itemId: string | null; onDone: (
   const choose = async (wantsNudges: boolean) => {
     setBusy(true);
     const granted = wantsNudges ? await requestNudgePermission() : false;
-    await saveNudgePrefs({ enabled: granted, time: 'morning' });
+    await saveNudgePrefs({ enabled: granted, time: 'morning', weekly: true });
     onDone();
   };
 

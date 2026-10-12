@@ -19,7 +19,8 @@
       },
       "package": "com.mnemo.app",
       "permissions": [
-        "RECORD_AUDIO"
+        "RECORD_AUDIO",
+        "SCHEDULE_EXACT_ALARM"
       ]
     },
     "web": {

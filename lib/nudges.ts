@@ -2,6 +2,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Notifications } from '@/lib/notifications';
 import { Platform } from 'react-native';
 import type { MnemoItem } from '@/types/mnemo';
+import { ensureReminderCategory, REMINDER_CATEGORY } from '@/lib/reminders';
 
 // ─── Gentle nudges ──────────────────────────────────────────────
 // "Resume" only works if the user remembers to open the app. Nudges are
@@ -20,6 +21,8 @@ export type NudgeTime = 'morning' | 'midday' | 'evening';
 export interface NudgePrefs {
   enabled: boolean;
   time: NudgeTime;
+  /** The weekly review notification (lib/review-notice.ts), under the same switch. */
+  weekly: boolean;
 }
 
 export const NUDGE_TIMES: Record<NudgeTime, { label: string; hour: number; minute: number }> = {
@@ -28,7 +31,7 @@ export const NUDGE_TIMES: Record<NudgeTime, { label: string; hour: number; minut
   evening: { label: 'Evening · 18:00', hour: 18, minute: 0 },
 };
 
-const DEFAULT_PREFS: NudgePrefs = { enabled: true, time: 'morning' };
+const DEFAULT_PREFS: NudgePrefs = { enabled: true, time: 'morning', weekly: true };
 
 const PREFS_KEY = 'mnemo-nudge-prefs';
 const STATE_KEY = 'mnemo-nudge-state';
@@ -72,6 +75,7 @@ export async function loadNudgePrefs(): Promise<NudgePrefs> {
       return {
         enabled: parsed.enabled !== false,
         time: parsed.time in NUDGE_TIMES ? parsed.time : DEFAULT_PREFS.time,
+        weekly: parsed.weekly !== false,
       };
     }
   } catch {
@@ -106,7 +110,7 @@ async function loadState(): Promise<NudgeState> {
 
 // ─── Permission ─────────────────────────────────────────────────
 
-async function ensureAndroidChannel(): Promise<void> {
+export async function ensureAndroidChannel(): Promise<void> {
   if (Platform.OS !== 'android') return;
   await Notifications.setNotificationChannelAsync(ANDROID_CHANNEL_ID, {
     name: 'Gentle nudges',
@@ -237,6 +241,7 @@ async function replan(items: NudgeItem[]): Promise<void> {
   const planned: NudgeSlot[] = [];
   if (prefs.enabled && (await hasNudgePermission())) {
     await ensureAndroidChannel();
+    await ensureReminderCategory();
     const byId = new Map(items.map((item) => [item.id, item]));
     const slots = planSlots(items, prefs.time, delivered, now);
     for (const [index, slot] of slots.entries()) {
@@ -249,6 +254,8 @@ async function replan(items: NudgeItem[]): Promise<void> {
           // Routing reads itemId from here — the identifier is a slot, not
           // an item id like a due-date reminder's is.
           data: { itemId: item.id },
+          // Same buttons as a reminder: Done, In an hour, Reply.
+          categoryIdentifier: REMINDER_CATEGORY,
         },
         trigger: {
           type: Notifications.SchedulableTriggerInputTypes.DATE,

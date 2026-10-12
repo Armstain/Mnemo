@@ -77,13 +77,15 @@ export function initDb(): Promise<void> {
 //   1 — threads: items gain a `pinned` column, and every existing item
 //       gets the one entry it is made of (docs/specs/threads.md).
 //   2 — reminders: items gain `repeat` and `starred`, entries `stepDone`.
-const SCHEMA_VERSION = 2;
+//   3 — reviews: items gain `completedAt` and `quietUntil`.
+const SCHEMA_VERSION = 3;
 
 // Every column, in one place, for the INSERT statements below.
 const ITEM_COLUMNS = [
   'id', 'type', 'title', 'content', 'checklistItems', 'links', 'category', 'tags', 'status',
   'nextStep', 'whereLeftOff', 'dueDate', 'createdAt', 'updatedAt', 'lastResumedAt',
   'aiSummary', 'pending', 'pendingRawText', 'pendingAudioUri', 'pinned', 'repeat', 'starred',
+  'completedAt', 'quietUntil',
 ];
 const ENTRY_COLUMNS = [
   'id', 'threadId', 'createdAt', 'updatedAt', 'source', 'transcript', 'blocks', 'leftOff', 'nextStep',
@@ -114,6 +116,10 @@ async function runMigrations(db: SQLite.SQLiteDatabase): Promise<void> {
     await addColumn(db, 'items', 'repeat', 'TEXT');
     await addColumn(db, 'items', 'starred', 'INTEGER');
     await addColumn(db, 'entries', 'stepDone', 'INTEGER');
+  }
+  if (version < 3) {
+    await addColumn(db, 'items', 'completedAt', 'INTEGER');
+    await addColumn(db, 'items', 'quietUntil', 'INTEGER');
   }
   await db.execAsync(`PRAGMA user_version = ${SCHEMA_VERSION}`);
 }
@@ -168,6 +174,8 @@ interface ItemRow {
   pinned: string | null;
   repeat: string | null;
   starred: number | null;
+  completedAt: number | null;
+  quietUntil: number | null;
 }
 
 function rowToItem(row: ItemRow): MnemoItem {
@@ -194,6 +202,8 @@ function rowToItem(row: ItemRow): MnemoItem {
     pinned: row.pinned ? JSON.parse(row.pinned) : undefined,
     repeat: (row.repeat as MnemoItem['repeat']) ?? undefined,
     starred: row.starred ? true : undefined,
+    completedAt: row.completedAt ?? undefined,
+    quietUntil: row.quietUntil ?? undefined,
   };
 }
 
@@ -221,6 +231,8 @@ function itemToParams(item: MnemoItem) {
     $pinned: item.pinned ? JSON.stringify(item.pinned) : null,
     $repeat: item.repeat ?? null,
     $starred: item.starred ? 1 : null,
+    $completedAt: item.completedAt ?? null,
+    $quietUntil: item.quietUntil ?? null,
   };
 }
 
@@ -261,6 +273,7 @@ const COLUMN_KEYS = new Set([
   'type', 'title', 'content', 'checklistItems', 'links', 'category', 'tags', 'status',
   'nextStep', 'whereLeftOff', 'dueDate', 'createdAt', 'updatedAt', 'lastResumedAt',
   'aiSummary', 'pending', 'pendingRawText', 'pendingAudioUri', 'pinned', 'repeat', 'starred',
+  'completedAt', 'quietUntil',
 ]);
 
 function serializeColumnValue(key: string, value: unknown): string | number | null {

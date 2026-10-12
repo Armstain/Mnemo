@@ -6,12 +6,14 @@ import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Card } from '@/components/ui/Card';
+import { ReminderSetupPrompt } from '@/components/ReminderSetupPrompt';
 import { Button, IconButton } from '@/components/ui/Button';
 import { Icon } from '@/components/ui/Icon';
 import { Eyebrow } from '@/components/ui/Eyebrow';
 import { ThreadList, ThreadRow } from '@/components/ui/ThreadRow';
 import { OpenRing, ThreadRing } from '@/components/ui/ThreadRing';
 import { formatReminder, resumeOrder } from '@/lib/when';
+import { shortLine, weekReview } from '@/lib/review';
 import { CONTENT_BOTTOM_CLEARANCE } from '@/components/ui/FloatingTabBar';
 import { useMnemoStore } from '@/hooks/use-mnemo-store';
 import { useThemeColors } from '@/hooks/use-theme';
@@ -132,7 +134,8 @@ export function PulseHome() {
   const enter = useEnter();
   const aiProblem = useAiProblem();
   const insets = useSafeAreaInsets();
-  const { items, getActiveItems, focusThreadId, setFocusThread } = useMnemoStore();
+  const { items, entries, getActiveItems, focusThreadId, setFocusThread } = useMnemoStore();
+  const weekLine = React.useMemo(() => shortLine(weekReview(items, entries)), [items, entries]);
   const focusThread = focusThreadId ? items.find((i) => i.id === focusThreadId) : undefined;
   const colors = useThemeColors();
   const categories = useCategories();
@@ -199,6 +202,25 @@ export function PulseHome() {
             {summary}
           </Text>
         ) : null}
+        {/* The weekly review: one tap to see the week. */}
+        {items.length > 0 ? (
+          <Pressable
+            onPress={() => router.push('/review' as any)}
+            accessibilityRole="button"
+            accessibilityLabel={`Your week. ${weekLine}`}
+            className="flex-row items-center self-start rounded-full pl-3 pr-2.5 h-9 mt-3 active:opacity-70"
+            style={{ backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, maxWidth: '100%' }}
+          >
+            <Icon name="calendar" size={14} color={colors.accent} stroke={2} />
+            <Text className="font-sans-semi text-sm ml-2" style={{ color: colors.fg }}>
+              Your week
+            </Text>
+            <Text className="font-sans text-sm ml-1.5 shrink" style={{ color: colors.fgTertiary }} numberOfLines={1}>
+              {weekLine}
+            </Text>
+            <Icon name="chevronRight" size={14} color={colors.fgTertiary} />
+          </Pressable>
+        ) : null}
         {/* Where quick captures are going, while a focus thread is set */}
         {focusThread ? (
           <View
@@ -230,6 +252,8 @@ export function PulseHome() {
             </Pressable>
           </View>
         ) : null}
+        {/* Strict phones: a one-time nudge to check reminders will arrive. */}
+        <ReminderSetupPrompt />
         {/* Gemini stopped answering for a reason the person can fix. */}
         {aiProblem ? (
           <Pressable
