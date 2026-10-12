@@ -35,6 +35,7 @@ import { ONBOARDING_KEY } from '@/app/onboarding';
 import { NudgeScheduler } from '@/components/NudgeScheduler';
 import { ReminderActions } from '@/components/ReminderActions';
 import { ShareIntake } from '@/components/ShareIntake';
+import { WidgetSync } from '@/components/WidgetSync';
 import { PendingProcessor } from '@/components/PendingProcessor';
 import { FilingNotifier } from '@/components/FilingNotifier';
 import { UndoToastHost } from '@/components/ui/UndoToastHost';
@@ -209,6 +210,7 @@ function RootLayoutNav() {
           <ReminderActions />
           {/* Something shared to Mnemo from another app opens the Save screen. */}
           <ShareIntake />
+          <WidgetSync />
           <NudgeScheduler />
           <UndoToastHost />
         </ThemeProvider>
