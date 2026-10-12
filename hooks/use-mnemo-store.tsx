@@ -23,6 +23,7 @@ import { mergeBackup, type BackupPayload, type MergeResult } from '@/lib/backup'
 import { deriveThreadCache, generateEntryId, newestFirst } from '@/lib/threads';
 import { deleteAllRecordings } from '@/lib/capture';
 import { syncReminderForItem, cancelReminder, cancelAllReminders } from '@/lib/reminders';
+import { nextOccurrence } from '@/lib/when';
 import { UNDO_WINDOW_MS } from '@/hooks/use-undo-toast';
 import { focusIsIdle } from '@/lib/filing';
 
@@ -78,6 +79,11 @@ interface MnemoStoreType {
    */
   deleteEntry: (id: string) => { threadRemoved: boolean };
   undoDeleteEntry: (id: string) => void;
+  /**
+   * Ticks off the thread's next step: the next open one takes its place.
+   * A non-repeating reminder for it goes too. Returns an undo.
+   */
+  completeNextStep: (threadId: string) => () => void;
   /** One thread's entries, newest first. */
   getEntries: (threadId: string) => Entry[];
   /** The thread as of right now, including changes made earlier in the same tick. */
@@ -314,6 +320,14 @@ export function MnemoStoreProvider({ children }: { children: React.ReactNode }) 
         }
         // Pre-threads notes get the one entry they are made of (no-op once done).
         await ensureEntriesForItems(loaded);
+        // A repeating reminder that came round while the app was closed
+        // shows its next time, not "overdue".
+        const now = Date.now();
+        loaded = loaded.map((item) =>
+          item.repeat && item.dueDate && item.dueDate <= now
+            ? { ...item, dueDate: nextOccurrence(item.dueDate, item.repeat, now) }
+            : item,
+        );
         commitItems(loaded);
         commitEntries(await getAllEntries());
         const focus = parseFocus(await readStorage(FOCUS_KEY));
@@ -380,7 +394,7 @@ export function MnemoStoreProvider({ children }: { children: React.ReactNode }) 
     // Only re-sync the reminder when a field it actually depends on
     // changed — avoids a redundant cancel+reschedule round trip on every
     // unrelated edit (title tweak, category change, etc).
-    if ('dueDate' in updates || 'status' in updates || 'title' in updates) {
+    if (['dueDate', 'status', 'title', 'repeat', 'nextStep', 'whereLeftOff'].some((k) => k in updates)) {
       if (current) syncReminderForItem({ ...current, ...updates });
     }
   }, [setFocusThread]);
@@ -398,7 +412,10 @@ export function MnemoStoreProvider({ children }: { children: React.ReactNode }) 
         updates.whereLeftOff = threadEntries.find((e) => e.leftOff)?.leftOff ?? thread.whereLeftOff;
       }
       if (!thread.pinned?.nextStep) {
-        updates.nextStep = threadEntries.find((e) => e.nextStep)?.nextStep ?? thread.nextStep;
+        // The newest step not yet ticked off. Once every step an entry gave
+        // is done there's none; older notes without entry steps keep theirs.
+        const open = threadEntries.find((e) => e.nextStep && !e.stepDone)?.nextStep;
+        updates.nextStep = open ?? (threadEntries.some((e) => e.nextStep) ? undefined : thread.nextStep);
       }
       updateItem(threadId, updates);
     },
@@ -479,6 +496,39 @@ export function MnemoStoreProvider({ children }: { children: React.ReactNode }) 
       syncThreadFromEntries(removed.entry.threadId);
     },
     [syncThreadFromEntries],
+  );
+
+  const completeNextStep = useCallback(
+    (threadId: string) => {
+      const thread = itemsRef.current.find((i) => i.id === threadId);
+      if (!thread?.nextStep) return () => {};
+      const step = thread.nextStep;
+      const before = { nextStep: thread.nextStep, pinned: thread.pinned, dueDate: thread.dueDate };
+      const done = entriesRef.current.filter((e) => e.threadId === threadId && e.nextStep === step && !e.stepDone);
+      for (const e of done) {
+        const next = { ...e, stepDone: true, updatedAt: Date.now() };
+        commitEntries(entriesRef.current.map((x) => (x.id === e.id ? next : x)));
+        insertEntry(next).catch((err) => console.error('Failed to persist step done', err));
+      }
+      // A step the person wrote by hand is unpinned; one-off reminders for it end.
+      updateItem(threadId, {
+        pinned: { ...thread.pinned, nextStep: false },
+        nextStep: undefined,
+        ...(thread.repeat ? {} : { dueDate: undefined }),
+      });
+      syncThreadFromEntries(threadId);
+      return () => {
+        for (const e of done) {
+          const current = entriesRef.current.find((x) => x.id === e.id);
+          if (!current) continue;
+          const back = { ...current, stepDone: undefined, updatedAt: Date.now() };
+          commitEntries(entriesRef.current.map((x) => (x.id === e.id ? back : x)));
+          insertEntry(back).catch((err) => console.error('Failed to persist step undo', err));
+        }
+        updateItem(threadId, before);
+      };
+    },
+    [updateItem, syncThreadFromEntries],
   );
 
   const createThread = useCallback(
@@ -741,6 +791,7 @@ export function MnemoStoreProvider({ children }: { children: React.ReactNode }) 
       deleteItem,
       undoDelete,
       undoDeleteEntry,
+      completeNextStep,
       clearAllData,
       exportBackup,
       importBackup,
@@ -776,6 +827,7 @@ export function MnemoStoreProvider({ children }: { children: React.ReactNode }) 
       deleteItem,
       undoDelete,
       undoDeleteEntry,
+      completeNextStep,
       clearAllData,
       exportBackup,
       importBackup,

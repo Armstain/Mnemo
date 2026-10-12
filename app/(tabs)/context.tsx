@@ -14,6 +14,7 @@ import { Text } from '@/components/ui/Text';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams } from 'expo-router';
 import { File } from 'expo-file-system';
+import * as Haptics from 'expo-haptics';
 import { AnimatePresence, MotiView } from 'moti';
 import { formatDistanceToNow } from 'date-fns';
 
@@ -91,7 +92,7 @@ export default function ThreadScreen() {
   const openSteps = React.useMemo(() => {
     const steps: string[] = [];
     for (const e of entries) {
-      if (e.nextStep) steps.push(e.nextStep);
+      if (e.nextStep && !e.stepDone) steps.push(e.nextStep);
       for (const b of e.blocks) if (b.kind === 'checklist') steps.push(...b.items.filter((i) => !i.checked).map((i) => i.text));
     }
     return [...new Set(steps.map((s) => s.trim()).filter(Boolean))].slice(0, 5);
@@ -215,6 +216,13 @@ export default function ThreadScreen() {
     }
   };
 
+  const handleStepDone = () => {
+    const step = thread.nextStep;
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    const undo = store.completeNextStep(thread.id);
+    showUndoToast(`Done: ${step}`, undo);
+  };
+
   const handleDelete = () => {
     const remove = () => {
       deleteItem(thread.id);
@@ -325,6 +333,16 @@ export default function ThreadScreen() {
             </Button>
           ) : (
             <View className="flex-row">
+              <IconButton
+                icon="star"
+                label={thread.starred ? 'Unpin from Home' : 'Pin to Home'}
+                variant="bare"
+                active={!!thread.starred}
+                onPress={() => {
+                  Haptics.selectionAsync();
+                  updateItem(thread.id, { starred: !thread.starred });
+                }}
+              />
               <IconButton icon="share" label="Share" variant="bare" onPress={onShare} />
               <IconButton icon="pencil" label="Edit thread" variant="bare" onPress={startEditing} />
               <IconButton icon="trash" label="Delete thread" variant="bare" onPress={handleDelete} />
@@ -385,8 +403,13 @@ export default function ThreadScreen() {
                   <TagEditor tags={thread.tags} onChange={(tags) => updateItem(thread.id, { tags })} />
                 </View>
                 <View>
-                  <Eyebrow className="mb-2">Due</Eyebrow>
-                  <DueDatePicker value={thread.dueDate} onChange={(d) => updateItem(thread.id, { dueDate: d })} />
+                  <Eyebrow className="mb-2">Remind me</Eyebrow>
+                  <DueDatePicker
+                    value={thread.dueDate}
+                    onChange={(d) => updateItem(thread.id, { dueDate: d })}
+                    repeat={thread.repeat}
+                    onRepeatChange={(r) => updateItem(thread.id, { repeat: r })}
+                  />
                 </View>
                 <LabeledInput
                   label="Where you left off"
@@ -403,7 +426,7 @@ export default function ThreadScreen() {
                 </Text>
                 {thread.tags.length > 0 || thread.dueDate ? (
                   <View className="flex-row flex-wrap items-center gap-x-4 gap-y-1 mt-2.5">
-                    {thread.dueDate ? <DueDateLabel dueDate={thread.dueDate} /> : null}
+                    {thread.dueDate ? <DueDateLabel dueDate={thread.dueDate} repeat={thread.repeat} /> : null}
                     {thread.tags.length > 0 ? (
                       <Text className="font-sans text-sm" style={{ color: colors.fgTertiary }}>
                         {thread.tags.map((t) => `#${t}`).join('  ')}
@@ -462,6 +485,16 @@ export default function ThreadScreen() {
                           {thread.nextStep}
                         </Text>
                       </View>
+                      <Pressable
+                        onPress={handleStepDone}
+                        hitSlop={8}
+                        accessibilityRole="button"
+                        accessibilityLabel="Mark next step done"
+                        className="w-10 h-10 rounded-full items-center justify-center ml-2 active:opacity-60"
+                        style={{ backgroundColor: colors.surfaceLowest }}
+                      >
+                        <Icon name="check" size={18} stroke={2.2} color={colors.accent} />
+                      </Pressable>
                     </View>
                   ) : null}
                 </MotiView>
@@ -630,7 +663,24 @@ export default function ThreadScreen() {
               )}
               {(ai || thread.aiSummary) && (
               <View className="px-6 mt-9">
-                <Eyebrow>Smart digest</Eyebrow>
+                <View className="flex-row items-center justify-between">
+                  <Eyebrow>Smart digest</Eyebrow>
+                  {thread.aiSummary && ai ? (
+                    // Notes change; the digest can catch up.
+                    <Pressable
+                      onPress={handleGenerateDigest}
+                      disabled={isGenerating}
+                      hitSlop={8}
+                      accessibilityRole="button"
+                      accessibilityLabel="Refresh the digest"
+                      className="mb-3 active:opacity-60"
+                    >
+                      <Text className="font-sans-semi text-sm" style={{ color: colors.accent }}>
+                        {isGenerating ? 'Thinking…' : 'Refresh'}
+                      </Text>
+                    </Pressable>
+                  ) : null}
+                </View>
                 {thread.aiSummary ? (
                   <View className="gap-3">
                     {thread.aiSummary.nextSteps.map((step, i) => (

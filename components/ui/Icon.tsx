@@ -27,6 +27,9 @@ import {
   Hash,
   Volume2,
   MoreHorizontal,
+  Repeat,
+  Star,
+  CircleCheck,
 } from 'lucide-react-native';
 
 type IconComponent = typeof Home;
@@ -59,7 +62,10 @@ export type IconName =
   | 'calendar'
   | 'hash'
   | 'volume'
-  | 'more';
+  | 'more'
+  | 'repeat'
+  | 'star'
+  | 'circleCheck';
 
 /**
  * Mnemo's interface-chrome icon vocabulary — a name-keyed wrapper over
@@ -97,6 +103,9 @@ const ICONS: Record<IconName, IconComponent> = {
   hash: Hash,
   volume: Volume2,
   more: MoreHorizontal,
+  repeat: Repeat,
+  star: Star,
+  circleCheck: CircleCheck,
 };
 
 export interface IconProps {

@@ -225,7 +225,7 @@ export default function CaptureScreen() {
                   placeholder="Call the plumber…"
                 />
                 <View>
-                  <Eyebrow className="mb-2">Due</Eyebrow>
+                  <Eyebrow className="mb-2">Remind me</Eyebrow>
                   <DueDatePicker value={dueDate} onChange={setDueDate} />
                 </View>
               </MotiView>

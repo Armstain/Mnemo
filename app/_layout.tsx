@@ -33,6 +33,7 @@ LogBox.ignoreLogs(['SafeAreaView has been deprecated']);
 
 import { ONBOARDING_KEY } from '@/app/onboarding';
 import { NudgeScheduler } from '@/components/NudgeScheduler';
+import { ReminderActions } from '@/components/ReminderActions';
 import { PendingProcessor } from '@/components/PendingProcessor';
 import { FilingNotifier } from '@/components/FilingNotifier';
 import { UndoToastHost } from '@/components/ui/UndoToastHost';
@@ -155,20 +156,6 @@ function RootLayoutNav() {
     })();
   }, []);
 
-  // Tapping a reminder or a nudge opens the note it's about. Nudges carry
-  // the item id in their data (lib/nudges.ts); a due-date reminder's
-  // identifier is the item id itself (syncReminderForItem in
-  // lib/reminders.ts), so no lookup table is needed.
-  useEffect(() => {
-    if (!notificationsAvailable) return;
-    const subscription = Notifications.addNotificationResponseReceivedListener((response) => {
-      const { identifier, content } = response.notification.request;
-      const itemId = typeof content.data?.itemId === 'string' ? content.data.itemId : identifier;
-      if (itemId) router.push(`/(tabs)/context?id=${itemId}` as any);
-    });
-    return () => subscription.remove();
-  }, []);
-
   return (
     <SafeAreaProvider>
       <MnemoStoreProvider>
@@ -210,6 +197,8 @@ function RootLayoutNav() {
           </Stack>
           <PendingProcessor />
           <FilingNotifier />
+          {/* Tapping a reminder or a nudge opens its thread; reminder buttons act on it. */}
+          <ReminderActions />
           <NudgeScheduler />
           <UndoToastHost />
         </ThemeProvider>

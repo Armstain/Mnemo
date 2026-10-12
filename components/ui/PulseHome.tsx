@@ -11,7 +11,7 @@ import { Icon } from '@/components/ui/Icon';
 import { Eyebrow } from '@/components/ui/Eyebrow';
 import { ThreadList, ThreadRow } from '@/components/ui/ThreadRow';
 import { OpenRing, ThreadRing } from '@/components/ui/ThreadRing';
-import { formatDueDate } from '@/components/ui/DueDatePicker';
+import { formatReminder, resumeOrder } from '@/lib/when';
 import { CONTENT_BOTTOM_CLEARANCE } from '@/components/ui/FloatingTabBar';
 import { useMnemoStore } from '@/hooks/use-mnemo-store';
 import { useThemeColors } from '@/hooks/use-theme';
@@ -66,7 +66,7 @@ function ResumeCard({ item }: { item: MnemoItem }) {
           >
             <CategoryIcon size={13} color={colors.onHero} strokeWidth={2} />
           </ThreadRing>
-          <View className="ml-3">
+          <View className="ml-3 flex-1">
             <Text className="font-sans-semi text-sm" style={{ color: colors.onHero }}>
               {category.label}
             </Text>
@@ -74,6 +74,7 @@ function ResumeCard({ item }: { item: MnemoItem }) {
               {item.status === 'paused' ? 'Paused' : 'Away'} {formatCompactDistance(item.updatedAt)}
             </Text>
           </View>
+          {item.starred ? <Icon name="star" size={16} color={colors.heroAccent} stroke={2} /> : null}
         </View>
 
         <Text className="font-display leading-tight mb-5" style={{ color: colors.onHero, fontSize: 30 }} numberOfLines={3}>
@@ -136,7 +137,7 @@ export function PulseHome() {
   const colors = useThemeColors();
   const categories = useCategories();
 
-  const activeItems = getActiveItems();
+  const activeItems = resumeOrder(getActiveItems(), { focusId: focusThreadId });
   const latestItem = activeItems[0];
 
   const now = Date.now();
@@ -290,7 +291,7 @@ export function PulseHome() {
                     item={item}
                     index={i}
                     onPress={() => openItem(item.id)}
-                    trailing={formatDueDate(item.dueDate!).replace(/^Due /, '')}
+                    trailing={formatReminder(item.dueDate!)}
                     trailingTone={overdue ? colors.error : colors.accent}
                     last={i === comingUp.length - 1}
                   />

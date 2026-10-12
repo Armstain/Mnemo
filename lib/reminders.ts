@@ -29,13 +29,45 @@ async function ensureAndroidChannel(): Promise<void> {
   androidChannelReady = true;
 }
 
-type ReminderItem = Pick<MnemoItem, 'id' | 'title' | 'dueDate' | 'status'>;
+type ReminderItem = Pick<MnemoItem, 'id' | 'title' | 'dueDate' | 'status' | 'repeat' | 'nextStep' | 'whereLeftOff'>;
+
+export const REMINDER_CATEGORY = 'reminder';
+let categoryReady = false;
+
+/** The buttons under a reminder: tick the step off, or put it off. */
+async function ensureCategory(): Promise<void> {
+  if (categoryReady) return;
+  await Notifications.setNotificationCategoryAsync(REMINDER_CATEGORY, [
+    { identifier: 'done', buttonTitle: 'Done', options: { opensAppToForeground: true } },
+    { identifier: 'hour', buttonTitle: 'In an hour', options: { opensAppToForeground: true } },
+    { identifier: 'tomorrow', buttonTitle: 'Tomorrow', options: { opensAppToForeground: true } },
+  ]);
+  categoryReady = true;
+}
+
+/** What the reminder says: the step to take, or where they left off. */
+function reminderBody(item: ReminderItem): string {
+  if (item.nextStep) return `Next: ${item.nextStep}`;
+  if (item.whereLeftOff) return `You left off: ${item.whereLeftOff}`;
+  return 'Time to pick this back up.';
+}
+
+function repeatingTrigger(item: ReminderItem & { dueDate: number }) {
+  const d = new Date(item.dueDate);
+  const hour = d.getHours();
+  const minute = d.getMinutes();
+  const T = Notifications.SchedulableTriggerInputTypes;
+  const channelId = ANDROID_CHANNEL_ID;
+  if (item.repeat === 'daily') return { type: T.DAILY, hour, minute, channelId } as const;
+  if (item.repeat === 'weekly') return { type: T.WEEKLY, weekday: d.getDay() + 1, hour, minute, channelId } as const;
+  return { type: T.MONTHLY, day: d.getDate(), hour, minute, channelId } as const;
+}
 
 /**
  * Schedules or cancels a local reminder for an item's due date, based on
- * its current dueDate/status. The scheduled notification's identifier is
- * always the item's own id, so calling this again for the same item
- * safely replaces any previous reminder rather than accumulating
+ * its current dueDate/status/repeat. The scheduled notification's
+ * identifier is always the item's own id, so calling this again for the
+ * same item safely replaces any previous reminder rather than accumulating
  * duplicates — callers don't need to track whether one already exists.
  *
  * Best-effort by design, matching the rest of the AI/background layer:
@@ -50,26 +82,52 @@ export async function syncReminderForItem(item: ReminderItem): Promise<void> {
     await Notifications.cancelScheduledNotificationAsync(item.id);
 
     const isActive = item.status === 'active' || item.status === 'paused';
-    if (!isActive || !item.dueDate || item.dueDate <= Date.now()) return;
+    if (!isActive || !item.dueDate) return;
+    if (!item.repeat && item.dueDate <= Date.now()) return;
 
     const granted = await ensurePermission();
     if (!granted) return;
 
     await ensureAndroidChannel();
+    await ensureCategory();
 
     await Notifications.scheduleNotificationAsync({
       identifier: item.id,
       content: {
         title: item.title,
-        body: "It's time — you set a reminder for this.",
+        body: reminderBody(item),
+        data: { itemId: item.id },
+        categoryIdentifier: REMINDER_CATEGORY,
       },
-      trigger: {
-        type: Notifications.SchedulableTriggerInputTypes.DATE,
-        date: new Date(item.dueDate),
-      },
+      trigger: item.repeat
+        ? repeatingTrigger({ ...item, dueDate: item.dueDate })
+        : { type: Notifications.SchedulableTriggerInputTypes.DATE, date: new Date(item.dueDate), channelId: ANDROID_CHANNEL_ID },
     });
   } catch {
     // See doc comment — never let this surface or block the caller.
+  }
+}
+
+/**
+ * One extra reminder at `at`, leaving a repeating schedule as it is
+ * ("In an hour" on a daily reminder shouldn't move tomorrow's).
+ */
+export async function remindOnce(item: ReminderItem, at: number): Promise<void> {
+  try {
+    await ensureAndroidChannel();
+    await ensureCategory();
+    await Notifications.scheduleNotificationAsync({
+      identifier: `${item.id}:again`,
+      content: {
+        title: item.title,
+        body: reminderBody(item),
+        data: { itemId: item.id },
+        categoryIdentifier: REMINDER_CATEGORY,
+      },
+      trigger: { type: Notifications.SchedulableTriggerInputTypes.DATE, date: new Date(at), channelId: ANDROID_CHANNEL_ID },
+    });
+  } catch {
+    // Best-effort, like every reminder.
   }
 }
 

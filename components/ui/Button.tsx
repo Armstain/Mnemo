@@ -135,11 +135,13 @@ interface IconButtonProps {
   /** Box size in px. Never below 44 for primary touch targets. */
   size?: number;
   disabled?: boolean;
+  /** On (a toggle like "Pin to Home"): drawn in the accent colour. */
+  active?: boolean;
   onPress: () => void;
 }
 
 /** Circular control for toolbar actions. */
-export function IconButton({ icon, label, variant = 'default', size = 44, disabled = false, onPress }: IconButtonProps) {
+export function IconButton({ icon, label, variant = 'default', size = 44, disabled = false, active = false, onPress }: IconButtonProps) {
   const colors = useThemeColors();
   const press = usePressScale(0.88);
 
@@ -150,6 +152,7 @@ export function IconButton({ icon, label, variant = 'default', size = 44, disabl
   };
 
   const { background, color } = (() => {
+    if (active) return { background: variant === 'bare' ? 'transparent' : colors.accentSoft, color: colors.accent };
     switch (variant) {
       case 'bare':
         return { background: 'transparent', color: colors.fgSecondary };
@@ -169,6 +172,7 @@ export function IconButton({ icon, label, variant = 'default', size = 44, disabl
       disabled={disabled}
       accessibilityRole="button"
       accessibilityLabel={label}
+      accessibilityState={active ? { selected: true } : undefined}
       hitSlop={4}
       style={{ opacity: disabled ? 0.42 : 1 }}
     >

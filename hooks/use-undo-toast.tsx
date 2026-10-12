@@ -12,14 +12,15 @@ interface ToastState {
   id: number;
   message: string;
   actionLabel: string;
-  onAction: () => void;
+  /** No action: a plain notice. */
+  onAction?: () => void;
 }
 
 export interface ToastOptions {
   message: string;
   /** Defaults to "Undo". */
   actionLabel?: string;
-  onAction: () => void;
+  onAction?: () => void;
   /** Defaults to UNDO_WINDOW_MS. */
   durationMs?: number;
 }

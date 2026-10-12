@@ -52,10 +52,11 @@ export function UndoToastHost() {
           >
             {toast.message}
           </Text>
+          {toast.onAction ? (
           <Pressable
             onPress={() => {
               Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-              toast.onAction();
+              toast.onAction?.();
               dismiss();
             }}
             hitSlop={8}
@@ -66,6 +67,7 @@ export function UndoToastHost() {
               {toast.actionLabel}
             </Text>
           </Pressable>
+          ) : null}
         </MotiView>
       )}
     </AnimatePresence>

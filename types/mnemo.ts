@@ -56,6 +56,10 @@ export interface MnemoItem {
 
   /** Fields the user edited on the thread, which new entries must not overwrite. */
   pinned?: { nextStep?: boolean; whereLeftOff?: boolean; title?: boolean };
+  /** The reminder (dueDate) comes back: every day, week or month at that time. */
+  repeat?: 'daily' | 'weekly' | 'monthly';
+  /** Kept at the top of Home's "pick up where you left off". */
+  starred?: boolean;
 
   /** Optional due date as Unix timestamp (ms). */
   dueDate?: number;
@@ -150,6 +154,8 @@ export interface Entry {
   /** This entry's "where you are now" / next step. */
   leftOff?: string;
   nextStep?: string;
+  /** The person ticked this entry's next step off. */
+  stepDone?: boolean;
   filing: Filing;
   /** True while the entry waits for AI structuring (offline, failed, in flight). */
   pending?: boolean;
