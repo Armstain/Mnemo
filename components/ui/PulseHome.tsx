@@ -12,6 +12,7 @@ import { Eyebrow } from '@/components/ui/Eyebrow';
 import { ThreadList, ThreadRow } from '@/components/ui/ThreadRow';
 import { OpenRing, ThreadRing } from '@/components/ui/ThreadRing';
 import { formatReminder, resumeOrder } from '@/lib/when';
+import { weekReview } from '@/lib/review';
 import { CONTENT_BOTTOM_CLEARANCE } from '@/components/ui/FloatingTabBar';
 import { useMnemoStore } from '@/hooks/use-mnemo-store';
 import { useThemeColors } from '@/hooks/use-theme';
@@ -132,7 +133,17 @@ export function PulseHome() {
   const enter = useEnter();
   const aiProblem = useAiProblem();
   const insets = useSafeAreaInsets();
-  const { items, getActiveItems, focusThreadId, setFocusThread } = useMnemoStore();
+  const { items, entries, getActiveItems, focusThreadId, setFocusThread } = useMnemoStore();
+  const weekLine = React.useMemo(() => {
+    const r = weekReview(items, entries);
+    const open = r.due.length + r.steps.length;
+    const parts = [
+      r.notes > 0 ? `${r.notes} ${r.notes === 1 ? 'note' : 'notes'}` : '',
+      open > 0 ? `${open} ${open === 1 ? 'step' : 'steps'} open` : '',
+      r.quiet.length > 0 ? `${r.quiet.length} quiet` : '',
+    ].filter(Boolean);
+    return parts.join(' · ');
+  }, [items, entries]);
   const focusThread = focusThreadId ? items.find((i) => i.id === focusThreadId) : undefined;
   const colors = useThemeColors();
   const categories = useCategories();
@@ -198,6 +209,25 @@ export function PulseHome() {
           <Text className="font-quote text-body leading-relaxed mt-1.5" style={{ color: colors.fgSecondary }}>
             {summary}
           </Text>
+        ) : null}
+        {/* The weekly review: one tap to see the week. */}
+        {items.length > 0 ? (
+          <Pressable
+            onPress={() => router.push('/review' as any)}
+            accessibilityRole="button"
+            accessibilityLabel={`Your week. ${weekLine}`}
+            className="flex-row items-center self-start rounded-full pl-3 pr-2.5 h-9 mt-3 active:opacity-70"
+            style={{ backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, maxWidth: '100%' }}
+          >
+            <Icon name="calendar" size={14} color={colors.accent} stroke={2} />
+            <Text className="font-sans-semi text-sm ml-2" style={{ color: colors.fg }}>
+              Your week
+            </Text>
+            <Text className="font-sans text-sm ml-1.5 shrink" style={{ color: colors.fgTertiary }} numberOfLines={1}>
+              {weekLine}
+            </Text>
+            <Icon name="chevronRight" size={14} color={colors.fgTertiary} />
+          </Pressable>
         ) : null}
         {/* Where quick captures are going, while a focus thread is set */}
         {focusThread ? (

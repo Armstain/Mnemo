@@ -45,6 +45,7 @@ import { structurePendingEntry } from '@/lib/capture';
 import { relatedThreads, type RelatedThread } from '@/lib/search';
 import { entryText } from '@/lib/threads';
 import { matchEntries } from '@/lib/find';
+import { lastActivity, QUIET_DAYS } from '@/lib/review';
 import { confirmAction } from '@/utils/confirm';
 import { metricKey, summarizeMeasures, type MetricSummary } from '@/lib/measures';
 import { useCategories, useStatusConfig } from '@/utils/categories';
@@ -106,6 +107,11 @@ export default function ThreadScreen() {
     return [...new Set(steps.map((s) => s.trim()).filter(Boolean))].slice(0, 5);
   }, [entries]);
   const numbers = React.useMemo(() => summarizeMeasures(entries), [entries]);
+  const quietDays = React.useMemo(
+    // eslint-disable-next-line react-hooks/purity -- a day-granular age; re-reading the clock per render is fine
+    () => (thread ? Math.floor((Date.now() - lastActivity(thread, entries)) / 86_400_000) : 0),
+    [thread, entries],
+  );
   const isFocus = !!thread && focusThreadId === thread.id;
   // An entry auto-filing thought might belong elsewhere (lib/filing.ts).
   const suggestion = entries.find((e) => e.filing.by === 'suggested');
@@ -222,6 +228,16 @@ export default function ThreadScreen() {
       });
       if (touched) store.updateEntry(entry.id, { blocks });
     }
+  };
+
+  // A thread with some history gets a wrap-up card first; a one-liner is just done.
+  const handleDone = () => {
+    if (entries.length >= 3 || numbers.length > 0) {
+      router.push(`/wrapup?id=${thread.id}` as any);
+      return;
+    }
+    completeItem(thread.id);
+    showUndoToast(`"${thread.title}" is done`, () => resumeItem(thread.id));
   };
 
   const handleStepDone = () => {
@@ -505,6 +521,26 @@ export default function ThreadScreen() {
                 </MotiView>
               ) : null}
 
+              {/* ─── Gone quiet: keep going, pause or wrap up ─── */}
+              {!isEditing && quietDays >= QUIET_DAYS && thread.status === 'active' ? (
+                <MotiView {...enter.fade(1)} className="mx-6 mt-5 rounded-lg p-4" style={{ backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border }}>
+                  <Text className="font-sans-semi text-body" style={{ color: colors.fg }}>
+                    Nothing new for {quietDays} days
+                  </Text>
+                  <Text className="font-sans text-sm mt-0.5" style={{ color: colors.fgSecondary }}>
+                    Still going, or is it over?
+                  </Text>
+                  <View className="flex-row gap-2 mt-3">
+                    <Button variant="tonal" size="sm" icon="check" onPress={() => router.push(`/wrapup?id=${thread.id}` as any)}>
+                      Wrap it up
+                    </Button>
+                    <Button variant="quiet" size="sm" icon="pause" onPress={() => pauseItem(thread.id)}>
+                      Pause
+                    </Button>
+                  </View>
+                </MotiView>
+              ) : null}
+
               {/* ─── Status actions ─────────────────────── */}
               <MotiView {...enter.fade(1)} className="px-6 mt-5 flex-row gap-2">
                 {thread.status === 'active' ? (
@@ -528,7 +564,7 @@ export default function ThreadScreen() {
                   </Button>
                 )}
                 {thread.status !== 'completed' && (
-                  <Button variant="quiet" size="sm" icon="check" className="flex-1" onPress={() => completeItem(thread.id)}>
+                  <Button variant="quiet" size="sm" icon="check" className="flex-1" onPress={handleDone}>
                     Done
                   </Button>
                 )}

@@ -2,6 +2,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Notifications } from '@/lib/notifications';
 import { Platform } from 'react-native';
 import type { MnemoItem } from '@/types/mnemo';
+import { ensureReminderCategory, REMINDER_CATEGORY } from '@/lib/reminders';
 
 // ─── Gentle nudges ──────────────────────────────────────────────
 // "Resume" only works if the user remembers to open the app. Nudges are
@@ -237,6 +238,7 @@ async function replan(items: NudgeItem[]): Promise<void> {
   const planned: NudgeSlot[] = [];
   if (prefs.enabled && (await hasNudgePermission())) {
     await ensureAndroidChannel();
+    await ensureReminderCategory();
     const byId = new Map(items.map((item) => [item.id, item]));
     const slots = planSlots(items, prefs.time, delivered, now);
     for (const [index, slot] of slots.entries()) {
@@ -249,6 +251,8 @@ async function replan(items: NudgeItem[]): Promise<void> {
           // Routing reads itemId from here — the identifier is a slot, not
           // an item id like a due-date reminder's is.
           data: { itemId: item.id },
+          // Same buttons as a reminder: Done, In an hour, Reply.
+          categoryIdentifier: REMINDER_CATEGORY,
         },
         trigger: {
           type: Notifications.SchedulableTriggerInputTypes.DATE,

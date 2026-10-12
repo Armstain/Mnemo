@@ -6,6 +6,7 @@ import { useUndoToast } from '@/hooks/use-undo-toast';
 import { Notifications, notificationsAvailable } from '@/lib/notifications';
 import { remindOnce } from '@/lib/reminders';
 import { formatReminder } from '@/lib/when';
+import { saveTextNote } from '@/lib/capture';
 
 type Response = import('expo-notifications').NotificationResponse;
 
@@ -37,13 +38,26 @@ export function ReminderActions() {
       if (handled.current.has(key)) return;
       handled.current.add(key);
 
+      // The weekly review notification opens the review.
+      if (content.data?.route === '/review') {
+        router.push('/review' as any);
+        return;
+      }
+
       const itemId = typeof content.data?.itemId === 'string' ? content.data.itemId : identifier;
       const s = storeRef.current;
       const item = s.getThread(itemId);
       if (!item) return;
       Notifications.dismissNotificationAsync(response.notification.request.identifier).catch(() => {});
 
-      if (response.actionIdentifier === 'done') {
+      if (response.actionIdentifier === 'reply') {
+        // What was typed into the notification goes into the thread.
+        const text = response.userText?.trim();
+        if (text) {
+          saveTextNote({ text, category: item.category, threadId: item.id, filing: { by: 'user' }, store: s });
+          showToast({ message: `Added to ${item.title}` });
+        }
+      } else if (response.actionIdentifier === 'done') {
         if (item.nextStep) {
           const step = item.nextStep;
           const undo = s.completeNextStep(item.id);

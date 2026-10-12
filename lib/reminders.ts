@@ -34,13 +34,21 @@ type ReminderItem = Pick<MnemoItem, 'id' | 'title' | 'dueDate' | 'status' | 'rep
 export const REMINDER_CATEGORY = 'reminder';
 let categoryReady = false;
 
-/** The buttons under a reminder: tick the step off, or put it off. */
-async function ensureCategory(): Promise<void> {
+/**
+ * The buttons under a reminder or nudge: tick the step off, put it off, or
+ * reply with what happened (it goes into the thread). Android shows three.
+ */
+export async function ensureReminderCategory(): Promise<void> {
   if (categoryReady) return;
   await Notifications.setNotificationCategoryAsync(REMINDER_CATEGORY, [
     { identifier: 'done', buttonTitle: 'Done', options: { opensAppToForeground: true } },
     { identifier: 'hour', buttonTitle: 'In an hour', options: { opensAppToForeground: true } },
-    { identifier: 'tomorrow', buttonTitle: 'Tomorrow', options: { opensAppToForeground: true } },
+    {
+      identifier: 'reply',
+      buttonTitle: 'Reply',
+      textInput: { submitButtonTitle: 'Add', placeholder: 'What happened?' },
+      options: { opensAppToForeground: true },
+    },
   ]);
   categoryReady = true;
 }
@@ -89,7 +97,7 @@ export async function syncReminderForItem(item: ReminderItem): Promise<void> {
     if (!granted) return;
 
     await ensureAndroidChannel();
-    await ensureCategory();
+    await ensureReminderCategory();
 
     await Notifications.scheduleNotificationAsync({
       identifier: item.id,
@@ -115,7 +123,7 @@ export async function syncReminderForItem(item: ReminderItem): Promise<void> {
 export async function remindOnce(item: ReminderItem, at: number): Promise<void> {
   try {
     await ensureAndroidChannel();
-    await ensureCategory();
+    await ensureReminderCategory();
     await Notifications.scheduleNotificationAsync({
       identifier: `${item.id}:again`,
       content: {
