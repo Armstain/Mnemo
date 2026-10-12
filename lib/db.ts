@@ -488,9 +488,3 @@ export async function deleteEmbedding(itemId: string): Promise<void> {
   const db = await getDb();
   await db.runAsync('DELETE FROM embeddings WHERE itemId = $itemId', { $itemId: itemId });
 }
-
-export async function countEmbeddings(): Promise<number> {
-  const db = await getDb();
-  const row = await db.getFirstAsync<{ count: number }>('SELECT COUNT(*) as count FROM embeddings', {});
-  return row?.count ?? 0;
-}

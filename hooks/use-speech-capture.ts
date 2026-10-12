@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { ExpoSpeechRecognitionModule, useSpeechRecognitionEvent } from 'expo-speech-recognition';
 
 import { getPreferences, setPreferences, type SpeechLang } from '@/lib/preferences';
+import { languageOf } from '@/lib/language';
 
 // Voice notes are transcribed by the phone's own speech recognition while
 // the person talks. No audio is ever written to disk or sent anywhere;
@@ -23,16 +24,6 @@ const STOP_TIMEOUT_MS = 2500;
 // Android switches between them mid-sentence, and whichever language a
 // note comes out in is the first guess next time.
 const LANGUAGES: SpeechLang[] = ['bn-BD', 'en-US'];
-const BENGALI = /[\u0980-\u09FF]/g;
-const LATIN = /[A-Za-z]/g;
-
-/** Which language a transcript is mostly in, by script. */
-export function languageOf(text: string): SpeechLang | null {
-  const bn = text.match(BENGALI)?.length ?? 0;
-  const en = text.match(LATIN)?.length ?? 0;
-  if (bn + en < 4) return null;
-  return bn >= en ? 'bn-BD' : 'en-US';
-}
 
 function normaliseLevel(db: number): number {
   // volumechange reports roughly -2 (silence) to 10 (loud).

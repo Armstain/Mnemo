@@ -1,4 +1,5 @@
 import type { Entry, Measure, Rollup } from '@/types/mnemo';
+import { nfc } from '@/utils/text';
 
 // Measures: any number someone reports about their life (money spent, km
 // run, their weight, a price they're comparing). The AI only pulls numbers
@@ -125,14 +126,6 @@ offset(0.25, 'shoa', 'sowa', 'soa');
 scale(1000, 'hajar', 'hazar', 'hajaar', 'hazaar');
 scale(100_000, 'lakh', 'lac', 'lak', 'lakhs');
 scale(10_000_000, 'koti', 'crore', 'cr');
-
-function nfc(text: string): string {
-  try {
-    return text.normalize('NFC');
-  } catch {
-    return text;
-  }
-}
 
 // Endings a number word can carry in a sentence: "হাজারের", "hajarer".
 const SUFFIXES = ['ের', 'এর', 'টা', 'টি', 'খানেক', 'র', 'ে', 'er', 'ta', 'r', 'e'].map(nfc);

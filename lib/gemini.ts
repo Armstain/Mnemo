@@ -244,18 +244,6 @@ Decide whether this capture continues one of them: the same trip, task, project,
 - "reason": one short line they will read, e.g. "Sounds like part of your Lisbon trip".`;
 }
 
-const ENHANCE_SCHEMA = {
-  type: Type.OBJECT,
-  properties: {
-    suggestedTitle: { type: Type.STRING },
-    suggestedCategory: { type: Type.STRING, enum: VALID_CATEGORIES },
-    whereLeftOff: { type: Type.STRING },
-    nextStep: { type: Type.STRING },
-    summary: SUMMARY_SCHEMA,
-  },
-  required: ['suggestedTitle', 'suggestedCategory', 'whereLeftOff', 'nextStep', 'summary'],
-};
-
 /** A note given to `askNotes`: one thread, its dated entries flattened to text. */
 export interface NoteForQuestion {
   id: string;
@@ -343,19 +331,6 @@ Return the result as a JSON object with the following structure:
   } catch (error) {
     console.error('Error summarizing context:', error);
     throw error;
-  }
-}
-
-export async function generateTitle(notes: string) {
-  const prompt = `Generate a short, concise title (max 5 words) for the following task notes:\n\n${notes}`;
-  try {
-    const response = await generateText({
-      contents: prompt,
-    });
-    return response.text?.trim() || 'Untitled Task';
-  } catch (error) {
-    console.error('Error generating title:', error);
-    return 'Untitled Task';
   }
 }
 
@@ -492,47 +467,6 @@ export async function processAudioDump(
 
   const text = response.text;
   if (!text) throw new Error('Failed to process audio dump');
-  return JSON.parse(text);
-}
-
-/**
- * Enhance an existing item with AI suggestions.
- * Returns suggested improvements without modifying the original.
- */
-export async function enhanceItem(title: string, content: string, category: string) {
-  const prompt = `
-    You are an expert productivity assistant. The user has an existing item in their Personal Continuity App.
-    
-    Title: "${title}"
-    Content: "${content}"
-    Category: ${category}
-    
-    Analyze this item and suggest improvements. Detect the language and respond in the SAME language.
-    
-    Return a JSON object:
-    {
-      "suggestedTitle": "A cleaner, more descriptive title if the current one is vague (otherwise return the same title)",
-      "suggestedCategory": "one of: ${VALID_CATEGORIES.join(', ')}",
-      "whereLeftOff": "1-2 sentences summarizing where they seem to be",
-      "nextStep": "The single most important next action",
-      "summary": {
-        "leftOff": "Summary of current state",
-        "nextSteps": ["Actionable step 1", "Actionable step 2"],
-        "resources": [{"name": "Resource name", "url": "URL or search link"}]
-      }
-    }
-  `;
-
-  const response = await generateText({
-    contents: prompt,
-    config: {
-      responseMimeType: 'application/json',
-      responseSchema: ENHANCE_SCHEMA,
-    },
-  });
-
-  const text = response.text;
-  if (!text) throw new Error('Failed to enhance item');
   return JSON.parse(text);
 }
 

@@ -27,7 +27,7 @@ export function threadPreview(item: MnemoItem): string {
     const done = checklist.filter((c) => c.checked).length;
     return `${done} of ${checklist.length} done`;
   }
-  return item.pending ? 'Transcribing your recording…' : '';
+  return item.pending ? 'Being read…' : '';
 }
 
 interface ThreadRowProps {

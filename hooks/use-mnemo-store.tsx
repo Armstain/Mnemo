@@ -114,7 +114,7 @@ interface MnemoStoreType {
   deleteItem: (id: string) => void;
   /** Restores an item removed by deleteItem, as long as its grace window hasn't lapsed. */
   undoDelete: (id: string) => void;
-  /** Irreversibly wipes every item, embedding, and voice recording on disk. */
+  /** Irreversibly wipes every thread, entry, embedding, photo and reminder on this phone. */
   clearAllData: () => Promise<void>;
   /** Everything to put in an encrypted backup. */
   exportBackup: () => BackupPayload;

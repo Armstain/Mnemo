@@ -23,9 +23,6 @@ export async function loadStoredApiKeys(): Promise<void> {
   }
 }
 
-/** Backward compatibility alias. */
-export const loadStoredApiKey = loadStoredApiKeys;
-
 // ─── Gemini API Key ───────────────────────────────────────────────
 
 /**

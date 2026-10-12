@@ -19,6 +19,7 @@ import { takeIncomingShare, type IncomingShare } from '@/lib/shared';
 import { resumeOrder } from '@/lib/when';
 import { useEnter } from '@/utils/motion';
 import { noFocusRing } from '@/utils/web';
+import { hostOf } from '@/utils/text';
 
 /** Text that is only the shared link adds nothing to keep as text. */
 function textBesides(text: string | undefined, url: string | undefined): string {
@@ -99,7 +100,7 @@ export default function ShareScreen() {
     router.replace(`/(tabs)/context?id=${saved.threadId}` as any);
   };
 
-  const host = share.url?.replace(/^https?:\/\/(www\.)?/, '').split('/')[0];
+  const host = share.url ? hostOf(share.url) : undefined;
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.bg }}>

@@ -1,5 +1,6 @@
 import { numberTokens, scanNumbers, metricKey, type NumberSpan } from '@/lib/measures';
 import type { Category, ChecklistItem, Measure, Rollup } from '@/types/mnemo';
+import { capitalize, hostOf, nfc } from '@/utils/text';
 
 // Reading a note on the phone, with no AI: a title, lists, links, the
 // numbers worth adding up, the next step and when it's due, a category
@@ -34,18 +35,6 @@ const STEP_MAX = 120;
 
 let idCounter = 0;
 const itemId = () => `ck_${Date.now().toString(36)}_${(idCounter++).toString(36)}`;
-
-function nfc(text: string): string {
-  try {
-    return text.normalize('NFC');
-  } catch {
-    return text;
-  }
-}
-
-function capitalize(text: string): string {
-  return text.charAt(0).toUpperCase() + text.slice(1);
-}
 
 function clip(text: string, max: number): string {
   if (text.length <= max) return text;
@@ -585,11 +574,6 @@ function readTitle(text: string, items: ChecklistItem[]): string {
   if (link && title.split(/\s+/).length < 2) return hostOf(link);
   if (!title) return items[0] ? clip(items[0].text, TITLE_MAX) : '';
   return clip(capitalize(title), TITLE_MAX);
-}
-
-function hostOf(url: string): string {
-  const m = url.match(/^https?:\/\/(?:www\.)?([^/?#]+)/i);
-  return m ? m[1] : url;
 }
 
 // ─── All of it ──────────────────────────────────────────────────

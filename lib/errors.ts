@@ -46,10 +46,6 @@ export async function readErrors(): Promise<LoggedError[]> {
   }
 }
 
-export async function clearErrors(): Promise<void> {
-  await AsyncStorage.removeItem(KEY).catch(() => {});
-}
-
 /** The report a person can paste into an email or issue: versions and recent errors. */
 export async function problemReport(): Promise<string> {
   const errors = await readErrors();

@@ -184,39 +184,6 @@ export function ChecklistEditor({
   );
 }
 
-/** Compact progress bar for use in ResumeCards. */
-export function ChecklistProgress({
-  items,
-}: {
-  items: ChecklistItem[];
-}) {
-  const colors = useThemeColors();
-  const statusColors = useStatusConfig();
-  const checked = items.filter((i) => i.checked).length;
-  const total = items.length;
-  if (total === 0) return null;
-
-  const progress = checked / total;
-
-  return (
-    <View className="flex-row items-center gap-2 mt-2">
-      <View className="flex-1 h-1 bg-surface-warm rounded-full overflow-hidden">
-        <View
-          className="h-full rounded-full"
-          style={{
-            width: `${progress * 100}%`,
-            backgroundColor:
-              progress === 1 ? statusColors.completed.color : colors.accent,
-          }}
-        />
-      </View>
-      <Text className="font-sans text-xs text-fg-muted">
-        {checked}/{total}
-      </Text>
-    </View>
-  );
-}
-
 /** A checkbox that pops when ticked, with the tick scaling in. */
 function CheckBox({ checked, onPress }: { checked: boolean; onPress: () => void }) {
   const colors = useThemeColors();

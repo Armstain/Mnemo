@@ -7,7 +7,7 @@ import { bn } from 'date-fns/locale/bn';
 
 import { generateRebriefScript, generateSpeech } from '@/lib/gemini';
 import { base64ToBytes, pcmToWav } from '@/lib/pcm';
-import { languageOf } from '@/hooks/use-speech-capture';
+import { languageOf } from '@/lib/language';
 import type { MnemoItem } from '@/types/mnemo';
 
 function isBangla(item: MnemoItem): boolean {

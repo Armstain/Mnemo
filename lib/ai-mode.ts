@@ -35,10 +35,6 @@ export function setAiProblem(next: AiProblem | null): void {
   problemListeners.forEach((l) => l());
 }
 
-export function getAiProblem(): AiProblem | null {
-  return problem;
-}
-
 export function useAiProblem(): AiProblem | null {
   return useSyncExternalStore(
     (l) => {

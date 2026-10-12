@@ -21,6 +21,7 @@ import { useThemeColors, type ThemeColors } from '@/hooks/use-theme';
 import { formatEntryTime } from '@/utils/time';
 import { noFocusRing } from '@/utils/web';
 import type { Block, Entry } from '@/types/mnemo';
+import { hostOf } from '@/utils/text';
 
 const SOURCE: Record<Entry['source'], { label: string; icon: IconName }> = {
   voice: { label: 'Voice', icon: 'mic' },
@@ -67,14 +68,6 @@ function markdownStyles(colors: ThemeColors, bangla: boolean) {
     },
     hr: { backgroundColor: colors.border, height: 1 },
   };
-}
-
-function hostOf(url: string): string {
-  try {
-    return new URL(url).host.replace(/^www\./, '');
-  } catch {
-    return url;
-  }
 }
 
 /** The address without its scheme or host, for a link that has no title yet. */

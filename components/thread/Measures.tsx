@@ -14,14 +14,11 @@ import { Eyebrow } from '@/components/ui/Eyebrow';
 import { useThemeColors, type ThemeColors } from '@/hooks/use-theme';
 import { formatValue, ROLLUPS, type MetricSummary } from '@/lib/measures';
 import type { Measure, Rollup } from '@/types/mnemo';
+import { capitalize } from '@/utils/text';
 
 /** Group colours, in order of size; the category hues share a lightness. */
 function groupPalette(colors: ThemeColors): string[] {
   return [colors.hueSage, colors.hueClay, colors.hueIndigo, colors.hueAmber, colors.huePlum, colors.hueTeal];
-}
-
-function capitalize(text: string): string {
-  return text.charAt(0).toUpperCase() + text.slice(1);
 }
 
 /** The numbers one entry reported, as label · value rows. */

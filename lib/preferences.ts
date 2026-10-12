@@ -32,7 +32,6 @@ function phoneLanguage(): SpeechLang {
 const DEFAULTS: Preferences = { aiMode: 'unset', speechLang: phoneLanguage() };
 
 let current: Preferences = DEFAULTS;
-let loaded = false;
 const listeners = new Set<() => void>();
 
 async function read(): Promise<string | null> {
@@ -61,17 +60,12 @@ export async function loadPreferences(hasKey: boolean): Promise<Preferences> {
   } catch {
     current = { ...DEFAULTS, aiMode: hasKey ? 'gemini' : 'unset' };
   }
-  loaded = true;
   listeners.forEach((l) => l());
   return current;
 }
 
 export function getPreferences(): Preferences {
   return current;
-}
-
-export function preferencesLoaded(): boolean {
-  return loaded;
 }
 
 export function setPreferences(update: Partial<Preferences>): void {

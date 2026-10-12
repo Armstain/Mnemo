@@ -41,16 +41,6 @@ export function toBlob(vector: Float32Array): Uint8Array {
   return new Uint8Array(normalized.buffer, normalized.byteOffset, normalized.byteLength);
 }
 
-/**
- * Raw BLOB bytes -> Float32Array. Copies into a fresh buffer first —
- * Float32Array requires its backing buffer to start on a 4-byte boundary,
- * which a BLOB read from SQLite isn't guaranteed to do.
- */
-export function fromBlob(blob: Uint8Array): Float32Array {
-  const copy = blob.slice();
-  return new Float32Array(copy.buffer, copy.byteOffset, copy.byteLength / 4);
-}
-
 export { dot } from '@/lib/vector-math';
 
 /**
