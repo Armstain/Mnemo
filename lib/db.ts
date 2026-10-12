@@ -106,7 +106,16 @@ export async function ensureEntriesForItems(items: MnemoItem[]): Promise<Entry[]
   for (const item of items) {
     if (covered.has(item.id)) continue;
     const entry = entryFromLegacyItem(item);
-    await insertEntry(entry);
+    // Never overwrite: an entry with this id may have moved to another thread.
+    await db.runAsync(
+      `INSERT OR IGNORE INTO entries
+        (id, threadId, createdAt, updatedAt, source, transcript, blocks, leftOff, nextStep,
+         filing, pending, pendingRawText, pendingAudioUri)
+       VALUES
+        ($id, $threadId, $createdAt, $updatedAt, $source, $transcript, $blocks, $leftOff, $nextStep,
+         $filing, $pending, $pendingRawText, $pendingAudioUri)`,
+      entryToParams(entry),
+    );
     created.push(entry);
   }
   return created;

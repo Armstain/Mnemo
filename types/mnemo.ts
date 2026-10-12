@@ -55,7 +55,7 @@ export interface MnemoItem {
   whereLeftOff?: string;
 
   /** Fields the user edited on the thread, which new entries must not overwrite. */
-  pinned?: { nextStep?: boolean; whereLeftOff?: boolean };
+  pinned?: { nextStep?: boolean; whereLeftOff?: boolean; title?: boolean };
 
   /** Optional due date as Unix timestamp (ms). */
   dueDate?: number;

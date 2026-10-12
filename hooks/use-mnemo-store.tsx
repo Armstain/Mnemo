@@ -71,7 +71,13 @@ interface MnemoStoreType {
   /** Adds an entry to an existing thread; the thread's next step and text follow it. */
   addEntry: (threadId: string, entry: NewEntry) => Entry;
   updateEntry: (id: string, updates: Partial<Omit<Entry, 'id' | 'threadId'>>) => void;
-  deleteEntry: (id: string) => void;
+  /**
+   * Removes an entry, with an undo window (UNDO_WINDOW_MS). If it was its
+   * thread's last entry, the thread goes too; `undoDeleteEntry` brings both
+   * back. Returns whether the thread went.
+   */
+  deleteEntry: (id: string) => { threadRemoved: boolean };
+  undoDeleteEntry: (id: string) => void;
   /** One thread's entries, newest first. */
   getEntries: (threadId: string) => Entry[];
   /** The thread as of right now, including changes made earlier in the same tick. */
@@ -430,13 +436,47 @@ export function MnemoStoreProvider({ children }: { children: React.ReactNode }) 
     [syncThreadFromEntries],
   );
 
+  // Entries taken out of view by deleteEntry, waiting out their undo window.
+  // Deleting a thread's last entry deletes the thread too; deleteItem and
+  // undoDelete are defined further down, so they're reached through refs.
+  const deleteItemRef = useRef<((id: string) => void) | null>(null);
+  const undoDeleteRef = useRef<((id: string) => void) | null>(null);
+  const removedEntriesRef = useRef<Record<string, { entry: Entry; threadRemoved: boolean }>>({});
+  const entryTimersRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
+
   const deleteEntry = useCallback(
     (id: string) => {
       const current = entriesRef.current.find((e) => e.id === id);
-      if (!current) return;
+      if (!current) return { threadRemoved: false };
+      const lastOne = !entriesRef.current.some((e) => e.id !== id && e.threadId === current.threadId);
+      removedEntriesRef.current[id] = { entry: current, threadRemoved: lastOne };
       commitEntries(entriesRef.current.filter((e) => e.id !== id));
-      deleteEntryRow(id).catch((e) => console.error('Failed to delete entry', e));
-      syncThreadFromEntries(current.threadId);
+      if (lastOne) {
+        // A thread with no entries is nothing; it goes with its last entry.
+        deleteItemRef.current?.(current.threadId);
+      } else {
+        syncThreadFromEntries(current.threadId);
+      }
+      entryTimersRef.current[id] = setTimeout(() => {
+        delete removedEntriesRef.current[id];
+        delete entryTimersRef.current[id];
+        deleteEntryRow(id).catch((e) => console.error('Failed to delete entry', e));
+      }, UNDO_WINDOW_MS);
+      return { threadRemoved: lastOne };
+    },
+    [syncThreadFromEntries],
+  );
+
+  const undoDeleteEntry = useCallback(
+    (id: string) => {
+      const removed = removedEntriesRef.current[id];
+      if (!removed) return;
+      clearTimeout(entryTimersRef.current[id]);
+      delete entryTimersRef.current[id];
+      delete removedEntriesRef.current[id];
+      if (removed.threadRemoved) undoDeleteRef.current?.(removed.entry.threadId);
+      if (!entriesRef.current.some((e) => e.id === id)) commitEntries([...entriesRef.current, removed.entry]);
+      syncThreadFromEntries(removed.entry.threadId);
     },
     [syncThreadFromEntries],
   );
@@ -525,9 +565,12 @@ export function MnemoStoreProvider({ children }: { children: React.ReactNode }) 
   // fires and the row survives in the DB — reload just brings it back,
   // which is the safe failure mode for a "delete" action.
   const removedItemsRef = useRef<Record<string, MnemoItem>>({});
+  // deleteEntry (defined above) needs these; filled in once they exist.
+  deleteItemRef.current = (id: string) => deleteItemImpl(id);
+  undoDeleteRef.current = (id: string) => undoDeleteImpl(id);
   const deleteTimersRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
 
-  const deleteItem = useCallback((id: string) => {
+  function deleteItemImpl(id: string) {
     const found = itemsRef.current.find((item) => item.id === id);
     if (found) removedItemsRef.current[id] = found;
     if (focusRef.current === id) setFocusThread(null);
@@ -543,9 +586,9 @@ export function MnemoStoreProvider({ children }: { children: React.ReactNode }) 
       commitEntries(entriesRef.current.filter((e) => e.threadId !== id));
       deleteItemRow(id).catch((e) => console.error('Failed to persist item delete', e));
     }, UNDO_WINDOW_MS);
-  }, [setFocusThread]);
+  }
 
-  const undoDelete = useCallback((id: string) => {
+  function undoDeleteImpl(id: string) {
     const timer = deleteTimersRef.current[id];
     if (timer) clearTimeout(timer);
     delete deleteTimersRef.current[id];
@@ -558,7 +601,11 @@ export function MnemoStoreProvider({ children }: { children: React.ReactNode }) 
       commitItems([restored, ...itemsRef.current]);
     }
     syncReminderForItem(restored);
-  }, []);
+  }
+
+  // Stable callbacks that always run this render's implementation.
+  const deleteItem = useCallback((id: string) => deleteItemRef.current?.(id), []);
+  const undoDelete = useCallback((id: string) => undoDeleteRef.current?.(id), []);
 
   const clearAllData = useCallback(async () => {
     // Cancel every in-flight undo-delete timer first — otherwise one could
@@ -567,6 +614,9 @@ export function MnemoStoreProvider({ children }: { children: React.ReactNode }) 
     Object.values(deleteTimersRef.current).forEach(clearTimeout);
     deleteTimersRef.current = {};
     removedItemsRef.current = {};
+    Object.values(entryTimersRef.current).forEach(clearTimeout);
+    entryTimersRef.current = {};
+    removedEntriesRef.current = {};
 
     await deleteAllItems();
     deleteAllRecordings();
@@ -582,7 +632,7 @@ export function MnemoStoreProvider({ children }: { children: React.ReactNode }) 
       app: 'mnemo',
       exportedAt: Date.now(),
       items: itemsRef.current.filter((i) => !removedItemsRef.current[i.id]),
-      entries: entriesRef.current,
+      entries: entriesRef.current.filter((e) => !removedItemsRef.current[e.threadId]),
     }),
     [],
   );
@@ -690,6 +740,7 @@ export function MnemoStoreProvider({ children }: { children: React.ReactNode }) 
       updateItem,
       deleteItem,
       undoDelete,
+      undoDeleteEntry,
       clearAllData,
       exportBackup,
       importBackup,
@@ -724,6 +775,7 @@ export function MnemoStoreProvider({ children }: { children: React.ReactNode }) 
       updateItem,
       deleteItem,
       undoDelete,
+      undoDeleteEntry,
       clearAllData,
       exportBackup,
       importBackup,

@@ -191,11 +191,40 @@ export async function structurePendingEntry(
   entry: PendingEntry,
   store: CaptureStore,
 ): Promise<void> {
+  // One run per entry at a time: a manual Retry while the background run
+  // is still out would otherwise process (and bill) the same note twice.
+  if (inFlight.has(entry.id)) return;
+  inFlight.add(entry.id);
+  try {
+    await structure(entry, store);
+  } finally {
+    inFlight.delete(entry.id);
+  }
+}
+
+const inFlight = new Set<string>();
+
+/** Whether this entry is with the AI right now (an edit then keeps the person's words). */
+export function isStructuring(entryId: string): boolean {
+  return inFlight.has(entryId);
+}
+
+/** The text block of an entry, as it reads right now. */
+function textOf(e: Pick<Entry, 'blocks'>): string {
+  const block = e.blocks.find((b) => b.kind === 'text');
+  return block && block.kind === 'text' ? block.markdown.trim() : '';
+}
+
+async function structure(entry: PendingEntry, store: CaptureStore): Promise<void> {
   const snap = store.snapshot();
   const live = snap.entries.find((e) => e.id === entry.id);
   if (!live) return; // Deleted while it waited.
+  // Its thread was deleted (or is in its undo window): don't bring it back.
+  if (!store.getThread(live.threadId)) return;
   const filedBy = live.filing.by;
-  const matching = filedBy === 'new' || filedBy === 'focus';
+  // A new note's thread the person has already named is where they want it.
+  const named = filedBy === 'new' && !!store.getThread(live.threadId)?.pinned?.title;
+  const matching = (filedBy === 'new' && !named) || filedBy === 'focus';
   const candidates = matching
     ? gatherCandidates({
         threads: snap.items,
@@ -237,22 +266,30 @@ export async function structurePendingEntry(
   }
   transcript = transcript ?? processed.transcript;
 
+  // The AI call takes a while. Whatever happened meanwhile wins over it:
+  const now = store.snapshot().entries.find((e) => e.id === entry.id);
+  if (!now || !store.getThread(now.threadId)) return; // deleted meanwhile
+  // …and if the person edited the note while it waited, their words stay
+  // (numbers and links are still picked out, from what they wrote).
+  const sentText = (entry.pendingRawText ?? '').trim();
+  const editedMeanwhile = !!sentText && textOf(now) !== sentText;
+
   // Every number must appear in the person's own words, not only the AI's notes.
   const measures = verifyMeasures(
     processed.measures,
-    entry.pendingRawText ?? processed.transcript ?? processed.notes,
+    editedMeanwhile ? textOf(now) : entry.pendingRawText ?? processed.transcript ?? processed.notes,
   );
-  const handMadeChecklists = entry.blocks.filter((b) => b.kind === 'checklist');
-  const existingLinks = entry.blocks.flatMap((b) => (b.kind === 'link' ? [b.url] : []));
+  const handMadeChecklists = now.blocks.filter((b) => b.kind === 'checklist');
+  const existingLinks = now.blocks.flatMap((b) => (b.kind === 'link' ? [b.url] : []));
   const links = [...new Set([...existingLinks, ...(processed.links ?? [])])];
   const blocks: Block[] = [
-    ...buildBlocks({ text: processed.notes }),
+    ...buildBlocks({ text: editedMeanwhile ? textOf(now) : processed.notes }),
     ...handMadeChecklists,
     ...(measures.length > 0 ? [{ kind: 'measures' as const, items: measures }] : []),
     ...buildBlocks({ links }),
   ];
-  const leftOff = entry.leftOff || processed.summary?.leftOff;
-  const nextStep = entry.nextStep || processed.summary?.nextSteps?.[0];
+  const leftOff = now.leftOff || (editedMeanwhile ? undefined : processed.summary?.leftOff);
+  const nextStep = now.nextStep || (editedMeanwhile ? undefined : processed.summary?.nextSteps?.[0]);
 
   store.updateEntry(entry.id, {
     transcript,
@@ -289,7 +326,7 @@ export async function structurePendingEntry(
   }
 
   if (decision.action === 'attach') {
-    const own = store.getThread(live.threadId);
+    const own = store.getThread(now.threadId);
     store.moveEntry(entry.id, decision.threadId, { by: 'auto', confidence: decision.confidence });
     if (own && !store.snapshot().entries.some((e) => e.threadId === own.id)) {
       store.removeThreadNow(own.id);
@@ -302,7 +339,7 @@ export async function structurePendingEntry(
     emitFiling({
       type: 'attached',
       entryId: entry.id,
-      fromThreadId: live.threadId,
+      fromThreadId: now.threadId,
       toThreadId: target.id,
       toTitle: target.title,
       ownTitle: processed.title,
@@ -313,7 +350,7 @@ export async function structurePendingEntry(
   }
 
   if (decision.action === 'release') {
-    const from = store.getThread(live.threadId);
+    const from = store.getThread(now.threadId);
     const created = store.moveEntryToNewThread(entry.id, {
       title: processed.title,
       category: aiCategory ?? 'general',
@@ -324,7 +361,7 @@ export async function structurePendingEntry(
     emitFiling({
       type: 'released',
       entryId: entry.id,
-      fromThreadId: live.threadId,
+      fromThreadId: now.threadId,
       fromTitle: from?.title ?? '',
       toThreadId: created.id,
     });
@@ -332,11 +369,11 @@ export async function structurePendingEntry(
     return;
   }
 
-  const thread = store.getThread(live.threadId);
+  const thread = store.getThread(now.threadId);
   if (!thread) return;
   if (thread.pending) {
     store.updateItem(thread.id, {
-      title: processed.title,
+      title: thread.pinned?.title ? thread.title : processed.title,
       tags,
       // The category picker defaults to General; a better guess wins.
       ...(thread.category === 'general' && aiCategory ? { category: aiCategory } : {}),

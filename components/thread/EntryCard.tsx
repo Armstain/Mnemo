@@ -1,5 +1,5 @@
 import React from 'react';
-import { Alert, Platform, Pressable, Text, TextInput, View } from 'react-native';
+import { Pressable, Text, TextInput, View } from 'react-native';
 import Markdown from 'react-native-markdown-display';
 
 import { Button, IconButton } from '@/components/ui/Button';
@@ -9,6 +9,8 @@ import { ExternalLink } from '@/components/ExternalLink';
 import { MeasureRows } from '@/components/thread/Measures';
 import { MoveSheet } from '@/components/thread/MoveSheet';
 import { useMnemoStore } from '@/hooks/use-mnemo-store';
+import { useUndoToast } from '@/hooks/use-undo-toast';
+import { isStructuring } from '@/lib/capture';
 import { useThemeColors, type ThemeColors } from '@/hooks/use-theme';
 import { formatEntryTime } from '@/utils/time';
 import { noFocusRing } from '@/utils/web';
@@ -51,19 +53,6 @@ function markdownStyles(colors: ThemeColors) {
     },
     hr: { backgroundColor: colors.border, height: 1 },
   };
-}
-
-/** Asks before deleting. Alert buttons don't render on web, so use confirm() there. */
-function confirmDelete(onConfirm: () => void) {
-  const message = 'This entry will be removed from the thread.';
-  if (Platform.OS === 'web') {
-    if (typeof window !== 'undefined' && window.confirm(`Delete entry? ${message}`)) onConfirm();
-    return;
-  }
-  Alert.alert('Delete entry?', message, [
-    { text: 'Cancel', style: 'cancel' },
-    { text: 'Delete', style: 'destructive', onPress: onConfirm },
-  ]);
 }
 
 function hostOf(url: string): string {
@@ -127,15 +116,19 @@ export function EntryCard({
   entry,
   onRetry,
   onMoved,
+  onDeleted,
 }: {
   entry: Entry;
   onRetry?: () => void;
   /** After a move: the thread the entry now lives in. */
   onMoved?: (threadId: string) => void;
+  /** After a delete; `threadRemoved` when it was the thread's last entry. */
+  onDeleted?: (threadRemoved: boolean) => void;
 }) {
   const colors = useThemeColors();
   const md = useMarkdownStyles();
-  const { updateEntry, deleteEntry } = useMnemoStore();
+  const { updateEntry, deleteEntry, undoDeleteEntry, getThread } = useMnemoStore();
+  const { showUndoToast } = useUndoToast();
   const [menuOpen, setMenuOpen] = React.useState(false);
   const [editing, setEditing] = React.useState(false);
   const [moving, setMoving] = React.useState(false);
@@ -152,8 +145,26 @@ export function EntryCard({
   const saveText = () => {
     const markdown = draft.trim();
     const others = entry.blocks.filter((b) => b.kind !== 'text');
-    updateEntry(entry.id, { blocks: markdown ? [{ kind: 'text', markdown }, ...others] : others });
+    updateEntry(entry.id, {
+      blocks: markdown ? [{ kind: 'text', markdown }, ...others] : others,
+      // Still waiting for the AI: it should tidy what's there now. (If it's
+      // already out with the AI, the edit is kept over its version.)
+      ...(entry.pending && entry.pendingRawText && markdown && !isStructuring(entry.id)
+        ? { pendingRawText: markdown }
+        : {}),
+    });
     setEditing(false);
+  };
+
+  // No "are you sure?": the entry can be brought back from the toast.
+  const remove = () => {
+    const threadTitle = getThread(entry.threadId)?.title;
+    const { threadRemoved } = deleteEntry(entry.id);
+    showUndoToast(
+      threadRemoved && threadTitle ? `"${threadTitle}" deleted` : 'Entry deleted',
+      () => undoDeleteEntry(entry.id),
+    );
+    onDeleted?.(threadRemoved);
   };
 
   return (
@@ -224,7 +235,7 @@ export function EntryCard({
             icon="trash"
             onPress={() => {
               setMenuOpen(false);
-              confirmDelete(() => deleteEntry(entry.id));
+              remove();
             }}
           >
             Delete

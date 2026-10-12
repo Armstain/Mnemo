@@ -163,11 +163,14 @@ export default function ThreadScreen() {
     // overwrite it; clearing it hands the field back to the entries.
     const latestNext = entries.find((e) => e.nextStep)?.nextStep;
     const latestLeftOff = entries.find((e) => e.leftOff)?.leftOff;
+    const title = editTitle.trim() || thread.title;
     updateItem(thread.id, {
-      title: editTitle.trim() || thread.title,
+      title,
       nextStep: nextStep || latestNext,
       whereLeftOff: whereLeftOff || latestLeftOff,
       pinned: {
+        // A name the person gave stays: the AI won't rename it.
+        title: title !== thread.title || !!thread.pinned?.title,
         nextStep: nextStep ? nextStep !== thread.nextStep || !!thread.pinned?.nextStep : false,
         whereLeftOff: whereLeftOff
           ? whereLeftOff !== thread.whereLeftOff || !!thread.pinned?.whereLeftOff
@@ -178,9 +181,22 @@ export default function ThreadScreen() {
   };
 
   const handleDelete = () => {
-    deleteItem(thread.id);
-    showUndoToast(`"${thread.title}" deleted`, () => undoDelete(thread.id));
-    router.back();
+    const remove = () => {
+      deleteItem(thread.id);
+      showUndoToast(`"${thread.title}" deleted`, () => undoDelete(thread.id));
+      router.back();
+    };
+    // One note is undone from the toast; a whole history deserves a question first.
+    if (entries.length <= 1) return remove();
+    const message = `All ${entries.length} entries in "${thread.title}" will be deleted.`;
+    if (Platform.OS === 'web') {
+      if (typeof window !== 'undefined' && window.confirm(`Delete thread? ${message}`)) remove();
+      return;
+    }
+    Alert.alert('Delete thread?', message, [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Delete', style: 'destructive', onPress: remove },
+    ]);
   };
 
   const handleRetryProcessing = async () => {
@@ -543,6 +559,7 @@ export default function ThreadScreen() {
                           entry={entry}
                           onRetry={entry.pending && !isGenerating ? () => handleRetryProcessing() : undefined}
                           onMoved={followMove}
+                          onDeleted={(threadRemoved) => threadRemoved && router.back()}
                         />
                       </MotiView>
                     ))}
