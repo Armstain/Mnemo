@@ -2,28 +2,33 @@ import { Directory, File, Paths } from 'expo-file-system';
 import {
   processAudioDump,
   processVoiceDump,
-  type CaptureContext,
+  AiOffError,
   type ProcessedCapture,
 } from '@/lib/gemini';
-import { transcribeAudio } from '@/lib/groq';
+import { aiEnabled, setAiProblem } from '@/lib/ai-mode';
+import { classifyAiError, onApiKeyChanged } from '@/lib/api-key';
+import { logError } from '@/lib/errors';
 import {
   embedText,
   embeddableText,
-  fromBlob,
   toBlob,
   EMBEDDING_MODEL,
   EMBEDDING_DIMS,
 } from '@/lib/embeddings';
-import { getAllEmbeddings, upsertEmbedding } from '@/lib/db';
-import type { Block, Category, Entry, Filing } from '@/types/mnemo';
+import { getVectors, upsertEmbedding } from '@/lib/db';
+import type { Block, Category, ChecklistItem, Entry, Filing, MnemoItem } from '@/types/mnemo';
 import type { CaptureStore } from '@/hooks/use-mnemo-store';
 import { buildBlocks } from '@/lib/threads';
-import { trackedMetrics, verifyMeasures } from '@/lib/measures';
+import { summarizeMeasures, trackedMetrics, verifyMeasures } from '@/lib/measures';
+import { understand, type KnownMetric } from '@/lib/understand';
+import { imageBase64, imagesOf } from '@/lib/images';
+import { fetchLinkPreview, type LinkPreview } from '@/lib/link-preview';
 import {
   ATTACH_CONFIDENCE,
   decideFiling,
   emitFiling,
   gatherCandidates,
+  keywordMatch,
   similarityTo,
   type FilingDecision,
 } from '@/lib/filing';
@@ -32,36 +37,6 @@ const CATEGORIES: Category[] = ['work', 'personal', 'study', 'shopping', 'health
 
 function asCategory(value: unknown): Category | undefined {
   return CATEGORIES.includes(value as Category) ? (value as Category) : undefined;
-}
-
-/**
- * Turn a voice recording into a structured note, degrading gracefully:
- * 1. Gemini audio understanding (transcribe + structure in one call).
- * 2. Groq Whisper transcript, structured by Gemini text.
- * 3. Groq Whisper transcript as-is — a raw note beats a lost one.
- * Throws only when every provider is unreachable; callers keep their
- * offline "process later" path for that case.
- */
-export async function processRecording(
-  input: { fileUri: string; base64: string; mimeType: string },
-  ctx?: CaptureContext,
-): Promise<ProcessedCapture> {
-  try {
-    return await processAudioDump(input.base64, input.mimeType, ctx);
-  } catch {
-    const transcript = await transcribeAudio(input.fileUri, input.mimeType);
-    try {
-      return { ...(await processVoiceDump(transcript, ctx)), transcript };
-    } catch {
-      const words = transcript.split(/\s+/);
-      return {
-        title: words.slice(0, 5).join(' ') + (words.length > 5 ? '…' : ''),
-        notes: transcript,
-        links: [],
-        transcript,
-      };
-    }
-  }
 }
 
 /**
@@ -94,63 +69,209 @@ async function embedAndStore(item: {
   }
 }
 
-/**
- * Copies a finished recording out of its temp/cache location and saves it
- * as a pending voice entry, then kicks off background AI structuring.
- * With a `threadId` the entry joins that thread; without one it starts a
- * new thread. Shared by the full recording screen (dump.tsx), the capture
- * button's hold-to-record, and onboarding — one save path for all three.
- */
-export async function saveVoiceRecording(params: {
-  tempUri: string;
+interface NoteInput {
+  text: string;
   category: Category;
   threadId?: string;
   /** How it got into `threadId`: picked there by the person, or their focus thread. */
   filing?: Filing;
+  checklistItems?: ChecklistItem[];
+  leftOff?: string;
+  nextStep?: string;
+  dueDate?: number;
+  /** Photos already kept (lib/images). */
+  images?: Block[];
+  /** Links given apart from the text (a shared page). */
+  links?: string[];
+  /** A name for a new thread, when there's a better one than the text's (a shared page's title). */
+  title?: string;
   store: CaptureStore;
-}): Promise<{ threadId: string; entry: Entry }> {
-  const { tempUri, category, threadId, filing, store } = params;
+}
 
-  const recordingsDir = new Directory(Paths.document, 'recordings');
-  try {
-    recordingsDir.create({ intermediates: true, idempotent: true });
-  } catch {
-    // Directory already exists — safe to continue.
-  }
-  const permanentFile = new File(recordingsDir, `recording-${Date.now()}.m4a`);
-  await new File(tempUri).copy(permanentFile);
+/** What a thread already tracks, so the phone reuses its names. */
+function knownMetrics(store: CaptureStore, threadId?: string): KnownMetric[] {
+  if (!threadId) return [];
+  const entries = store.snapshot().entries.filter((e) => e.threadId === threadId);
+  return summarizeMeasures(entries).map((m) => ({ metric: m.metric, unit: m.unit }));
+}
 
+/**
+ * Every note is read on the phone the moment it's saved (lib/understand):
+ * offline that's all it gets; with AI on it's what shows until Gemini's
+ * version arrives, and what stays if Gemini never answers.
+ */
+function saveNote(source: Entry['source'], params: NoteInput): { threadId: string; entry: Entry } {
+  const { category, threadId, store } = params;
+  const words = params.text.trim();
+  const images = params.images ?? [];
+  // Gemini can read a photo too (a receipt, a whiteboard), so one alone is worth sending.
+  const ai = aiEnabled() && (words.length > 0 || images.length > 0);
+  const reading = understand(words, { known: knownMetrics(store, threadId), monthFirst: monthFirst() });
+
+  // With AI on, the text stays exactly as said: Gemini rewrites it, and an
+  // edit made meanwhile is noticed against it. Offline, list lines become a
+  // checklist.
+  const checklist = [...(params.checklistItems ?? []), ...(ai ? [] : reading.checklist)];
+  const blocks: Block[] = [
+    ...buildBlocks({ text: ai ? words : reading.text }),
+    ...images,
+    ...buildBlocks({ checklistItems: checklist }),
+    ...(reading.measures.length > 0 ? [{ kind: 'measures' as const, items: reading.measures }] : []),
+    ...buildBlocks({ links: [...new Set([...(params.links ?? []), ...reading.links])] }),
+  ];
   const entryInput = {
-    source: 'voice' as const,
-    blocks: [],
-    pending: true,
-    pendingAudioUri: permanentFile.uri,
+    source,
+    transcript: words || undefined,
+    blocks,
+    leftOff: params.leftOff?.trim() || (ai ? undefined : reading.leftOff),
+    nextStep: params.nextStep?.trim() || (ai ? undefined : reading.nextStep),
+    pending: ai,
+    pendingRawText: ai ? words : undefined,
   };
+  const due = params.dueDate ?? reading.due;
 
+  let saved: { threadId: string; entry: Entry };
   if (threadId) {
-    const entry = store.addEntry(threadId, { ...entryInput, filing: filing ?? { by: 'user' } });
-    resolvePendingEntry(entry, store);
-    return { threadId, entry };
+    saved = { threadId, entry: store.addEntry(threadId, { ...entryInput, filing: params.filing ?? { by: 'user' } }) };
+    const thread = store.getThread(threadId);
+    if (thread) {
+      const updates: Partial<MnemoItem> = {};
+      // A day named in the note sets the reminder, unless one's already coming.
+      if (due && (params.dueDate || !thread.dueDate || thread.dueDate < Date.now())) updates.dueDate = due;
+      if (reading.tags.some((t) => !thread.tags.includes(t))) updates.tags = [...new Set([...thread.tags, ...reading.tags])].slice(0, 8);
+      if (Object.keys(updates).length > 0) store.updateItem(threadId, updates);
+    }
+  } else {
+    const fallback =
+      checklist.length > 0 ? 'Checklist' : images.length > 0 ? 'Photo' : source === 'voice' ? 'Voice note' : 'Quick note';
+    const created = store.createThread(
+      {
+        title: (reading.title || params.title?.trim() || fallback).slice(0, 80),
+        // Offline, the phone's guess beats "General"; with AI on, Gemini guesses.
+        category: category === 'general' && !ai ? reading.category ?? 'general' : category,
+        tags: reading.tags,
+        status: 'active',
+        dueDate: due,
+        // A placeholder title the AI replaces, when AI is on.
+        pending: ai,
+      },
+      entryInput,
+    );
+    saved = { threadId: created.thread.id, entry: created.entry };
+    if (!ai) suggestByKeywords(saved, words, store);
   }
+  if (ai) resolvePendingEntry(saved.entry, store);
+  enrichLinks(saved.entry.id, store);
+  return saved;
+}
 
-  const timestamp = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-  const created = store.createThread(
-    {
-      title: `Voice note · ${timestamp}`,
-      category,
-      tags: [],
-      status: 'active',
-      // The thread itself is pending until its first entry is structured:
-      // its title is a placeholder the AI replaces.
-      pending: true,
-    },
-    entryInput,
-  );
+const previewed = new Set<string>();
+const knownPreviews = new Map<string, LinkPreview>();
 
-  // Fire-and-forget — the caller shouldn't wait on a network round trip to
-  // see their note land.
-  resolvePendingEntry(created.entry, store);
-  return { threadId: created.thread.id, entry: created.entry };
+/** A preview already fetched (the share screen shows one): no need to fetch again. */
+export function rememberPreview(url: string, preview: LinkPreview): void {
+  knownPreviews.set(url, preview);
+}
+
+/**
+ * Gives an entry's links their page title, site and picture, read by the
+ * phone (lib/link-preview). Fire-and-forget; each link is tried once.
+ */
+export async function enrichLinks(entryId: string, store: CaptureStore): Promise<void> {
+  const entry = store.snapshot().entries.find((e) => e.id === entryId);
+  if (!entry) return;
+  const todo = entry.blocks.flatMap((b) => (b.kind === 'link' && !b.title && !previewed.has(b.url) ? [b.url] : []));
+  for (const url of todo) {
+    previewed.add(url);
+    const preview = knownPreviews.get(url) ?? (await fetchLinkPreview(url));
+    if (!preview) continue;
+    // Re-read: the entry may have changed while the page loaded.
+    const now = store.snapshot().entries.find((e) => e.id === entryId);
+    if (!now) return;
+    store.updateEntry(entryId, {
+      blocks: now.blocks.map((b) =>
+        b.kind === 'link' && b.url === url && !b.title
+          ? { ...b, title: preview.title, site: preview.site, description: preview.description, imageUrl: preview.imageUrl }
+          : b,
+      ),
+    });
+  }
+}
+
+/** Offline: point out an open thread the note clearly shares words with. */
+function suggestByKeywords(saved: { threadId: string; entry: Entry }, text: string, store: CaptureStore) {
+  const match = keywordMatch({ text, threads: store.snapshot().items, excludeId: saved.threadId });
+  if (!match) return;
+  store.updateEntry(saved.entry.id, {
+    filing: { by: 'suggested', threadId: match.threadId, confidence: match.confidence },
+  });
+  emitFiling({
+    type: 'suggested',
+    entryId: saved.entry.id,
+    threadId: saved.threadId,
+    toThreadId: match.threadId,
+    toTitle: match.title,
+    reason: match.reason,
+  });
+}
+
+/** 3/4 is March 4 on phones set to US English, 3 April elsewhere. */
+function monthFirst(): boolean {
+  try {
+    return /^en-US$/i.test(Intl.DateTimeFormat().resolvedOptions().locale);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Saves what was said in a voice note (transcribed live on the phone; no
+ * audio is kept). With a `threadId` it joins that thread; otherwise it
+ * starts one.
+ */
+export function saveVoiceNote(params: Omit<NoteInput, 'checklistItems' | 'leftOff' | 'nextStep' | 'dueDate'>) {
+  return saveNote('voice', params);
+}
+
+/** Saves a typed note. Same shape as `saveVoiceNote`, plus the Write screen's own fields. */
+export function saveTextNote(params: NoteInput) {
+  return saveNote('text', params);
+}
+
+/** Saves something shared in from another app: text, a link, photos. */
+export function saveSharedNote(params: NoteInput) {
+  return saveNote('share', params);
+}
+
+/**
+ * Finishes a note that was waiting for an AI that won't come (the person
+ * switched to offline): it gets the phone's reading instead.
+ */
+export function finishOnDevice(entry: Entry, store: CaptureStore): void {
+  const words = (entry.pendingRawText ?? textOf(entry)).trim();
+  const reading = understand(words, { known: knownMetrics(store, entry.threadId), monthFirst: monthFirst() });
+  const hasMeasures = entry.blocks.some((b) => b.kind === 'measures');
+  const links = entry.blocks.flatMap((b) => (b.kind === 'link' ? [b.url] : []));
+  const newLinks = reading.links.filter((l) => !links.includes(l));
+  store.updateEntry(entry.id, {
+    blocks: [
+      ...entry.blocks,
+      ...(!hasMeasures && reading.measures.length > 0 ? [{ kind: 'measures' as const, items: reading.measures }] : []),
+      ...buildBlocks({ links: newLinks }),
+    ],
+    leftOff: entry.leftOff || reading.leftOff,
+    nextStep: entry.nextStep || reading.nextStep,
+    pending: false,
+    pendingRawText: undefined,
+  });
+  const thread = store.getThread(entry.threadId);
+  if (thread?.pending) {
+    store.updateItem(thread.id, {
+      title: thread.pinned?.title ? thread.title : reading.title || thread.title,
+      category: thread.category === 'general' ? reading.category ?? 'general' : thread.category,
+      pending: false,
+    });
+  }
 }
 
 /** Deletes the whole recordings directory. Used by "Clear all data" in Settings. */
@@ -159,21 +280,6 @@ export function deleteAllRecordings(): void {
     new Directory(Paths.document, 'recordings').delete();
   } catch {
     // Never existed, or already gone — nothing to do.
-  }
-}
-
-/**
- * Best-effort cleanup for a recording that's being discarded (cancelled
- * hold, or too short to be intentional) rather than saved. The temp file
- * lives in a cache dir the OS reclaims anyway, so failures here are fine
- * to ignore.
- */
-export function discardRecordingFile(tempUri?: string | null): void {
-  if (!tempUri) return;
-  try {
-    new File(tempUri).delete();
-  } catch {
-    // Already gone, or never existed — nothing to do.
   }
 }
 
@@ -202,11 +308,42 @@ export async function structurePendingEntry(
   entry: PendingEntry,
   store: CaptureStore,
 ): Promise<void> {
+  // One run per entry at a time: a manual Retry while the background run
+  // is still out would otherwise process (and bill) the same note twice.
+  if (inFlight.has(entry.id)) return;
+  inFlight.add(entry.id);
+  try {
+    await structure(entry, store);
+  } finally {
+    inFlight.delete(entry.id);
+  }
+}
+
+const inFlight = new Set<string>();
+/** Photos sent along with one note; more would be slow and costly. */
+const MAX_PHOTOS_TO_AI = 3;
+
+/** Whether this entry is with the AI right now (an edit then keeps the person's words). */
+export function isStructuring(entryId: string): boolean {
+  return inFlight.has(entryId);
+}
+
+/** The text block of an entry, as it reads right now. */
+function textOf(e: Pick<Entry, 'blocks'>): string {
+  const block = e.blocks.find((b) => b.kind === 'text');
+  return block && block.kind === 'text' ? block.markdown.trim() : '';
+}
+
+async function structure(entry: PendingEntry, store: CaptureStore): Promise<void> {
   const snap = store.snapshot();
   const live = snap.entries.find((e) => e.id === entry.id);
   if (!live) return; // Deleted while it waited.
+  // Its thread was deleted (or is in its undo window): don't bring it back.
+  if (!store.getThread(live.threadId)) return;
   const filedBy = live.filing.by;
-  const matching = filedBy === 'new' || filedBy === 'focus';
+  // A new note's thread the person has already named is where they want it.
+  const named = filedBy === 'new' && !!store.getThread(live.threadId)?.pinned?.title;
+  const matching = (filedBy === 'new' && !named) || filedBy === 'focus';
   const candidates = matching
     ? gatherCandidates({
         threads: snap.items,
@@ -225,45 +362,75 @@ export async function structurePendingEntry(
 
   let processed: ProcessedCapture;
   let transcript = entry.transcript;
+  const photos = imagesOf([live]);
 
   if (entry.pendingAudioUri) {
+    // Only from versions that kept recordings. Transcribe it once, then the
+    // file goes: audio is never kept now.
     const audioFile = new File(entry.pendingAudioUri);
     if (!audioFile.exists) {
       store.updateEntry(entry.id, { pending: false, pendingAudioUri: undefined });
       return;
     }
-    const base64 = await audioFile.base64();
-    processed = await processRecording(
-      { fileUri: entry.pendingAudioUri, base64, mimeType: 'audio/m4a' },
-      ctx,
+    try {
+      processed = await processAudioDump(await audioFile.base64(), 'audio/m4a', ctx);
+    } finally {
+      try { audioFile.delete(); } catch { /* already gone */ }
+    }
+  } else if (entry.pendingRawText || photos.length > 0) {
+    transcript = transcript ?? (entry.pendingRawText || undefined);
+    const images = (await Promise.all(photos.slice(0, MAX_PHOTOS_TO_AI).map(imageBase64))).filter(
+      (b): b is string => !!b,
     );
-    try { audioFile.delete(); } catch { /* already deleted — safe to ignore */ }
-  } else if (entry.pendingRawText) {
-    transcript = transcript ?? entry.pendingRawText;
-    processed = await processVoiceDump(entry.pendingRawText, ctx);
+    processed = await processVoiceDump(entry.pendingRawText ?? '', ctx, images);
   } else {
     store.updateEntry(entry.id, { pending: false });
     return;
   }
-  transcript = transcript ?? processed.transcript;
+  // What Gemini read off a photo is not something the person said.
+  transcript = transcript ?? (photos.length > 0 ? undefined : processed.transcript);
+
+  // The AI call takes a while. Whatever happened meanwhile wins over it:
+  const now = store.snapshot().entries.find((e) => e.id === entry.id);
+  if (!now || !store.getThread(now.threadId)) return; // deleted meanwhile
+  // …and if the person edited the note while it waited, their words stay
+  // (numbers and links are still picked out, from what they wrote).
+  const sentText = (entry.pendingRawText ?? '').trim();
+  const editedMeanwhile = !!sentText && textOf(now) !== sentText;
 
   // Every number must appear in the person's own words, not only the AI's notes.
+  // (A photo has no words of the person's: what Gemini read off it is checked instead.)
   const measures = verifyMeasures(
     processed.measures,
-    entry.pendingRawText ?? processed.transcript ?? processed.notes,
+    editedMeanwhile
+      ? textOf(now)
+      : [entry.pendingRawText, photos.length > 0 ? processed.transcript : undefined].filter(Boolean).join('\n') ||
+          processed.transcript ||
+          processed.notes,
   );
-  const handMadeChecklists = entry.blocks.filter((b) => b.kind === 'checklist');
-  const existingLinks = entry.blocks.flatMap((b) => (b.kind === 'link' ? [b.url] : []));
+  const handMadeChecklists = now.blocks.filter((b) => b.kind === 'checklist');
+  const existingLinks = now.blocks.flatMap((b) => (b.kind === 'link' ? [b.url] : []));
   const links = [...new Set([...existingLinks, ...(processed.links ?? [])])];
-  const blocks: Block[] = [
-    ...buildBlocks({ text: processed.notes }),
-    ...handMadeChecklists,
-    ...(measures.length > 0 ? [{ kind: 'measures' as const, items: measures }] : []),
-    ...buildBlocks({ links }),
-  ];
-  const leftOff = entry.leftOff || processed.summary?.leftOff;
-  const nextStep = entry.nextStep || processed.summary?.nextSteps?.[0];
+  // Numbers, lists or links corrected by hand while it waited stay as they are.
+  // (A link's fetched preview arriving meanwhile isn't a correction.)
+  const rest = (e: Pick<Entry, 'blocks'>) =>
+    JSON.stringify(e.blocks.filter((b) => b.kind !== 'text').map((b) => (b.kind === 'link' ? { kind: b.kind, url: b.url } : b)));
+  const correctedMeanwhile = rest(now) !== rest(live);
+  const text = buildBlocks({ text: editedMeanwhile ? textOf(now) : processed.notes });
+  const blocks: Block[] = correctedMeanwhile
+    ? [...text, ...now.blocks.filter((b) => b.kind !== 'text')]
+    : [
+        ...text,
+        ...now.blocks.filter((b) => b.kind === 'image'),
+        ...handMadeChecklists,
+        ...(measures.length > 0 ? [{ kind: 'measures' as const, items: measures }] : []),
+        ...buildBlocks({ links }),
+      ];
+  const leftOff = now.leftOff || (editedMeanwhile ? undefined : processed.summary?.leftOff);
+  const nextStep = now.nextStep || (editedMeanwhile ? undefined : processed.summary?.nextSteps?.[0]);
 
+  // Links the AI found get their previews too.
+  setTimeout(() => enrichLinks(entry.id, store), 0);
   store.updateEntry(entry.id, {
     transcript,
     blocks,
@@ -289,8 +456,8 @@ export async function structurePendingEntry(
       try {
         const vector = await embedText(processed.notes, 'RETRIEVAL_DOCUMENT');
         const ids = new Set(candidates.map((c) => c.id));
-        const rows = (await getAllEmbeddings()).filter((r) => ids.has(r.itemId));
-        similarity = similarityTo(vector, new Map(rows.map((r) => [r.itemId, fromBlob(r.vector)])));
+        const all = await getVectors();
+        similarity = similarityTo(vector, new Map([...ids].flatMap((id) => (all.has(id) ? [[id, all.get(id)!] as const] : []))));
       } catch {
         // Offline or not embedded yet: the model's answer stands alone.
       }
@@ -299,7 +466,7 @@ export async function structurePendingEntry(
   }
 
   if (decision.action === 'attach') {
-    const own = store.getThread(live.threadId);
+    const own = store.getThread(now.threadId);
     store.moveEntry(entry.id, decision.threadId, { by: 'auto', confidence: decision.confidence });
     if (own && !store.snapshot().entries.some((e) => e.threadId === own.id)) {
       store.removeThreadNow(own.id);
@@ -312,7 +479,7 @@ export async function structurePendingEntry(
     emitFiling({
       type: 'attached',
       entryId: entry.id,
-      fromThreadId: live.threadId,
+      fromThreadId: now.threadId,
       toThreadId: target.id,
       toTitle: target.title,
       ownTitle: processed.title,
@@ -323,7 +490,7 @@ export async function structurePendingEntry(
   }
 
   if (decision.action === 'release') {
-    const from = store.getThread(live.threadId);
+    const from = store.getThread(now.threadId);
     const created = store.moveEntryToNewThread(entry.id, {
       title: processed.title,
       category: aiCategory ?? 'general',
@@ -334,7 +501,7 @@ export async function structurePendingEntry(
     emitFiling({
       type: 'released',
       entryId: entry.id,
-      fromThreadId: live.threadId,
+      fromThreadId: now.threadId,
       fromTitle: from?.title ?? '',
       toThreadId: created.id,
     });
@@ -342,12 +509,12 @@ export async function structurePendingEntry(
     return;
   }
 
-  const thread = store.getThread(live.threadId);
+  const thread = store.getThread(now.threadId);
   if (!thread) return;
   if (thread.pending) {
     store.updateItem(thread.id, {
-      title: processed.title,
-      tags,
+      title: thread.pinned?.title ? thread.title : processed.title,
+      tags: [...new Set([...thread.tags, ...tags])].slice(0, 8),
       // The category picker defaults to General; a better guess wins.
       ...(thread.category === 'general' && aiCategory ? { category: aiCategory } : {}),
       aiSummary: processed.summary,
@@ -387,19 +554,34 @@ async function embedThread(store: CaptureStore, threadId: string): Promise<void>
   await embedAndStore(thread);
 }
 
+// How long to wait before trying a note again after Gemini failed on it:
+// half a minute, then longer each time, up to half an hour.
+const BACKOFF_MS = [30_000, 60_000, 2 * 60_000, 5 * 60_000, 10 * 60_000, 30 * 60_000];
+const attempts = new Map<string, { count: number; nextAt: number }>();
+
 /**
  * Fire-and-forget version of `structurePendingEntry` for background callers
- * (freshly saved entries, PendingProcessor's startup sweep). Never throws —
- * on failure the entry simply stays pending, retried on next launch or by
- * hand from the thread screen.
+ * (freshly saved entries, PendingProcessor's sweeps). Never throws. On
+ * failure the entry stays pending (it already shows the phone's reading)
+ * and is tried again later, backing off; a problem the person can fix
+ * (bad key, quota) is reported through `setAiProblem`.
  */
-export async function resolvePendingEntry(
-  entry: PendingEntry,
-  store: CaptureStore,
-): Promise<void> {
+export async function resolvePendingEntry(entry: PendingEntry, store: CaptureStore): Promise<void> {
+  const previous = attempts.get(entry.id);
+  if (previous && Date.now() < previous.nextAt) return;
   try {
     await structurePendingEntry(entry, store);
-  } catch {
-    // Keep the entry as pending — retried next launch or by hand.
+    attempts.delete(entry.id);
+    setAiProblem(null);
+  } catch (e) {
+    if (e instanceof AiOffError) return;
+    const count = (previous?.count ?? 0) + 1;
+    attempts.set(entry.id, { count, nextAt: Date.now() + BACKOFF_MS[Math.min(count, BACKOFF_MS.length) - 1] });
+    const problem = classifyAiError(e);
+    if (problem === 'invalid' || problem === 'quota') setAiProblem(problem);
+    if (problem === 'other') logError('ai', e);
   }
 }
+
+// A new key: forget past failures, so the next sweep tries everything.
+onApiKeyChanged(() => attempts.clear());

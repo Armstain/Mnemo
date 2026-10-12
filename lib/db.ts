@@ -76,7 +76,28 @@ export function initDb(): Promise<void> {
 // runs exactly once per install.
 //   1 — threads: items gain a `pinned` column, and every existing item
 //       gets the one entry it is made of (docs/specs/threads.md).
-const SCHEMA_VERSION = 1;
+//   2 — reminders: items gain `repeat` and `starred`, entries `stepDone`.
+const SCHEMA_VERSION = 2;
+
+// Every column, in one place, for the INSERT statements below.
+const ITEM_COLUMNS = [
+  'id', 'type', 'title', 'content', 'checklistItems', 'links', 'category', 'tags', 'status',
+  'nextStep', 'whereLeftOff', 'dueDate', 'createdAt', 'updatedAt', 'lastResumedAt',
+  'aiSummary', 'pending', 'pendingRawText', 'pendingAudioUri', 'pinned', 'repeat', 'starred',
+];
+const ENTRY_COLUMNS = [
+  'id', 'threadId', 'createdAt', 'updatedAt', 'source', 'transcript', 'blocks', 'leftOff', 'nextStep',
+  'filing', 'pending', 'pendingRawText', 'pendingAudioUri', 'stepDone',
+];
+const valuesClause = (columns: string[]) =>
+  `(${columns.join(', ')}) VALUES (${columns.map((c) => `$${c}`).join(', ')})`;
+const ITEM_VALUES = valuesClause(ITEM_COLUMNS);
+const ENTRY_VALUES = valuesClause(ENTRY_COLUMNS);
+
+async function addColumn(db: SQLite.SQLiteDatabase, table: string, column: string, type: string) {
+  const columns = await db.getAllAsync<{ name: string }>(`PRAGMA table_info(${table})`);
+  if (!columns.some((c) => c.name === column)) await db.execAsync(`ALTER TABLE ${table} ADD COLUMN ${column} ${type}`);
+}
 
 async function runMigrations(db: SQLite.SQLiteDatabase): Promise<void> {
   const row = await db.getFirstAsync<{ user_version: number }>('PRAGMA user_version');
@@ -88,6 +109,11 @@ async function runMigrations(db: SQLite.SQLiteDatabase): Promise<void> {
     if (!columns.some((c) => c.name === 'pinned')) {
       await db.execAsync('ALTER TABLE items ADD COLUMN pinned TEXT');
     }
+  }
+  if (version < 2) {
+    await addColumn(db, 'items', 'repeat', 'TEXT');
+    await addColumn(db, 'items', 'starred', 'INTEGER');
+    await addColumn(db, 'entries', 'stepDone', 'INTEGER');
   }
   await db.execAsync(`PRAGMA user_version = ${SCHEMA_VERSION}`);
 }
@@ -106,7 +132,12 @@ export async function ensureEntriesForItems(items: MnemoItem[]): Promise<Entry[]
   for (const item of items) {
     if (covered.has(item.id)) continue;
     const entry = entryFromLegacyItem(item);
-    await insertEntry(entry);
+    // Never overwrite: an entry with this id may have moved to another thread.
+    await db.runAsync(
+      `INSERT OR IGNORE INTO entries
+        ${ENTRY_VALUES}`,
+      entryToParams(entry),
+    );
     created.push(entry);
   }
   return created;
@@ -135,6 +166,8 @@ interface ItemRow {
   pendingRawText: string | null;
   pendingAudioUri: string | null;
   pinned: string | null;
+  repeat: string | null;
+  starred: number | null;
 }
 
 function rowToItem(row: ItemRow): MnemoItem {
@@ -159,6 +192,8 @@ function rowToItem(row: ItemRow): MnemoItem {
     pendingRawText: row.pendingRawText ?? undefined,
     pendingAudioUri: row.pendingAudioUri ?? undefined,
     pinned: row.pinned ? JSON.parse(row.pinned) : undefined,
+    repeat: (row.repeat as MnemoItem['repeat']) ?? undefined,
+    starred: row.starred ? true : undefined,
   };
 }
 
@@ -184,6 +219,8 @@ function itemToParams(item: MnemoItem) {
     $pendingRawText: item.pendingRawText ?? null,
     $pendingAudioUri: item.pendingAudioUri ?? null,
     $pinned: item.pinned ? JSON.stringify(item.pinned) : null,
+    $repeat: item.repeat ?? null,
+    $starred: item.starred ? 1 : null,
   };
 }
 
@@ -203,13 +240,7 @@ export async function insertItem(item: MnemoItem): Promise<void> {
   const db = await getDb();
   await db.runAsync(
     `INSERT INTO items
-      (id, type, title, content, checklistItems, links, category, tags, status,
-       nextStep, whereLeftOff, dueDate, createdAt, updatedAt, lastResumedAt,
-       aiSummary, pending, pendingRawText, pendingAudioUri, pinned)
-     VALUES
-      ($id, $type, $title, $content, $checklistItems, $links, $category, $tags, $status,
-       $nextStep, $whereLeftOff, $dueDate, $createdAt, $updatedAt, $lastResumedAt,
-       $aiSummary, $pending, $pendingRawText, $pendingAudioUri, $pinned)`,
+      ${ITEM_VALUES}`,
     itemToParams(item),
   );
 }
@@ -225,11 +256,11 @@ export async function insertItems(items: MnemoItem[]): Promise<void> {
 // dynamic SET clause never interpolates anything but a known column name)
 // and to look up how each value needs to be serialized for storage.
 const JSON_COLUMNS = new Set(['checklistItems', 'links', 'tags', 'aiSummary', 'pinned']);
-const BOOLEAN_COLUMNS = new Set(['pending']);
+const BOOLEAN_COLUMNS = new Set(['pending', 'starred']);
 const COLUMN_KEYS = new Set([
   'type', 'title', 'content', 'checklistItems', 'links', 'category', 'tags', 'status',
   'nextStep', 'whereLeftOff', 'dueDate', 'createdAt', 'updatedAt', 'lastResumedAt',
-  'aiSummary', 'pending', 'pendingRawText', 'pendingAudioUri', 'pinned',
+  'aiSummary', 'pending', 'pendingRawText', 'pendingAudioUri', 'pinned', 'repeat', 'starred',
 ]);
 
 function serializeColumnValue(key: string, value: unknown): string | number | null {
@@ -269,6 +300,7 @@ export async function deleteItemRow(id: string): Promise<void> {
 export async function deleteAllItems(): Promise<void> {
   const db = await getDb();
   await db.execAsync('DELETE FROM items; DELETE FROM entries; DELETE FROM embeddings;');
+  vectorCache = new Map();
 }
 
 // ─── Entries ────────────────────────────────────────────────────
@@ -287,6 +319,7 @@ interface EntryRow {
   pending: number | null;
   pendingRawText: string | null;
   pendingAudioUri: string | null;
+  stepDone: number | null;
 }
 
 function rowToEntry(row: EntryRow): Entry {
@@ -304,6 +337,7 @@ function rowToEntry(row: EntryRow): Entry {
     pending: row.pending ? true : undefined,
     pendingRawText: row.pendingRawText ?? undefined,
     pendingAudioUri: row.pendingAudioUri ?? undefined,
+    stepDone: row.stepDone ? true : undefined,
   };
 }
 
@@ -322,6 +356,7 @@ function entryToParams(entry: Entry) {
     $pending: entry.pending ? 1 : null,
     $pendingRawText: entry.pendingRawText ?? null,
     $pendingAudioUri: entry.pendingAudioUri ?? null,
+    $stepDone: entry.stepDone ? 1 : null,
   };
 }
 
@@ -336,13 +371,33 @@ export async function insertEntry(entry: Entry): Promise<void> {
   const db = await getDb();
   await db.runAsync(
     `INSERT OR REPLACE INTO entries
-      (id, threadId, createdAt, updatedAt, source, transcript, blocks, leftOff, nextStep,
-       filing, pending, pendingRawText, pendingAudioUri)
-     VALUES
-      ($id, $threadId, $createdAt, $updatedAt, $source, $transcript, $blocks, $leftOff, $nextStep,
-       $filing, $pending, $pendingRawText, $pendingAudioUri)`,
+      ${ENTRY_VALUES}`,
     entryToParams(entry),
   );
+}
+
+/**
+ * Writes many threads and entries in one transaction (an import), so a
+ * failure part-way leaves the database as it was rather than half-merged.
+ */
+export async function saveThreadsAndEntries(items: MnemoItem[], entries: Entry[]): Promise<void> {
+  const db = await getDb();
+  await db.withTransactionAsync(async () => {
+    for (const item of items) {
+      await db.runAsync(
+        `INSERT OR REPLACE INTO items
+          ${ITEM_VALUES}`,
+        itemToParams(item),
+      );
+    }
+    for (const entry of entries) {
+      await db.runAsync(
+        `INSERT OR REPLACE INTO entries
+          ${ENTRY_VALUES}`,
+        entryToParams(entry),
+      );
+    }
+  });
 }
 
 export async function deleteEntryRow(id: string): Promise<void> {
@@ -371,7 +426,35 @@ interface EmbeddingRow {
   updatedAt: number;
 }
 
+// Decoded vectors, read from SQLite once and kept in step with every write:
+// search, related threads and filing compare against all of them, often.
+let vectorCache: Map<string, Float32Array> | null = null;
+let vectorLoad: Promise<Map<string, Float32Array>> | null = null;
+
+function decodeVector(blob: Uint8Array): Float32Array {
+  // A copy: Float32Array needs a 4-byte-aligned buffer, which a BLOB may not be.
+  const copy = blob.slice();
+  return new Float32Array(copy.buffer, copy.byteOffset, copy.byteLength / 4);
+}
+
+/** Every stored vector, by item id. */
+export async function getVectors(): Promise<Map<string, Float32Array>> {
+  if (vectorCache) return vectorCache;
+  if (!vectorLoad) {
+    vectorLoad = getAllEmbeddings()
+      .then((rows) => {
+        vectorCache = new Map(rows.map((r) => [r.itemId, decodeVector(r.vector)]));
+        return vectorCache;
+      })
+      .finally(() => {
+        vectorLoad = null;
+      });
+  }
+  return vectorLoad;
+}
+
 export async function upsertEmbedding(record: EmbeddingRecord): Promise<void> {
+  vectorCache?.set(record.itemId, decodeVector(record.vector));
   const db = await getDb();
   await db.runAsync(
     `INSERT INTO embeddings (itemId, vector, model, dims, updatedAt)
@@ -401,12 +484,7 @@ export async function getEmbeddedItemIds(): Promise<Set<string>> {
 }
 
 export async function deleteEmbedding(itemId: string): Promise<void> {
+  vectorCache?.delete(itemId);
   const db = await getDb();
   await db.runAsync('DELETE FROM embeddings WHERE itemId = $itemId', { $itemId: itemId });
-}
-
-export async function countEmbeddings(): Promise<number> {
-  const db = await getDb();
-  const row = await db.getFirstAsync<{ count: number }>('SELECT COUNT(*) as count FROM embeddings', {});
-  return row?.count ?? 0;
 }

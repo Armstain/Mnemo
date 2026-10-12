@@ -1,5 +1,6 @@
 import React from 'react';
-import { Pressable, ScrollView, Text, View } from 'react-native';
+import { Pressable, ScrollView, View } from 'react-native';
+import { Text } from '@/components/ui/Text';
 import * as Haptics from 'expo-haptics';
 
 import { useThemeColors } from '@/hooks/use-theme';
@@ -27,7 +28,6 @@ export function CategoryPicker<T extends Category | 'all'>({
   includeAll = false,
   inset = 24,
 }: CategoryPickerProps<T>) {
-  const colors = useThemeColors();
   const categories = useCategories();
   const options = (includeAll ? ['all', ...CATEGORY_LIST] : CATEGORY_LIST) as T[];
 

@@ -1,5 +1,6 @@
 import React from 'react';
-import { Pressable, Text, View } from 'react-native';
+import { Pressable, View } from 'react-native';
+import { Text } from '@/components/ui/Text';
 import { MotiView } from 'moti';
 import { Animated, usePressScale } from '@/hooks/use-press-scale';
 
@@ -26,7 +27,7 @@ export function threadPreview(item: MnemoItem): string {
     const done = checklist.filter((c) => c.checked).length;
     return `${done} of ${checklist.length} done`;
   }
-  return item.pending ? 'Transcribing your recording…' : '';
+  return item.pending ? 'Being read…' : '';
 }
 
 interface ThreadRowProps {
@@ -41,6 +42,12 @@ interface ThreadRowProps {
   last?: boolean;
   /** Position in the list, for the staggered entrance. */
   index?: number;
+  /**
+   * In a long, virtualized list (Library) each row draws its own share of
+   * the grouped surface, since there's no ThreadList around them, and rows
+   * scrolled into view don't play the entrance.
+   */
+  cell?: { first: boolean; animate: boolean };
 }
 
 /**
@@ -48,7 +55,7 @@ interface ThreadRowProps {
  * threads: its ring (how warm it still is), title, one line of detail and
  * a timestamp. Rows sit inside a ThreadList so every list reads the same.
  */
-export function ThreadRow({ item, onPress, detail, trailing, trailingTone, last = false, index = 0 }: ThreadRowProps) {
+function ThreadRowImpl({ item, onPress, detail, trailing, trailingTone, last = false, index = 0, cell }: ThreadRowProps) {
   const colors = useThemeColors();
   const enter = useEnter();
   const categories = useCategories();
@@ -61,7 +68,27 @@ export function ThreadRow({ item, onPress, detail, trailing, trailingTone, last 
   const secondLine = detail ?? `${statusPrefix}${threadPreview(item)}`.replace(/ · $/, '');
 
   return (
-    <MotiView {...enter.row(index)} {...enter.rowExit()}>
+    <MotiView
+      {...(cell && !cell.animate ? {} : enter.row(index))}
+      {...enter.rowExit()}
+      style={
+        cell
+          ? {
+              backgroundColor: colors.surface,
+              borderColor: colors.border,
+              borderLeftWidth: 1,
+              borderRightWidth: 1,
+              borderTopWidth: cell.first ? 1 : 0,
+              borderBottomWidth: last ? 1 : 0,
+              borderTopLeftRadius: cell.first ? 26 : 0,
+              borderTopRightRadius: cell.first ? 26 : 0,
+              borderBottomLeftRadius: last ? 26 : 0,
+              borderBottomRightRadius: last ? 26 : 0,
+              overflow: 'hidden',
+            }
+          : undefined
+      }
+    >
       <Pressable
         onPress={onPress}
         onPressIn={press.onPressIn}
@@ -95,6 +122,24 @@ export function ThreadRow({ item, onPress, detail, trailing, trailingTone, last 
     </MotiView>
   );
 }
+
+/**
+ * Rows only change when their thread does. `onPress` is left out of the
+ * comparison: lists make a new one each render, and it always opens this
+ * row's thread.
+ */
+export const ThreadRow = React.memo(
+  ThreadRowImpl,
+  (a, b) =>
+    a.item === b.item &&
+    a.detail === b.detail &&
+    a.trailing === b.trailing &&
+    a.trailingTone === b.trailingTone &&
+    a.last === b.last &&
+    a.index === b.index &&
+    a.cell?.first === b.cell?.first &&
+    a.cell?.animate === b.cell?.animate,
+);
 
 /** The grouped surface every list of ThreadRows sits in. */
 export function ThreadList({ children }: { children: React.ReactNode }) {

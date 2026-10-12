@@ -1,4 +1,5 @@
 import type { Entry, Measure, Rollup } from '@/types/mnemo';
+import { nfc } from '@/utils/text';
 
 // Measures: any number someone reports about their life (money spent, km
 // run, their weight, a price they're comparing). The AI only pulls numbers
@@ -126,14 +127,6 @@ scale(1000, 'hajar', 'hazar', 'hajaar', 'hazaar');
 scale(100_000, 'lakh', 'lac', 'lak', 'lakhs');
 scale(10_000_000, 'koti', 'crore', 'cr');
 
-function nfc(text: string): string {
-  try {
-    return text.normalize('NFC');
-  } catch {
-    return text;
-  }
-}
-
 // Endings a number word can carry in a sentence: "হাজারের", "hajarer".
 const SUFFIXES = ['ের', 'এর', 'টা', 'টি', 'খানেক', 'র', 'ে', 'er', 'ta', 'r', 'e'].map(nfc);
 
@@ -161,7 +154,32 @@ function lookup(token: string): Word[] | null {
  * digits followed by a scale word ("১৫ হাজার", "2 lakh", "der hajar").
  */
 function wordNumbers(text: string): number[] {
-  const found: number[] = [];
+  return scanNumbers(numberTokens(text)).map((n) => n.value);
+}
+
+/**
+ * Text split the way numbers are read: lower case, digits in ASCII, figures
+ * apart from letters ("1500tk" → "1500", "tk"; "৳৫০" → "৳", "50").
+ */
+export function numberTokens(text: string, keepCase = false): string[] {
+  const ascii = toAsciiDigits(text);
+  return nfc((keepCase ? ascii : ascii.toLowerCase()).replace(/(\d),(?=\d)/g, '$1'))
+    .split(/[\s,;:!?()"'“”‘’।|/\\–—-]+/)
+    .flatMap((t) => t.match(/\d+(?:\.\d+)?|[^\d]+/g) ?? []);
+}
+
+/** A number found in `numberTokens` output, with the tokens it spans. */
+export interface NumberSpan {
+  value: number;
+  first: number;
+  last: number;
+}
+
+/** Every number in a token list, in order, said in figures or words. */
+export function scanNumbers(tokens: string[]): NumberSpan[] {
+  const found: NumberSpan[] = [];
+  let first = -1;
+  let last = -1;
   let total = 0;
   let current = 0;
   let pending = 0;
@@ -170,7 +188,7 @@ function wordNumbers(text: string): number[] {
   let lastWasDigits = false;
 
   const flush = () => {
-    if (inNumber) found.push(total + current);
+    if (inNumber) found.push({ value: total + current, first, last });
     total = 0;
     current = 0;
     pending = 0;
@@ -179,14 +197,16 @@ function wordNumbers(text: string): number[] {
     lastWasDigits = false;
   };
 
-  const tokens = nfc(toAsciiDigits(text).toLowerCase())
-    .split(/[\s,;:!?()"'“”‘’।|/\\–—-]+/)
-    .flatMap((t) => t.match(/\d+(?:\.\d+)?|[^\d]+/g) ?? []);
-
-  for (const token of tokens) {
+  for (let i = 0; i < tokens.length; i++) {
+    const token = tokens[i];
+    const begin = () => {
+      if (!inNumber) first = i;
+      last = i;
+    };
     if (/^\d/.test(token)) {
       // A new figure always starts a new number ("1 200" isn't 201).
       if (inNumber && (lastUnit !== null || lastWasDigits)) flush();
+      begin();
       current += parseFloat(token) + pending;
       pending = 0;
       inNumber = true;
@@ -204,17 +224,23 @@ function wordNumbers(text: string): number[] {
         // "twenty five" adds up; two units in any other order are two numbers.
         const joins = lastUnit !== null && lastUnit >= 20 && lastUnit % 10 === 0 && word.value < 10;
         if (inNumber && (lastWasDigits || (lastUnit !== null && !joins))) flush();
+        if (!inNumber) first = pending ? Math.max(0, i - 1) : i;
+        last = i;
         current += word.value + pending;
         pending = 0;
         inNumber = true;
         lastUnit = word.value;
         lastWasDigits = false;
       } else if (word.kind === 'hundred') {
-        if (inNumber) current = (current || 1) * 100;
+        if (inNumber) {
+          current = (current || 1) * 100;
+          last = i;
+        }
         lastUnit = null;
         lastWasDigits = false;
       } else if (word.kind === 'scale') {
         total += (inNumber ? current || 1 : 1) * word.value;
+        begin();
         current = 0;
         inNumber = true;
         lastUnit = null;

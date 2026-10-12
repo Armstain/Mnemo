@@ -1,13 +1,16 @@
-import {
-  InstrumentSans_400Regular,
-  InstrumentSans_500Medium,
-  InstrumentSans_600SemiBold,
-} from '@expo-google-fonts/instrument-sans';
-import {
-  Literata_400Regular,
-  Literata_400Regular_Italic,
-  Literata_500Medium,
-} from '@expo-google-fonts/literata';
+// One import per weight: the package roots pull in every weight they have.
+import { InstrumentSans_400Regular } from '@expo-google-fonts/instrument-sans/400Regular';
+import { InstrumentSans_500Medium } from '@expo-google-fonts/instrument-sans/500Medium';
+import { InstrumentSans_600SemiBold } from '@expo-google-fonts/instrument-sans/600SemiBold';
+import { Literata_400Regular } from '@expo-google-fonts/literata/400Regular';
+import { Literata_400Regular_Italic } from '@expo-google-fonts/literata/400Regular_Italic';
+import { Literata_500Medium } from '@expo-google-fonts/literata/500Medium';
+// Bangla: the phone's own Bangla font is small beside these (see components/ui/Text).
+import { NotoSansBengali_400Regular } from '@expo-google-fonts/noto-sans-bengali/400Regular';
+import { NotoSansBengali_500Medium } from '@expo-google-fonts/noto-sans-bengali/500Medium';
+import { NotoSansBengali_600SemiBold } from '@expo-google-fonts/noto-sans-bengali/600SemiBold';
+import { NotoSerifBengali_400Regular } from '@expo-google-fonts/noto-serif-bengali/400Regular';
+import { NotoSerifBengali_500Medium } from '@expo-google-fonts/noto-serif-bengali/500Medium';
 import { DarkTheme, DefaultTheme, ThemeProvider } from 'expo-router/react-navigation';
 import { useFonts } from 'expo-font';
 import { router, Stack } from 'expo-router';
@@ -21,6 +24,20 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { Notifications, notificationsAvailable } from '@/lib/notifications';
 import "../global.css";
 
+import { ONBOARDING_KEY } from '@/app/onboarding';
+import { NudgeScheduler } from '@/components/NudgeScheduler';
+import { ReminderActions } from '@/components/ReminderActions';
+import { installGlobalErrorLog } from '@/lib/errors';
+import { ShareIntake } from '@/components/ShareIntake';
+import { WidgetSync } from '@/components/WidgetSync';
+import { PendingProcessor } from '@/components/PendingProcessor';
+import { FilingNotifier } from '@/components/FilingNotifier';
+import { UndoToastHost } from '@/components/ui/UndoToastHost';
+import { MnemoStoreProvider } from '@/hooks/use-mnemo-store';
+import { UndoToastProvider } from '@/hooks/use-undo-toast';
+import { applyStoredThemePreference, PALETTE, useThemeName } from '@/hooks/use-theme';
+import { appReady } from '@/lib/ai-mode';
+
 // moti still bundles an unused MotiSafeAreaView built on RN's deprecated
 // SafeAreaView; importing anything from moti's barrel pulls that
 // submodule in and fires this warning at startup. We never use
@@ -28,18 +45,8 @@ import "../global.css";
 // release drops it yet.
 LogBox.ignoreLogs(['SafeAreaView has been deprecated']);
 
-import { ONBOARDING_KEY } from '@/app/onboarding';
-import { NudgeScheduler } from '@/components/NudgeScheduler';
-import { PendingProcessor } from '@/components/PendingProcessor';
-import { FilingNotifier } from '@/components/FilingNotifier';
-import { UndoToastHost } from '@/components/ui/UndoToastHost';
-import { MnemoStoreProvider } from '@/hooks/use-mnemo-store';
-import { UndoToastProvider } from '@/hooks/use-undo-toast';
-import { applyStoredThemePreference, PALETTE, useThemeName } from '@/hooks/use-theme';
-import { loadStoredApiKey } from '@/lib/api-key';
-
-// Load stored API key early on app start
-loadStoredApiKey();
+// Reads the saved key and preferences (AI or offline) as early as possible.
+void appReady;
 
 // Reminders (lib/reminders.ts) are scheduled local notifications — this
 // controls how one is presented if it fires while the app is already
@@ -56,10 +63,10 @@ if (notificationsAvailable) {
   });
 }
 
-export {
-  // Catch any errors thrown by the Layout component.
-  ErrorBoundary
-} from 'expo-router';
+// Anything that breaks while drawing shows a way back instead of a blank
+// screen, and is noted in the local problem log.
+export { CrashScreen as ErrorBoundary } from '@/components/CrashScreen';
+installGlobalErrorLog();
 
 export const unstable_settings = {
   // Ensure that reloading on `/modal` keeps a back button present.
@@ -108,6 +115,11 @@ export default function RootLayout() {
     InstrumentSans_400Regular,
     InstrumentSans_500Medium,
     InstrumentSans_600SemiBold,
+    NotoSansBengali_400Regular,
+    NotoSansBengali_500Medium,
+    NotoSansBengali_600SemiBold,
+    NotoSerifBengali_400Regular,
+    NotoSerifBengali_500Medium,
   });
 
   useEffect(() => {
@@ -147,20 +159,6 @@ function RootLayoutNav() {
     })();
   }, []);
 
-  // Tapping a reminder or a nudge opens the note it's about. Nudges carry
-  // the item id in their data (lib/nudges.ts); a due-date reminder's
-  // identifier is the item id itself (syncReminderForItem in
-  // lib/reminders.ts), so no lookup table is needed.
-  useEffect(() => {
-    if (!notificationsAvailable) return;
-    const subscription = Notifications.addNotificationResponseReceivedListener((response) => {
-      const { identifier, content } = response.notification.request;
-      const itemId = typeof content.data?.itemId === 'string' ? content.data.itemId : identifier;
-      if (itemId) router.push(`/(tabs)/context?id=${itemId}` as any);
-    });
-    return () => subscription.remove();
-  }, []);
-
   return (
     <SafeAreaProvider>
       <MnemoStoreProvider>
@@ -186,6 +184,13 @@ function RootLayoutNav() {
               }}
             />
             <Stack.Screen
+              name="share"
+              options={{
+                presentation: 'modal',
+                animation: 'slide_from_bottom',
+              }}
+            />
+            <Stack.Screen
               name="dump"
               options={{
                 presentation: 'modal',
@@ -202,6 +207,11 @@ function RootLayoutNav() {
           </Stack>
           <PendingProcessor />
           <FilingNotifier />
+          {/* Tapping a reminder or a nudge opens its thread; reminder buttons act on it. */}
+          <ReminderActions />
+          {/* Something shared to Mnemo from another app opens the Save screen. */}
+          <ShareIntake />
+          <WidgetSync />
           <NudgeScheduler />
           <UndoToastHost />
         </ThemeProvider>

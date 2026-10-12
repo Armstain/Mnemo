@@ -1,0 +1,28 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Lint
+        run: npm run lint
+      - name: Unit tests
+        run: npm test
+      # The Android config (permissions, share filters, widget) must still
+      # come out of prebuild cleanly.
+      - name: Android prebuild
+        run: npx expo prebuild --platform android --no-install
+        env:
+          EXPO_NO_TELEMETRY: 1

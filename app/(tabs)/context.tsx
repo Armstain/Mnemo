@@ -1,19 +1,20 @@
 import React from 'react';
 import {
   View,
-  Text,
   Pressable,
   ScrollView,
   ActivityIndicator,
   Share,
-  TextInput,
   Alert,
   KeyboardAvoidingView,
   Platform,
 } from 'react-native';
+import { TextInput } from '@/components/ui/TextInput';
+import { Text } from '@/components/ui/Text';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams } from 'expo-router';
 import { File } from 'expo-file-system';
+import * as Haptics from 'expo-haptics';
 import { AnimatePresence, MotiView } from 'moti';
 import { formatDistanceToNow } from 'date-fns';
 
@@ -24,26 +25,31 @@ import { Eyebrow } from '@/components/ui/Eyebrow';
 import { Icon } from '@/components/ui/Icon';
 import { ThreadList, ThreadRow } from '@/components/ui/ThreadRow';
 import { CategoryPicker } from '@/components/ui/CategoryPicker';
+import { TagEditor } from '@/components/ui/TagEditor';
 import { LabeledInput } from '@/components/ui/LabeledInput';
 import { noFocusRing } from '@/utils/web';
 import { DetailSkeleton } from '@/components/ui/NoteListSkeleton';
 import { DueDatePicker, DueDateLabel } from '@/components/ui/DueDatePicker';
 import { ThreadRing } from '@/components/ui/ThreadRing';
 import { EntryCard } from '@/components/thread/EntryCard';
-import { NumbersSection } from '@/components/thread/Measures';
+import { NumbersSection, type MetricFix } from '@/components/thread/Measures';
 import { useMnemoStore } from '@/hooks/use-mnemo-store';
 import { useRebrief } from '@/hooks/use-rebrief';
 import { useUndoToast } from '@/hooks/use-undo-toast';
 import { useThemeColors } from '@/hooks/use-theme';
 import { summarizeContext } from '@/lib/gemini';
+import { aiEnabled } from '@/lib/ai-mode';
+import { classifyAiError, KEY_PROBLEM_TEXT } from '@/lib/api-key';
+import { usePreferences } from '@/lib/preferences';
 import { structurePendingEntry } from '@/lib/capture';
 import { relatedThreads, type RelatedThread } from '@/lib/search';
 import { entryText } from '@/lib/threads';
-import { summarizeMeasures } from '@/lib/measures';
+import { matchEntries } from '@/lib/find';
+import { confirmAction } from '@/utils/confirm';
+import { metricKey, summarizeMeasures, type MetricSummary } from '@/lib/measures';
 import { useCategories, useStatusConfig } from '@/utils/categories';
 import { EASE_IN_OUT, useEnter } from '@/utils/motion';
 import { freshness } from '@/utils/time';
-import type { MnemoItem } from '@/types/mnemo';
 
 /**
  * ThreadScreen — one thread: where you are (left off, next step), what to
@@ -81,6 +87,24 @@ export default function ThreadScreen() {
 
   const thread = items.find((c) => c.id === id);
   const entries = thread ? getEntries(thread.id) : [];
+  usePreferences(); // re-render when AI is switched on or off
+  // Finding one note in a long thread.
+  const [finding, setFinding] = React.useState(false);
+  const [findQuery, setFindQuery] = React.useState('');
+  const shownEntries = React.useMemo(
+    () => (finding && findQuery.trim() ? matchEntries(entries, findQuery, entryText) : entries),
+    [entries, finding, findQuery],
+  );
+  const ai = aiEnabled();
+  // Offline digest: next steps and unticked items from the notes, newest first.
+  const openSteps = React.useMemo(() => {
+    const steps: string[] = [];
+    for (const e of entries) {
+      if (e.nextStep && !e.stepDone) steps.push(e.nextStep);
+      for (const b of e.blocks) if (b.kind === 'checklist') steps.push(...b.items.filter((i) => !i.checked).map((i) => i.text));
+    }
+    return [...new Set(steps.map((s) => s.trim()).filter(Boolean))].slice(0, 5);
+  }, [entries]);
   const numbers = React.useMemo(() => summarizeMeasures(entries), [entries]);
   const isFocus = !!thread && focusThreadId === thread.id;
   // An entry auto-filing thought might belong elsewhere (lib/filing.ts).
@@ -163,11 +187,14 @@ export default function ThreadScreen() {
     // overwrite it; clearing it hands the field back to the entries.
     const latestNext = entries.find((e) => e.nextStep)?.nextStep;
     const latestLeftOff = entries.find((e) => e.leftOff)?.leftOff;
+    const title = editTitle.trim() || thread.title;
     updateItem(thread.id, {
-      title: editTitle.trim() || thread.title,
+      title,
       nextStep: nextStep || latestNext,
       whereLeftOff: whereLeftOff || latestLeftOff,
       pinned: {
+        // A name the person gave stays: the AI won't rename it.
+        title: title !== thread.title || !!thread.pinned?.title,
         nextStep: nextStep ? nextStep !== thread.nextStep || !!thread.pinned?.nextStep : false,
         whereLeftOff: whereLeftOff
           ? whereLeftOff !== thread.whereLeftOff || !!thread.pinned?.whereLeftOff
@@ -177,10 +204,47 @@ export default function ThreadScreen() {
     setIsEditing(false);
   };
 
+  // A correction to one tracked number across the thread: a new name (the
+  // same name as another merges them) or a different way of adding up.
+  const fixMetric = (summary: MetricSummary, fix: MetricFix) => {
+    for (const entry of entries) {
+      let touched = false;
+      const blocks = entry.blocks.map((b) => {
+        if (b.kind !== 'measures') return b;
+        return {
+          ...b,
+          items: b.items.map((m) => {
+            if (metricKey(m.metric) !== summary.key) return m;
+            touched = true;
+            return { ...m, ...(fix.metric ? { metric: fix.metric } : {}), ...(fix.rollup ? { rollup: fix.rollup } : {}) };
+          }),
+        };
+      });
+      if (touched) store.updateEntry(entry.id, { blocks });
+    }
+  };
+
+  const handleStepDone = () => {
+    const step = thread.nextStep;
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    const undo = store.completeNextStep(thread.id);
+    showUndoToast(`Done: ${step}`, undo);
+  };
+
   const handleDelete = () => {
-    deleteItem(thread.id);
-    showUndoToast(`"${thread.title}" deleted`, () => undoDelete(thread.id));
-    router.back();
+    const remove = () => {
+      deleteItem(thread.id);
+      showUndoToast(`"${thread.title}" deleted`, () => undoDelete(thread.id));
+      router.back();
+    };
+    // One note is undone from the toast; a whole history deserves a question first.
+    if (entries.length <= 1) return remove();
+    confirmAction({
+      title: 'Delete thread?',
+      message: `All ${entries.length} entries in "${thread.title}" will be deleted.`,
+      confirmLabel: 'Delete',
+      onConfirm: remove,
+    });
   };
 
   const handleRetryProcessing = async () => {
@@ -194,8 +258,11 @@ export default function ThreadScreen() {
         await structurePendingEntry(entry, store);
       }
     } catch (e) {
-      console.error(e);
-      Alert.alert('Still offline?', 'It will be retried automatically next time you open Mnemo.');
+      const problem = classifyAiError(e);
+      Alert.alert(
+        problem === 'offline' ? 'Still offline?' : 'Gemini had a problem',
+        `${KEY_PROBLEM_TEXT[problem]} It's tried again by itself.`,
+      );
     } finally {
       setIsGenerating(false);
     }
@@ -211,8 +278,7 @@ export default function ThreadScreen() {
         nextStep: thread.nextStep || summary.nextSteps?.[0],
       });
     } catch (e) {
-      console.error(e);
-      Alert.alert('Could not generate a digest', 'Check your connection and try again.');
+      Alert.alert('Could not generate a digest', KEY_PROBLEM_TEXT[classifyAiError(e)]);
     } finally {
       setIsGenerating(false);
     }
@@ -272,6 +338,16 @@ export default function ThreadScreen() {
             </Button>
           ) : (
             <View className="flex-row">
+              <IconButton
+                icon="star"
+                label={thread.starred ? 'Unpin from Home' : 'Pin to Home'}
+                variant="bare"
+                active={!!thread.starred}
+                onPress={() => {
+                  Haptics.selectionAsync();
+                  updateItem(thread.id, { starred: !thread.starred });
+                }}
+              />
               <IconButton icon="share" label="Share" variant="bare" onPress={onShare} />
               <IconButton icon="pencil" label="Edit thread" variant="bare" onPress={startEditing} />
               <IconButton icon="trash" label="Delete thread" variant="bare" onPress={handleDelete} />
@@ -328,8 +404,17 @@ export default function ThreadScreen() {
                   <CategoryPicker value={thread.category} onChange={(cat) => updateItem(thread.id, { category: cat })} />
                 </View>
                 <View>
-                  <Eyebrow className="mb-2">Due</Eyebrow>
-                  <DueDatePicker value={thread.dueDate} onChange={(d) => updateItem(thread.id, { dueDate: d })} />
+                  <Eyebrow className="mb-2">Tags</Eyebrow>
+                  <TagEditor tags={thread.tags} onChange={(tags) => updateItem(thread.id, { tags })} />
+                </View>
+                <View>
+                  <Eyebrow className="mb-2">Remind me</Eyebrow>
+                  <DueDatePicker
+                    value={thread.dueDate}
+                    onChange={(d) => updateItem(thread.id, { dueDate: d })}
+                    repeat={thread.repeat}
+                    onRepeatChange={(r) => updateItem(thread.id, { repeat: r })}
+                  />
                 </View>
                 <LabeledInput
                   label="Where you left off"
@@ -346,7 +431,7 @@ export default function ThreadScreen() {
                 </Text>
                 {thread.tags.length > 0 || thread.dueDate ? (
                   <View className="flex-row flex-wrap items-center gap-x-4 gap-y-1 mt-2.5">
-                    {thread.dueDate ? <DueDateLabel dueDate={thread.dueDate} /> : null}
+                    {thread.dueDate ? <DueDateLabel dueDate={thread.dueDate} repeat={thread.repeat} /> : null}
                     {thread.tags.length > 0 ? (
                       <Text className="font-sans text-sm" style={{ color: colors.fgTertiary }}>
                         {thread.tags.map((t) => `#${t}`).join('  ')}
@@ -405,6 +490,16 @@ export default function ThreadScreen() {
                           {thread.nextStep}
                         </Text>
                       </View>
+                      <Pressable
+                        onPress={handleStepDone}
+                        hitSlop={8}
+                        accessibilityRole="button"
+                        accessibilityLabel="Mark next step done"
+                        className="w-10 h-10 rounded-full items-center justify-center ml-2 active:opacity-60"
+                        style={{ backgroundColor: colors.surfaceLowest }}
+                      >
+                        <Icon name="check" size={18} stroke={2.2} color={colors.accent} />
+                      </Pressable>
                     </View>
                   ) : null}
                 </MotiView>
@@ -518,13 +613,53 @@ export default function ThreadScreen() {
               {/* ─── Numbers it tracks ──────────────────── */}
               {numbers.length > 0 && (
                 <MotiView {...enter.rise(2)} className="px-6 mt-9">
-                  <NumbersSection summaries={numbers} />
+                  <NumbersSection summaries={numbers} onFix={fixMetric} />
                 </MotiView>
               )}
 
               {/* ─── Timeline ───────────────────────────── */}
               <MotiView {...enter.rise(2)} className="px-6 mt-9">
-                <Eyebrow>Timeline</Eyebrow>
+                <View className="flex-row items-center justify-between">
+                  <Eyebrow>Timeline</Eyebrow>
+                  {entries.length > 3 ? (
+                    <Pressable
+                      onPress={() => {
+                        setFinding((v) => !v);
+                        setFindQuery('');
+                      }}
+                      hitSlop={10}
+                      accessibilityRole="button"
+                      accessibilityLabel={finding ? 'Stop searching this thread' : 'Search this thread'}
+                      className="mb-3 active:opacity-60"
+                    >
+                      <Icon name={finding ? 'x' : 'search'} size={16} color={colors.fgTertiary} />
+                    </Pressable>
+                  ) : null}
+                </View>
+                {finding ? (
+                  <View
+                    className="flex-row items-center rounded-full px-4 h-11 mb-4"
+                    style={{ backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border }}
+                  >
+                    <Icon name="search" size={15} color={colors.fgTertiary} />
+                    <TextInput
+                      value={findQuery}
+                      onChangeText={setFindQuery}
+                      autoFocus
+                      placeholder="Find in this thread"
+                      placeholderTextColor={colors.fgTertiary}
+                      accessibilityLabel="Find in this thread"
+                      selectionColor={colors.accent}
+                      className="flex-1 font-sans text-body ml-2"
+                      style={[{ color: colors.fg }, noFocusRing]}
+                    />
+                    {findQuery ? (
+                      <Text className="font-sans text-sm" style={{ color: colors.fgTertiary }}>
+                        {shownEntries.length}/{entries.length}
+                      </Text>
+                    ) : null}
+                  </View>
+                ) : null}
 
                 <View className="flex-row gap-2 mb-4">
                   <Button variant="quiet" size="sm" icon="pencil" className="flex-1" onPress={() => addUpdate('write')}>
@@ -537,12 +672,13 @@ export default function ThreadScreen() {
 
                 <View className="gap-3">
                   <AnimatePresence initial={false}>
-                    {entries.map((entry, i) => (
+                    {shownEntries.map((entry, i) => (
                       <MotiView key={entry.id} {...enter.row(i)} {...enter.rowExit()}>
                         <EntryCard
                           entry={entry}
                           onRetry={entry.pending && !isGenerating ? () => handleRetryProcessing() : undefined}
                           onMoved={followMove}
+                          onDeleted={(threadRemoved) => threadRemoved && router.back()}
                         />
                       </MotiView>
                     ))}
@@ -551,8 +687,45 @@ export default function ThreadScreen() {
               </MotiView>
 
               {/* ─── Smart digest ───────────────────────── */}
+              {/* Offline: what's still open, gathered from the notes on the phone. */}
+              {!ai && !thread.aiSummary && openSteps.length > 0 && (
+                <View className="px-6 mt-9">
+                  <Eyebrow>Still open</Eyebrow>
+                  <View className="gap-3">
+                    {openSteps.map((step, i) => (
+                      <View key={i} className="flex-row items-start">
+                        <View
+                          className="w-1.5 h-1.5 rounded-full mr-3 mt-2.5"
+                          style={{ backgroundColor: colors.accent }}
+                        />
+                        <Text className="flex-1 font-sans text-body leading-relaxed" style={{ color: colors.fg }}>
+                          {step}
+                        </Text>
+                      </View>
+                    ))}
+                  </View>
+                </View>
+              )}
+              {(ai || thread.aiSummary) && (
               <View className="px-6 mt-9">
-                <Eyebrow>Smart digest</Eyebrow>
+                <View className="flex-row items-center justify-between">
+                  <Eyebrow>Smart digest</Eyebrow>
+                  {thread.aiSummary && ai ? (
+                    // Notes change; the digest can catch up.
+                    <Pressable
+                      onPress={handleGenerateDigest}
+                      disabled={isGenerating}
+                      hitSlop={8}
+                      accessibilityRole="button"
+                      accessibilityLabel="Refresh the digest"
+                      className="mb-3 active:opacity-60"
+                    >
+                      <Text className="font-sans-semi text-sm" style={{ color: colors.accent }}>
+                        {isGenerating ? 'Thinking…' : 'Refresh'}
+                      </Text>
+                    </Pressable>
+                  ) : null}
+                </View>
                 {thread.aiSummary ? (
                   <View className="gap-3">
                     {thread.aiSummary.nextSteps.map((step, i) => (
@@ -583,6 +756,7 @@ export default function ThreadScreen() {
                   </Card>
                 )}
               </View>
+              )}
 
               {/* ─── Related ────────────────────────────── */}
               {related.length > 0 && (

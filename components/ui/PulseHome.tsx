@@ -1,5 +1,6 @@
 import React from 'react';
-import { View, Text, ScrollView, Pressable } from 'react-native';
+import { View, ScrollView, Pressable } from 'react-native';
+import { Text } from '@/components/ui/Text';
 import { MotiView } from 'moti';
 import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -10,10 +11,11 @@ import { Icon } from '@/components/ui/Icon';
 import { Eyebrow } from '@/components/ui/Eyebrow';
 import { ThreadList, ThreadRow } from '@/components/ui/ThreadRow';
 import { OpenRing, ThreadRing } from '@/components/ui/ThreadRing';
-import { formatDueDate } from '@/components/ui/DueDatePicker';
+import { formatReminder, resumeOrder } from '@/lib/when';
 import { CONTENT_BOTTOM_CLEARANCE } from '@/components/ui/FloatingTabBar';
 import { useMnemoStore } from '@/hooks/use-mnemo-store';
 import { useThemeColors } from '@/hooks/use-theme';
+import { useAiProblem, type AiProblem } from '@/lib/ai-mode';
 import { formatCompactDistance, freshness } from '@/utils/time';
 import { CATEGORY_LIST, useCategories } from '@/utils/categories';
 import { useEnter } from '@/utils/motion';
@@ -64,7 +66,7 @@ function ResumeCard({ item }: { item: MnemoItem }) {
           >
             <CategoryIcon size={13} color={colors.onHero} strokeWidth={2} />
           </ThreadRing>
-          <View className="ml-3">
+          <View className="ml-3 flex-1">
             <Text className="font-sans-semi text-sm" style={{ color: colors.onHero }}>
               {category.label}
             </Text>
@@ -72,6 +74,7 @@ function ResumeCard({ item }: { item: MnemoItem }) {
               {item.status === 'paused' ? 'Paused' : 'Away'} {formatCompactDistance(item.updatedAt)}
             </Text>
           </View>
+          {item.starred ? <Icon name="star" size={16} color={colors.heroAccent} stroke={2} /> : null}
         </View>
 
         <Text className="font-display leading-tight mb-5" style={{ color: colors.onHero, fontSize: 30 }} numberOfLines={3}>
@@ -120,15 +123,21 @@ function ResumeCard({ item }: { item: MnemoItem }) {
 }
 
 /** PulseHome — the Home tab: greeting, one resume hero, what's due, what else is open. */
+const AI_PROBLEM_TEXT: Record<AiProblem, string> = {
+  invalid: "Gemini isn't accepting your key. Notes are saved as you wrote them.",
+  quota: "Your Gemini key's daily limit is used up. Notes are saved and tidied up later.",
+};
+
 export function PulseHome() {
   const enter = useEnter();
+  const aiProblem = useAiProblem();
   const insets = useSafeAreaInsets();
   const { items, getActiveItems, focusThreadId, setFocusThread } = useMnemoStore();
   const focusThread = focusThreadId ? items.find((i) => i.id === focusThreadId) : undefined;
   const colors = useThemeColors();
   const categories = useCategories();
 
-  const activeItems = getActiveItems();
+  const activeItems = resumeOrder(getActiveItems(), { focusId: focusThreadId });
   const latestItem = activeItems[0];
 
   const now = Date.now();
@@ -221,6 +230,24 @@ export function PulseHome() {
             </Pressable>
           </View>
         ) : null}
+        {/* Gemini stopped answering for a reason the person can fix. */}
+        {aiProblem ? (
+          <Pressable
+            onPress={() => router.push('/modal' as any)}
+            accessibilityRole="button"
+            accessibilityLabel={`${AI_PROBLEM_TEXT[aiProblem]} Open settings.`}
+            className="flex-row items-center rounded-lg px-4 py-3 mt-4 active:opacity-80"
+            style={{ backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border }}
+          >
+            <Icon name="sparkles" size={16} color={colors.accentWarm} />
+            <Text className="flex-1 font-sans text-sm leading-snug mx-3" style={{ color: colors.fgSecondary }}>
+              {AI_PROBLEM_TEXT[aiProblem]}
+            </Text>
+            <Text className="font-sans-semi text-sm" style={{ color: colors.accent }}>
+              Fix
+            </Text>
+          </Pressable>
+        ) : null}
       </MotiView>
 
       <View className="px-5">
@@ -264,7 +291,7 @@ export function PulseHome() {
                     item={item}
                     index={i}
                     onPress={() => openItem(item.id)}
-                    trailing={formatDueDate(item.dueDate!).replace(/^Due /, '')}
+                    trailing={formatReminder(item.dueDate!)}
                     trailingTone={overdue ? colors.error : colors.accent}
                     last={i === comingUp.length - 1}
                   />

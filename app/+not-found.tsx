@@ -1,5 +1,6 @@
 import { Link, Stack } from 'expo-router';
-import { View, Text } from 'react-native';
+import { View } from 'react-native';
+import { Text } from '@/components/ui/Text';
 import { MotiView } from 'moti';
 import { Icon } from '@/components/ui/Icon';
 import { useThemeColors } from '@/hooks/use-theme';

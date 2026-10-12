@@ -1,7 +1,22 @@
 import { GoogleGenAI, Modality, Type, type GenerateContentParameters } from '@google/genai';
 import { getActiveApiKey } from './api-key';
+import { aiEnabled } from './ai-mode';
 
+/** Thrown instead of calling Google when the person chose offline. */
+export class AiOffError extends Error {
+  constructor() {
+    super('AI is off');
+    this.name = 'AiOffError';
+  }
+}
+
+/**
+ * The one way out to Gemini. Offline means nothing leaves the phone, even
+ * with a key saved, so every caller (search, related threads, digests)
+ * fails here and falls back to what the phone can do.
+ */
 export function getAIClient(): GoogleGenAI {
+  if (!aiEnabled()) throw new AiOffError();
   return new GoogleGenAI({ apiKey: getActiveApiKey() });
 }
 
@@ -176,6 +191,10 @@ export interface ProcessedCapture {
   thread?: ThreadMatch;
 }
 
+// Many notes are Bangla, Banglish (Bangla typed in Latin letters) or a mix
+// with English. Each stays as it was said.
+const LANGUAGE_RULES = `LANGUAGE: Write title, notes, tags, leftOff and nextSteps in the language and script the person used. Bangla stays in Bangla script; Banglish stays in Latin letters; a mix stays a mix, keeping the English words they used. Never translate the note, and never switch it to another script. Fix obvious speech-recognition slips, but don't "correct" one language into the other.`;
+
 const MEASURE_RULES = `
 MEASURES ("measures"):
 Numbers the person reports about their life that they'd want to add up or follow over time: money spent, distance, weight, hours slept or studied, pages read, reps, counts, scores, prices of options they're comparing.
@@ -225,17 +244,55 @@ Decide whether this capture continues one of them: the same trip, task, project,
 - "reason": one short line they will read, e.g. "Sounds like part of your Lisbon trip".`;
 }
 
-const ENHANCE_SCHEMA = {
+/** A note given to `askNotes`: one thread, its dated entries flattened to text. */
+export interface NoteForQuestion {
+  id: string;
+  title: string;
+  text: string;
+}
+
+const ANSWER_SCHEMA = {
   type: Type.OBJECT,
   properties: {
-    suggestedTitle: { type: Type.STRING },
-    suggestedCategory: { type: Type.STRING, enum: VALID_CATEGORIES },
-    whereLeftOff: { type: Type.STRING },
-    nextStep: { type: Type.STRING },
-    summary: SUMMARY_SCHEMA,
+    answer: { type: Type.STRING, description: 'The answer, in plain sentences' },
+    sourceIds: { type: Type.ARRAY, items: { type: Type.STRING }, description: 'ids of the notes the answer came from' },
   },
-  required: ['suggestedTitle', 'suggestedCategory', 'whereLeftOff', 'nextStep', 'summary'],
+  required: ['answer', 'sourceIds'],
 };
+
+/**
+ * Answers a question from the person's own notes (the few most relevant,
+ * chosen on the phone), saying which notes it used. Never from general
+ * knowledge: if the notes don't say, it says so.
+ */
+export async function askNotes(
+  question: string,
+  notes: NoteForQuestion[],
+): Promise<{ answer: string; sourceIds: string[] }> {
+  const prompt = `Answer the person's question using only their notes below. Today is ${new Date().toDateString()}.
+- If the notes don't contain the answer, say so plainly in one sentence. Never guess or use outside knowledge.
+- Keep it short: one to three sentences. Quote amounts, dates and names exactly as written in the notes.
+- When adding numbers up, add only what the notes state, and say what you added.
+- Answer in the language and script of the question (Bangla, Banglish or English).
+- "sourceIds": the ids of the notes you used.
+
+Question: "${question}"
+
+Notes:
+${notes.map((n) => `--- id=${n.id} · "${n.title}"\n${n.text}`).join('\n')}`;
+  const response = await generateText({
+    contents: prompt,
+    config: { responseMimeType: 'application/json', responseSchema: ANSWER_SCHEMA },
+  });
+  const text = response.text;
+  if (!text) throw new Error('No answer');
+  const parsed = JSON.parse(text) as { answer?: string; sourceIds?: string[] };
+  const known = new Set(notes.map((n) => n.id));
+  return {
+    answer: (parsed.answer ?? '').trim(),
+    sourceIds: (parsed.sourceIds ?? []).filter((id) => known.has(id)),
+  };
+}
 
 export async function summarizeContext(notes: string, links: string[]) {
   const prompt = `
@@ -277,31 +334,25 @@ Return the result as a JSON object with the following structure:
   }
 }
 
-export async function generateTitle(notes: string) {
-  const prompt = `Generate a short, concise title (max 5 words) for the following task notes:\n\n${notes}`;
-  try {
-    const response = await generateText({
-      contents: prompt,
-    });
-    return response.text?.trim() || 'Untitled Task';
-  } catch (error) {
-    console.error('Error generating title:', error);
-    return 'Untitled Task';
-  }
-}
-
 export async function processVoiceDump(
   transcript: string,
   ctx?: CaptureContext,
+  /** Photos attached to the note, as base64 JPEG. */
+  images: string[] = [],
 ): Promise<ProcessedCapture> {
+  const photoRules = images.length
+    ? `
+    The note comes with ${images.length === 1 ? 'a photo' : `${images.length} photos`} (a receipt, a page, a whiteboard, a place…). Read what matters in ${images.length === 1 ? 'it' : 'them'} into the notes, and put every number you read in the "transcript" field, word for word, so it can be checked.`
+    : '';
   const prompt = `
     You are an expert productivity assistant. The user just captured a thought — it could be about anything in their life: work, errands, shopping, study, health, ideas, or personal matters.
     
     Raw text:
     "${transcript}"
+    ${photoRules}
 
     Understand the context, fix any errors, and structure this into a clean JSON object.
-    IMPORTANT: Detect the language and provide the entire analysis in that SAME language.
+    ${LANGUAGE_RULES}
     
     Also suggest the best category from this list: ${VALID_CATEGORIES.join(', ')}
     
@@ -325,10 +376,12 @@ export async function processVoiceDump(
   `;
 
   const response = await generateText({
-    contents: prompt,
+    contents: images.length
+      ? [{ role: 'user', parts: [...images.map((data) => ({ inlineData: { mimeType: 'image/jpeg', data } })), { text: prompt }] }]
+      : prompt,
     config: {
       responseMimeType: 'application/json',
-      responseSchema: dumpSchema({ threads: !!ctx?.candidates.length, transcript: false }),
+      responseSchema: dumpSchema({ threads: !!ctx?.candidates.length, transcript: images.length > 0 }),
     },
   });
 
@@ -374,6 +427,7 @@ export async function processAudioDump(
     1. Transcribe the audio precisely.
     2. Detect the language of the speaker.
     3. Generate a structured analysis in the SAME language as the speaker.
+    ${LANGUAGE_RULES}
     4. Suggest the best category from this list: ${VALID_CATEGORIES.join(', ')}
     
     Return a clean JSON object:
@@ -413,47 +467,6 @@ export async function processAudioDump(
 
   const text = response.text;
   if (!text) throw new Error('Failed to process audio dump');
-  return JSON.parse(text);
-}
-
-/**
- * Enhance an existing item with AI suggestions.
- * Returns suggested improvements without modifying the original.
- */
-export async function enhanceItem(title: string, content: string, category: string) {
-  const prompt = `
-    You are an expert productivity assistant. The user has an existing item in their Personal Continuity App.
-    
-    Title: "${title}"
-    Content: "${content}"
-    Category: ${category}
-    
-    Analyze this item and suggest improvements. Detect the language and respond in the SAME language.
-    
-    Return a JSON object:
-    {
-      "suggestedTitle": "A cleaner, more descriptive title if the current one is vague (otherwise return the same title)",
-      "suggestedCategory": "one of: ${VALID_CATEGORIES.join(', ')}",
-      "whereLeftOff": "1-2 sentences summarizing where they seem to be",
-      "nextStep": "The single most important next action",
-      "summary": {
-        "leftOff": "Summary of current state",
-        "nextSteps": ["Actionable step 1", "Actionable step 2"],
-        "resources": [{"name": "Resource name", "url": "URL or search link"}]
-      }
-    }
-  `;
-
-  const response = await generateText({
-    contents: prompt,
-    config: {
-      responseMimeType: 'application/json',
-      responseSchema: ENHANCE_SCHEMA,
-    },
-  });
-
-  const text = response.text;
-  if (!text) throw new Error('Failed to enhance item');
   return JSON.parse(text);
 }
 

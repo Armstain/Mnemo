@@ -6,20 +6,21 @@ import React, { createContext, useCallback, useContext, useRef, useState } from 
  * lifetime never drift apart — undo always works for exactly as long as
  * the toast says it will.
  */
-export const UNDO_WINDOW_MS = 4000;
+export const UNDO_WINDOW_MS = 6000;
 
 interface ToastState {
   id: number;
   message: string;
   actionLabel: string;
-  onAction: () => void;
+  /** No action: a plain notice. */
+  onAction?: () => void;
 }
 
 export interface ToastOptions {
   message: string;
   /** Defaults to "Undo". */
   actionLabel?: string;
-  onAction: () => void;
+  onAction?: () => void;
   /** Defaults to UNDO_WINDOW_MS. */
   durationMs?: number;
 }

@@ -1,6 +1,7 @@
-import { embedText, fromBlob, dot } from '@/lib/embeddings';
-import { getAllEmbeddings } from '@/lib/db';
-import { bm25Scored } from '@/lib/bm25';
+import { embedText, dot } from '@/lib/embeddings';
+import { getVectors } from '@/lib/db';
+import { bm25Scored, tokenize } from '@/lib/bm25';
+import { telling } from '@/lib/filing';
 import type { MnemoItem } from '@/types/mnemo';
 
 // The standard constant from the original Reciprocal Rank Fusion paper —
@@ -36,16 +37,15 @@ const QUERY_MIN_SIMILARITY = 0.65;
  * that case, same as the rest of the AI layer's contract.
  */
 async function vectorRank(query: string, items: MnemoItem[]): Promise<MnemoItem[]> {
-  const rows = await getAllEmbeddings();
-  if (rows.length === 0) return [];
+  const vectors = await getVectors();
+  if (vectors.size === 0) return [];
 
-  const byId = new Map(items.map((item) => [item.id, item]));
   const queryVector = await embedText(query, 'RETRIEVAL_QUERY');
 
-  return rows
-    .map((row) => {
-      const item = byId.get(row.itemId);
-      return item ? { doc: item, score: dot(queryVector, fromBlob(row.vector)) } : null;
+  return items
+    .map((item) => {
+      const vector = vectors.get(item.id);
+      return vector ? { doc: item, score: dot(queryVector, vector) } : null;
     })
     .filter((x): x is { doc: MnemoItem; score: number } => x !== null && x.score >= QUERY_MIN_SIMILARITY)
     .sort((a, b) => b.score - a.score)
@@ -121,20 +121,19 @@ export async function relatedThreads(
 ): Promise<RelatedThread[]> {
   try {
     const self = items.find((i) => i.id === itemId);
-    const rows = await getAllEmbeddings();
-    const selfRow = rows.find((r) => r.itemId === itemId);
-    if (!self || !selfRow) return [];
+    if (!self) return [];
+    const vectors = await getVectors();
+    const selfVector = vectors.get(itemId);
+    if (!selfVector) return relatedByWords(self, items, limit);
 
-    const selfVector = fromBlob(selfRow.vector);
     const selfTags = new Set(self.tags.map((t) => t.toLowerCase()));
-    const byId = new Map(items.map((item) => [item.id, item]));
     const found: (RelatedThread & { score: number })[] = [];
 
-    for (const row of rows) {
-      if (row.itemId === itemId) continue;
-      const item = byId.get(row.itemId);
-      if (!item || item.status === 'archived') continue;
-      const score = dot(selfVector, fromBlob(row.vector));
+    for (const item of items) {
+      if (item.id === itemId || item.status === 'archived') continue;
+      const vector = vectors.get(item.id);
+      if (!vector) continue;
+      const score = dot(selfVector, vector);
       const shared = item.tags.filter((t) => selfTags.has(t.toLowerCase()));
       if (shared.length > 0 && score >= RELATED_WITH_TAG) {
         found.push({ item, score, reason: `Also tagged ${shared.slice(0, 2).map((t) => `#${t}`).join(' ')}` });
@@ -149,4 +148,28 @@ export async function relatedThreads(
   } catch {
     return [];
   }
+}
+
+/**
+ * Without embeddings (offline, or not embedded yet): threads that share a
+ * tag, or a telling word in both titles. Few and plainly explained.
+ */
+export function relatedByWords(self: MnemoItem, items: MnemoItem[], limit = 3): RelatedThread[] {
+  const selfTags = new Set(self.tags.map((t) => t.toLowerCase()));
+  const selfTitle = telling(tokenize(self.title));
+  const found: (RelatedThread & { score: number })[] = [];
+  for (const item of items) {
+    if (item.id === self.id || item.status === 'archived' || item.pending) continue;
+    const shared = item.tags.filter((t) => selfTags.has(t.toLowerCase()));
+    if (shared.length > 0) {
+      found.push({ item, score: 2 + shared.length, reason: `Also tagged ${shared.slice(0, 2).map((t) => `#${t}`).join(' ')}` });
+      continue;
+    }
+    const words = [...telling(tokenize(item.title))].filter((w) => selfTitle.has(w));
+    if (words.length > 0) found.push({ item, score: words.length, reason: `Also about “${words[0]}”` });
+  }
+  return found
+    .sort((a, b) => b.score - a.score || b.item.updatedAt - a.item.updatedAt)
+    .slice(0, limit)
+    .map(({ item, reason }) => ({ item, reason }));
 }

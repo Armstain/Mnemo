@@ -1,5 +1,6 @@
 import React from 'react';
-import { View, Text } from 'react-native';
+import { View } from 'react-native';
+import { Text } from '@/components/ui/Text';
 import { MotiView } from 'moti';
 import { useMnemoStore } from '@/hooks/use-mnemo-store';
 import { PulseHome } from '@/components/ui/PulseHome';

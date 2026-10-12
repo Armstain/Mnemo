@@ -1,5 +1,6 @@
 import React from 'react';
-import { Pressable, Text } from 'react-native';
+import { Pressable } from 'react-native';
+import { Text } from '@/components/ui/Text';
 import { AnimatePresence, MotiView } from 'moti';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
@@ -51,10 +52,11 @@ export function UndoToastHost() {
           >
             {toast.message}
           </Text>
+          {toast.onAction ? (
           <Pressable
             onPress={() => {
               Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-              toast.onAction();
+              toast.onAction?.();
               dismiss();
             }}
             hitSlop={8}
@@ -65,6 +67,7 @@ export function UndoToastHost() {
               {toast.actionLabel}
             </Text>
           </Pressable>
+          ) : null}
         </MotiView>
       )}
     </AnimatePresence>

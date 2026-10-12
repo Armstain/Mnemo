@@ -31,6 +31,8 @@ export function entryText(entry: Pick<Entry, 'blocks'>): string {
           return block.items
             .map((m) => `${m.label || m.metric}: ${formatValue(m.value, m.unit)}`)
             .join('\n');
+        case 'image':
+          return block.caption ?? '';
       }
     })
     .filter((t) => t && t.trim())

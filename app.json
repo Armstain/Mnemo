@@ -45,7 +45,7 @@
       [
         "expo-audio",
         {
-          "microphonePermission": "Allow Mnemo to access your microphone to capture your thoughts."
+          "microphonePermission": "Mnemo listens while you talk so it can write your note. The audio is never saved."
         }
       ],
       "expo-secure-store",
@@ -62,7 +62,57 @@
       "expo-notifications",
       "expo-quick-actions",
       "./plugins/with-shortcut-icons",
-      "expo-asset"
+      "expo-asset",
+      [
+        "expo-speech-recognition",
+        {
+          "microphonePermission": "Mnemo listens while you talk so it can write your note. The audio is never saved.",
+          "speechRecognitionPermission": "Mnemo turns what you say into text on your phone. The audio is never saved.",
+          "androidSpeechServicePackages": [
+            "com.google.android.googlequicksearchbox",
+            "com.google.android.as"
+          ]
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Mnemo adds the photos you choose to your notes. They stay on your phone.",
+          "cameraPermission": "Mnemo adds the photos you take to your notes. They stay on your phone."
+        }
+      ],
+      [
+        "expo-share-intent",
+        {
+          "androidIntentFilters": [
+            "text/*",
+            "image/*"
+          ],
+          "androidMultiIntentFilters": [
+            "image/*"
+          ],
+          "disableIOS": true
+        }
+      ],
+      [
+        "react-native-android-widget",
+        {
+          "widgets": [
+            {
+              "name": "Capture",
+              "label": "Mnemo",
+              "description": "Record or write a note, and see what to pick up next",
+              "minWidth": "250dp",
+              "minHeight": "110dp",
+              "targetCellWidth": 4,
+              "targetCellHeight": 2,
+              "resizeMode": "horizontal|vertical",
+              "previewImage": "./assets/images/widget-preview.png",
+              "updatePeriodMillis": 1800000
+            }
+          ]
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true

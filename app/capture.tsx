@@ -1,21 +1,22 @@
 import React, { useState, useMemo } from 'react';
 import {
   View,
-  Text,
-  TextInput,
   ScrollView,
   Pressable,
   KeyboardAvoidingView,
   Platform,
+  Alert,
+  Image,
 } from 'react-native';
+import { TextInput } from '@/components/ui/TextInput';
+import { Text } from '@/components/ui/Text';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useCaptureTarget } from '@/hooks/use-capture-target';
 import { FocusDestination } from '@/components/ui/FocusDestination';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { MotiView } from 'moti';
 import { useMnemoStore } from '@/hooks/use-mnemo-store';
-import { resolvePendingEntry } from '@/lib/capture';
-import { buildBlocks } from '@/lib/threads';
+import { saveTextNote } from '@/lib/capture';
 import { Button, IconButton } from '@/components/ui/Button';
 import { Icon } from '@/components/ui/Icon';
 import { Eyebrow } from '@/components/ui/Eyebrow';
@@ -27,6 +28,7 @@ import { DueDatePicker } from '@/components/ui/DueDatePicker';
 import { EditorToolbar, type TextSelection } from '@/components/ui/EditorToolbar';
 import { useThemeColors } from '@/hooks/use-theme';
 import type { Category, ChecklistItem } from '@/types/mnemo';
+import { imageUri, pickPhotos, type ImageBlock } from '@/lib/images';
 import { useReduceMotion } from '@/hooks/use-accessibility-motion';
 import { DUR_TOGGLE, EASE_IN_OUT, EASE_OUT, motion, useEnter } from '@/utils/motion';
 
@@ -59,69 +61,46 @@ export default function CaptureScreen() {
   const [nextStep, setNextStep] = useState('');
   const [whereLeftOff, setWhereLeftOff] = useState('');
   const [dueDate, setDueDate] = useState<number | undefined>();
+  const [photos, setPhotos] = useState<ImageBlock[]>([]);
+
+  const addPhotos = async (source: 'camera' | 'library') => {
+    const kept = await pickPhotos(source);
+    if (kept.length > 0) setPhotos((p) => [...p, ...kept]);
+  };
+  const choosePhotoSource = () => {
+    // The web has no camera picker worth offering; phones ask which.
+    if (Platform.OS === 'web') return addPhotos('library');
+    Alert.alert('Add a photo', undefined, [
+      { text: 'Take a photo', onPress: () => addPhotos('camera') },
+      { text: 'Choose from photos', onPress: () => addPhotos('library') },
+      { text: 'Cancel', style: 'cancel' },
+    ]);
+  };
 
   const colors = useThemeColors();
 
   const canSave = useMemo(
-    () => text.trim().length > 0 || checklistItems.length > 0,
-    [text, checklistItems],
+    () => text.trim().length > 0 || checklistItems.length > 0 || photos.length > 0,
+    [text, checklistItems, photos],
   );
 
   const handleSave = () => {
     if (!canSave) return;
-
-    const trimmedText = text.trim();
-    const hasChecklist = checklistItems.length > 0;
-
-    // Build title from the first line of text, falling back to a
-    // checklist-aware default when there's no free text at all.
-    const rawTitle = trimmedText.split('\n')[0];
-    const fallbackTitle =
-      rawTitle.length > 50
-        ? rawTitle.substring(0, 50) + '…'
-        : rawTitle || (hasChecklist ? 'Checklist' : 'Quick note');
-    const hasTextToStructure = trimmedText.length > 0;
-
-    // Save instantly with the raw text so the user never waits on the
-    // network — AI structuring (title/summary/links) happens in the
-    // background and patches the entry (and a new thread's title) in place.
-    const entryInput = {
-      source: 'text' as const,
-      transcript: trimmedText || undefined,
-      blocks: buildBlocks({ text: trimmedText, checklistItems }),
-      leftOff: whereLeftOff.trim() || undefined,
-      nextStep: nextStep.trim() || undefined,
-      pending: hasTextToStructure,
-      pendingRawText: hasTextToStructure ? trimmedText : undefined,
-    };
-
-    let savedThreadId: string;
-    let entry;
-    if (targetThread) {
-      entry = store.addEntry(targetThread.id, { ...entryInput, filing: target.filing });
-      savedThreadId = targetThread.id;
-      if (dueDate) store.updateItem(targetThread.id, { dueDate });
-    } else {
-      const created = store.createThread(
-        {
-          title: fallbackTitle,
-          category,
-          tags: [],
-          status: 'active',
-          dueDate,
-          pending: hasTextToStructure,
-        },
-        entryInput,
-      );
-      entry = created.entry;
-      savedThreadId = created.thread.id;
-    }
-
-    router.replace(`/(tabs)/context?id=${savedThreadId}` as any);
-
-    if (hasTextToStructure) {
-      resolvePendingEntry(entry, store);
-    }
+    // One save path for typed notes (lib/capture.ts): instant, and tidied
+    // up by AI in the background only when AI is on.
+    const saved = saveTextNote({
+      text,
+      category,
+      threadId: targetThread?.id,
+      filing: target.filing,
+      checklistItems,
+      leftOff: whereLeftOff,
+      nextStep,
+      dueDate,
+      images: photos,
+      store,
+    });
+    router.replace(`/(tabs)/context?id=${saved.threadId}` as any);
   };
 
   return (
@@ -197,6 +176,29 @@ export default function CaptureScreen() {
                 selectionColor={colors.accent}
               />
 
+              {photos.length > 0 && (
+                <View className="flex-row flex-wrap gap-2 mt-3">
+                  {photos.map((p, i) => (
+                    <View key={i}>
+                      <Image
+                        source={{ uri: imageUri(p) }}
+                        style={{ width: 72, height: 72, borderRadius: 10, borderWidth: 1, borderColor: colors.border }}
+                      />
+                      <Pressable
+                        onPress={() => setPhotos((all) => all.filter((_, j) => j !== i))}
+                        hitSlop={6}
+                        accessibilityRole="button"
+                        accessibilityLabel="Remove photo"
+                        className="absolute -top-1.5 -right-1.5 w-6 h-6 rounded-full items-center justify-center"
+                        style={{ backgroundColor: colors.fg }}
+                      >
+                        <Icon name="x" size={12} color={colors.bg} />
+                      </Pressable>
+                    </View>
+                  ))}
+                </View>
+              )}
+
               {showChecklist && (
                 <View className="border-t mt-4 pt-4" style={{ borderColor: colors.border }}>
                   <ChecklistEditor items={checklistItems} onChange={setChecklistItems} editable />
@@ -213,6 +215,7 @@ export default function CaptureScreen() {
                   }}
                   checklistVisible={showChecklist}
                   onToggleChecklist={() => setShowChecklist((v) => !v)}
+                  onAddPhoto={choosePhotoSource}
                 />
               </View>
             </View>
@@ -265,7 +268,7 @@ export default function CaptureScreen() {
                   placeholder="Call the plumber…"
                 />
                 <View>
-                  <Eyebrow className="mb-2">Due</Eyebrow>
+                  <Eyebrow className="mb-2">Remind me</Eyebrow>
                   <DueDatePicker value={dueDate} onChange={setDueDate} />
                 </View>
               </MotiView>

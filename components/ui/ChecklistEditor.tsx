@@ -1,5 +1,9 @@
 import React, { useState, useRef } from 'react';
-import { View, Text, TextInput, Pressable } from 'react-native';
+import { View, Pressable } from 'react-native';
+import { TextInput } from '@/components/ui/TextInput';
+import { noFocusRing } from '@/utils/web';
+import type { TextInput as RNTextInput } from 'react-native';
+import { Text } from '@/components/ui/Text';
 import * as Haptics from 'expo-haptics';
 import { useThemeColors } from '@/hooks/use-theme';
 import { useStatusConfig } from '@/utils/categories';
@@ -28,7 +32,7 @@ export function ChecklistEditor({
   compact = false,
 }: ChecklistEditorProps) {
   const [newItemText, setNewItemText] = useState('');
-  const inputRef = useRef<TextInput>(null);
+  const inputRef = useRef<RNTextInput>(null);
   const colors = useThemeColors();
   const statusColors = useStatusConfig();
 
@@ -109,12 +113,27 @@ export function ChecklistEditor({
               animate={{ opacity: item.checked ? 0.7 : 1 }}
               transition={{ type: 'timing', duration: 200 }}
             >
-              <Text
-                className={`font-sans text-sm ${item.checked ? 'line-through' : ''}`}
-                style={{ color: item.checked ? colors.fgTertiary : colors.fg }}
-              >
-                {item.text}
-              </Text>
+              {editable ? (
+                // Fix a misheard or mis-split item in place.
+                <TextInput
+                  value={item.text}
+                  onChangeText={(text) => onChange(items.map((i) => (i.id === item.id ? { ...i, text } : i)))}
+                  onEndEditing={() => {
+                    if (!item.text.trim()) removeItem(item.id);
+                  }}
+                  accessibilityLabel="Checklist item"
+                  selectionColor={colors.accent}
+                  className="font-sans text-sm py-0"
+                  style={[{ color: colors.fg }, noFocusRing]}
+                />
+              ) : (
+                <Text
+                  className={`font-sans text-sm ${item.checked ? 'line-through' : ''}`}
+                  style={{ color: item.checked ? colors.fgTertiary : colors.fg }}
+                >
+                  {item.text}
+                </Text>
+              )}
             </MotiView>
 
             {editable && (
@@ -122,6 +141,8 @@ export function ChecklistEditor({
                 onPress={() => removeItem(item.id)}
                 className="p-1 ml-2 active:opacity-50"
                 hitSlop={8}
+                accessibilityRole="button"
+                accessibilityLabel={`Remove ${item.text}`}
               >
                 <Icon name="x" size={14} color={colors.fgTertiary} />
               </Pressable>
@@ -159,39 +180,6 @@ export function ChecklistEditor({
           )}
         </View>
       )}
-    </View>
-  );
-}
-
-/** Compact progress bar for use in ResumeCards. */
-export function ChecklistProgress({
-  items,
-}: {
-  items: ChecklistItem[];
-}) {
-  const colors = useThemeColors();
-  const statusColors = useStatusConfig();
-  const checked = items.filter((i) => i.checked).length;
-  const total = items.length;
-  if (total === 0) return null;
-
-  const progress = checked / total;
-
-  return (
-    <View className="flex-row items-center gap-2 mt-2">
-      <View className="flex-1 h-1 bg-surface-warm rounded-full overflow-hidden">
-        <View
-          className="h-full rounded-full"
-          style={{
-            width: `${progress * 100}%`,
-            backgroundColor:
-              progress === 1 ? statusColors.completed.color : colors.accent,
-          }}
-        />
-      </View>
-      <Text className="font-sans text-xs text-fg-muted">
-        {checked}/{total}
-      </Text>
     </View>
   );
 }

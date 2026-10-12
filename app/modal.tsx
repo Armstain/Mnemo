@@ -1,6 +1,8 @@
 import { StatusBar } from 'expo-status-bar';
 import { useEnter } from '@/utils/motion';
-import { View, Text, ScrollView, Pressable, TextInput, ActivityIndicator, Alert, Platform, Switch, Linking } from 'react-native';
+import { View, ScrollView, Pressable, ActivityIndicator, Alert, Platform, Switch, Linking } from 'react-native';
+import { TextInput } from '@/components/ui/TextInput';
+import { Text } from '@/components/ui/Text';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import * as SecureStore from 'expo-secure-store';
@@ -24,7 +26,12 @@ import { useEffect, useState } from 'react';
 import { Button, IconButton } from '@/components/ui/Button';
 import { Pill } from '@/components/ui/Pill';
 import { Eyebrow } from '@/components/ui/Eyebrow';
+import { BackupCard } from '@/components/settings/BackupCard';
+import { AiModeCard } from '@/components/settings/AiModeCard';
 import { noFocusRing } from '@/utils/web';
+import { confirmAction } from '@/utils/confirm';
+import { problemReport } from '@/lib/errors';
+import * as Clipboard from 'expo-clipboard';
 import { Icon } from '@/components/ui/Icon';
 import {
   useThemeColors,
@@ -49,10 +56,6 @@ import {
   getApiKeySource,
   saveApiKey,
   validateApiKey,
-  getActiveGroqApiKey,
-  getGroqApiKeySource,
-  saveGroqApiKey,
-  validateGroqApiKey,
   loadStoredApiKeys,
 } from '@/lib/api-key';
 
@@ -161,7 +164,7 @@ function ApiKeyConfigCard() {
   const colors = useThemeColors();
   const [inputKey, setInputKey] = useState('');
   const [showKey, setShowKey] = useState(false);
-  const [source, setSource] = useState<'custom' | 'env' | 'none'>('none');
+  const [source, setSource] = useState<'custom' | 'none'>('none');
   const [isTesting, setIsTesting] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
@@ -186,7 +189,7 @@ function ApiKeyConfigCard() {
       } else {
         setTestResult({ success: true, message: 'Custom key cleared.' });
       }
-    } catch (e: any) {
+    } catch {
       setTestResult({ success: false, message: 'Failed to save key.' });
     } finally {
       setIsSaving(false);
@@ -227,7 +230,7 @@ function ApiKeyConfigCard() {
         </View>
 
         <Pill tone={source === 'none' ? colors.error : colors.accent} size="sm">
-          {source === 'custom' ? 'Your key' : source === 'env' ? 'Built-in key' : 'Not set'}
+          {source === 'custom' ? 'Your key' : 'Not set'}
         </Pill>
       </View>
 
@@ -325,173 +328,23 @@ function ApiKeyConfigCard() {
   );
 }
 
-function GroqApiKeyConfigCard() {
-  const colors = useThemeColors();
-  const [inputKey, setInputKey] = useState('');
-  const [showKey, setShowKey] = useState(false);
-  const [source, setSource] = useState<'custom' | 'env' | 'none'>('none');
-  const [isTesting, setIsTesting] = useState(false);
-  const [isSaving, setIsSaving] = useState(false);
-  const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
-
-  useEffect(() => {
-    (async () => {
-      await loadStoredApiKeys();
-      setInputKey(getActiveGroqApiKey());
-      setSource(getGroqApiKeySource());
-    })();
-  }, []);
-
-  const handleSave = async () => {
-    setIsSaving(true);
-    setTestResult(null);
-    try {
-      await saveGroqApiKey(inputKey);
-      const newSource = getGroqApiKeySource();
-      setSource(newSource);
-      if (inputKey.trim()) {
-        setTestResult({ success: true, message: 'Groq key saved securely!' });
-      } else {
-        setTestResult({ success: true, message: 'Custom Groq key cleared.' });
-      }
-    } catch (e: any) {
-      setTestResult({ success: false, message: 'Failed to save Groq key.' });
-    } finally {
-      setIsSaving(false);
-    }
-  };
-
-  const handleTest = async () => {
-    setIsTesting(true);
-    setTestResult(null);
-    const result = await validateGroqApiKey(inputKey);
-    setIsTesting(false);
-    if (result.valid) {
-      setTestResult({ success: true, message: 'Groq API connected! Whisper transcription active.' });
-    } else {
-      setTestResult({ success: false, message: result.error || 'Groq validation failed.' });
-    }
-  };
-
-  const handleClear = async () => {
-    setInputKey('');
-    await saveGroqApiKey('');
-    setSource(getGroqApiKeySource());
-    setInputKey(getActiveGroqApiKey());
-    setTestResult({ success: true, message: 'Custom Groq key reset.' });
-  };
-
-  const openGroqConsole = () => {
-    WebBrowser.openBrowserAsync('https://console.groq.com/keys');
-  };
-
-  return (
-    <View className="bg-surface rounded-lg p-5 border border-border/50 gap-4">
-      {/* Header */}
-      <View className="flex-row items-center justify-between">
-        <View className="flex-row items-center">
-          <Icon name="mic" size={16} color={colors.accent} stroke={2} />
-          <Text className="font-sans-semi text-sm text-fg ml-2">Groq API key</Text>
-        </View>
-
-        <Pill tone={source === 'none' ? colors.error : colors.accent} size="sm">
-          {source === 'custom' ? 'Your key' : source === 'env' ? 'Built-in key' : 'Not set'}
-        </Pill>
-      </View>
-
-      {/* Input Field */}
-      <View className="gap-1.5">
-        <View className="flex-row items-center bg-surface-warm rounded-md border border-border/60 px-3.5 py-2">
-          <TextInput
-            value={inputKey}
-            onChangeText={(text) => {
-              setInputKey(text);
-              if (testResult) setTestResult(null);
-            }}
-            placeholder="gsk_..."
-            placeholderTextColor={colors.fgTertiary}
-            secureTextEntry={!showKey}
-            autoCapitalize="none"
-            autoCorrect={false}
-            className="flex-1 font-sans text-sm text-fg py-1"
-            style={noFocusRing}
-            selectionColor={colors.accent}
-          />
-          <Pressable
-            onPress={() => setShowKey(!showKey)}
-            hitSlop={8}
-            className="p-1.5 ml-1"
-            accessibilityLabel={showKey ? 'Hide Groq API Key' : 'Show Groq API Key'}
-          >
-            {showKey ? (
-              <EyeOff size={15} color={colors.fgSecondary} />
-            ) : (
-              <Eye size={15} color={colors.fgSecondary} />
-            )}
-          </Pressable>
-        </View>
-      </View>
-
-      {/* Feedback Message */}
-      {testResult && (
-        <View
-          className="p-3 rounded-md flex-row items-start gap-2 border"
-          style={{
-            backgroundColor: testResult.success ? `${colors.accent}1A` : `${colors.error}1A`,
-            borderColor: testResult.success ? `${colors.accent}33` : `${colors.error}33`,
-          }}
-        >
-          {testResult.success ? (
-            <Icon name="check" size={15} color={colors.accent} />
-          ) : (
-            <AlertCircle size={15} color={colors.error} style={{ marginTop: 2 }} />
-          )}
-          <Text
-            className="font-sans text-sm flex-1"
-            style={{ color: testResult.success ? colors.accent : colors.error }}
-          >
-            {testResult.message}
-          </Text>
-        </View>
-      )}
-
-      {/* Action Buttons */}
-      <View className="flex-row items-center gap-2 pt-1">
-        <Button onPress={handleSave} disabled={isSaving} variant="primary" size="sm" className="flex-1" icon="check">
-          {isSaving ? 'Saving...' : 'Save'}
-        </Button>
-
-        <Button
-          onPress={handleTest}
-          disabled={isTesting || !inputKey.trim()}
-          variant="quiet"
-          size="sm"
-          icon="sparkles"
-        >
-          {isTesting ? 'Testing...' : 'Test'}
-        </Button>
-
-        {source === 'custom' && (
-          <IconButton icon="trash" label="Clear custom Groq key" onPress={handleClear} />
-        )}
-      </View>
-
-      {/* Link to get key */}
-      <Pressable
-        onPress={openGroqConsole}
-        className="flex-row items-center justify-between pt-2 border-t border-border/40"
-      >
-        <Text className="flex-1 font-sans text-sm text-fg-secondary mr-3">
-          Backup voice transcription. Free.
-        </Text>
-        <View className="flex-row items-center">
-          <Text className="font-sans-medium text-sm text-accent mr-1">console.groq.com</Text>
-          <Icon name="arrowUpRight" size={12} color={colors.accent} />
-        </View>
-      </Pressable>
-    </View>
-  );
-}
+// What leaves the phone, and when: said plainly, every case.
+const PRIVACY_FACTS = [
+  {
+    title: 'With Gemini on',
+    body:
+      'Sent to Google with your key: the text of each new note and any photo on it; the titles and a line from your recently active threads, so it can file the note; your question and the notes that best match it, when you ask; note text for meaning search and digests. On a free key, Google may use what you send to improve its products, and people may review it. Offline, none of this happens.',
+  },
+  {
+    title: 'Voice',
+    body:
+      "Your phone's speech service turns what you say into text. On many phones that is Google's, which may process it online. Mnemo never keeps the audio.",
+  },
+  {
+    title: 'Links',
+    body: 'A link you save is opened by the phone, once, to show its title and picture. That page sees the request like any visit.',
+  },
+];
 
 export default function ModalScreen() {
   const enter = useEnter();
@@ -501,43 +354,38 @@ export default function ModalScreen() {
   const { preference, setPreference } = useThemePreference();
   const { clearAllData } = useMnemoStore();
   const [isClearing, setIsClearing] = useState(false);
+  const [reportCopied, setReportCopied] = useState(false);
 
   // No undo here, unlike a single-item delete — wiping every note and
   // recording at once needs a real confirmation, not a grace window.
-  const handleClearAllData = () => {
-    Alert.alert(
-      'Clear all data',
-      'This permanently deletes every note, checklist, and voice recording on this device. This cannot be undone.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete everything',
-          style: 'destructive',
-          onPress: async () => {
-            setIsClearing(true);
-            try {
-              await clearAllData();
-              // Reset onboarding too — a full data wipe should read as a
-              // fresh install, not just an empty library.
-              if (Platform.OS === 'web') {
-                localStorage.removeItem(ONBOARDING_KEY);
-              } else {
-                await SecureStore.deleteItemAsync(ONBOARDING_KEY);
-              }
-              Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-              router.replace('/onboarding');
-            } catch (e) {
-              console.error('Failed to clear all data', e);
-              Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-              Alert.alert('Something went wrong', 'Not everything could be deleted. Please try again.');
-            } finally {
-              setIsClearing(false);
-            }
-          },
-        },
-      ],
-    );
-  };
+  const handleClearAllData = () =>
+    confirmAction({
+      title: 'Clear all data',
+      message:
+        'This permanently deletes every thread, note, photo and reminder on this phone. Make a backup first if you might want them back. This cannot be undone.',
+      confirmLabel: 'Delete everything',
+      onConfirm: async () => {
+        setIsClearing(true);
+        try {
+          await clearAllData();
+          // Reset onboarding too — a full data wipe should read as a
+          // fresh install, not just an empty library.
+          if (Platform.OS === 'web') {
+            localStorage.removeItem(ONBOARDING_KEY);
+          } else {
+            await SecureStore.deleteItemAsync(ONBOARDING_KEY);
+          }
+          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+          router.replace('/onboarding');
+        } catch (e) {
+          console.error('Failed to clear all data', e);
+          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+          Alert.alert('Something went wrong', 'Not everything could be deleted. Please try again.');
+        } finally {
+          setIsClearing(false);
+        }
+      },
+    });
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.bg }}>
@@ -613,22 +461,17 @@ export default function ModalScreen() {
           <MotiView {...enter.rise(1)}
             className="gap-3 mb-10"
           >
-            <Eyebrow className="mb-1">AI keys</Eyebrow>
+            <Eyebrow className="mb-1">How Mnemo thinks</Eyebrow>
 
-            <ApiKeyConfigCard />
-            <GroqApiKeyConfigCard />
+            <AiModeCard>
+              <ApiKeyConfigCard />
+            </AiModeCard>
+          </MotiView>
 
-            <View className="bg-surface rounded-lg p-5 border border-border/50">
-              <View className="flex-row items-center mb-2">
-                <Icon name="mic" size={15} color={colors.accent} />
-                <Text className="font-sans-semi text-sm text-fg ml-2">Offline behaviour</Text>
-              </View>
-              <Text className="font-sans text-sm text-fg-secondary leading-relaxed">
-                When you record or write a note without connectivity, it is saved immediately and
-                processed by AI automatically the next time you open the app with a connection.
-                You will never lose a note.
-              </Text>
-            </View>
+          {/* Backup */}
+          <MotiView {...enter.rise(2)} className="gap-3 mb-10">
+            <Eyebrow className="mb-1">Backup</Eyebrow>
+            <BackupCard />
           </MotiView>
 
           {/* Privacy */}
@@ -643,11 +486,17 @@ export default function ModalScreen() {
                 <Text className="font-sans-semi text-sm text-fg ml-2">Your data</Text>
               </View>
               <Text className="font-sans text-sm text-fg-secondary leading-relaxed">
-                Your notes live only on this device. Mnemo has no server and no account. To
-                transcribe and organise a note, its audio or text is sent to Google Gemini (and to
-                Groq if you add a Groq key), using the keys you enter here.
+                Your notes, photos and reminders live only on this phone. Mnemo has no server and no
+                account; a backup is a file you keep, locked with your passphrase.
               </Text>
             </View>
+
+            {PRIVACY_FACTS.map((fact) => (
+              <View key={fact.title} className="bg-surface rounded-lg p-5 border border-border/50">
+                <Text className="font-sans-semi text-sm text-fg mb-1.5">{fact.title}</Text>
+                <Text className="font-sans text-sm text-fg-secondary leading-relaxed">{fact.body}</Text>
+              </View>
+            ))}
 
             <Pressable
               onPress={handleClearAllData}
@@ -662,10 +511,34 @@ export default function ModalScreen() {
               <View className="ml-2 flex-1">
                 <Text className="font-sans-semi text-sm text-error">Clear all data</Text>
                 <Text className="font-sans text-sm text-fg-tertiary mt-0.5">
-                  Permanently deletes every note and recording on this device
+                  Permanently deletes every thread, note and photo on this phone
                 </Text>
               </View>
               {isClearing && <ActivityIndicator size="small" color={colors.error} />}
+            </Pressable>
+          </MotiView>
+
+          {/* Problems */}
+          <MotiView {...enter.rise(2)} className="gap-3 mb-10">
+            <Eyebrow className="mb-1">Something not working?</Eyebrow>
+            <Pressable
+              onPress={async () => {
+                await Clipboard.setStringAsync(await problemReport());
+                Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+                setReportCopied(true);
+              }}
+              accessibilityRole="button"
+              className="bg-surface rounded-lg p-5 border border-border/50 flex-row items-center active:opacity-80"
+            >
+              <Icon name="copy" size={15} color={colors.accent} />
+              <View className="ml-2 flex-1">
+                <Text className="font-sans-semi text-sm text-fg">
+                  {reportCopied ? 'Problem report copied' : 'Copy problem report'}
+                </Text>
+                <Text className="font-sans text-sm text-fg-tertiary mt-0.5">
+                  The app version and its recent error messages, to paste into a message. No notes.
+                </Text>
+              </View>
             </Pressable>
           </MotiView>
 

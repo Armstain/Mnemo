@@ -3,10 +3,16 @@ import * as Speech from 'expo-speech';
 import { createAudioPlayer, setAudioModeAsync, type AudioPlayer } from 'expo-audio';
 import { File, Paths } from 'expo-file-system';
 import { formatDistanceToNow } from 'date-fns';
+import { bn } from 'date-fns/locale/bn';
 
 import { generateRebriefScript, generateSpeech } from '@/lib/gemini';
 import { base64ToBytes, pcmToWav } from '@/lib/pcm';
+import { languageOf } from '@/lib/language';
 import type { MnemoItem } from '@/types/mnemo';
+
+function isBangla(item: MnemoItem): boolean {
+  return languageOf(`${item.title} ${item.content}`.slice(0, 400)) === 'bn-BD';
+}
 
 export type RebriefState = 'idle' | 'preparing' | 'playing';
 
@@ -100,6 +106,8 @@ export function useRebrief() {
         if (requestRef.current !== requestId) return;
         setState('playing');
         Speech.speak(script, {
+          // The phone's voice for the note's language, if it has one.
+          language: languageOf(script) === 'bn-BD' ? 'bn-BD' : undefined,
           onDone: () => {
             if (requestRef.current === requestId) setState('idle');
           },
@@ -115,8 +123,18 @@ export function useRebrief() {
   return { state, start, stop };
 }
 
-/** Offline fallback script, built from the item's own fields. */
+/** Offline fallback script, built from the item's own fields, in the note's language. */
 function composeLocalScript(item: MnemoItem, timeAway: string): string {
+  if (isBangla(item)) {
+    const away = formatDistanceToNow(item.lastResumedAt ?? item.updatedAt, { locale: bn });
+    const leftOff = item.whereLeftOff || item.aiSummary?.leftOff;
+    const next = item.nextStep || item.aiSummary?.nextSteps?.[0];
+    const parts = [`${item.title}।`, `শেষবার এটা দেখেছেন ${away} আগে।`];
+    if (leftOff) parts.push(`যেখানে থেমেছিলেন: ${leftOff}`);
+    if (next) parts.push(`পরের কাজ: ${next}`);
+    if (!leftOff && !next) parts.push('নোটগুলো খুলে আবার শুরু করুন।');
+    return parts.join(' ');
+  }
   const parts = [`${item.title}.`, `It's been ${timeAway} since you last touched this.`];
   const leftOff = item.whereLeftOff || item.aiSummary?.leftOff;
   const next = item.nextStep || item.aiSummary?.nextSteps?.[0];
