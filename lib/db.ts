@@ -345,6 +345,40 @@ export async function insertEntry(entry: Entry): Promise<void> {
   );
 }
 
+/**
+ * Writes many threads and entries in one transaction (an import), so a
+ * failure part-way leaves the database as it was rather than half-merged.
+ */
+export async function saveThreadsAndEntries(items: MnemoItem[], entries: Entry[]): Promise<void> {
+  const db = await getDb();
+  await db.withTransactionAsync(async () => {
+    for (const item of items) {
+      await db.runAsync(
+        `INSERT OR REPLACE INTO items
+          (id, type, title, content, checklistItems, links, category, tags, status,
+           nextStep, whereLeftOff, dueDate, createdAt, updatedAt, lastResumedAt,
+           aiSummary, pending, pendingRawText, pendingAudioUri, pinned)
+         VALUES
+          ($id, $type, $title, $content, $checklistItems, $links, $category, $tags, $status,
+           $nextStep, $whereLeftOff, $dueDate, $createdAt, $updatedAt, $lastResumedAt,
+           $aiSummary, $pending, $pendingRawText, $pendingAudioUri, $pinned)`,
+        itemToParams(item),
+      );
+    }
+    for (const entry of entries) {
+      await db.runAsync(
+        `INSERT OR REPLACE INTO entries
+          (id, threadId, createdAt, updatedAt, source, transcript, blocks, leftOff, nextStep,
+           filing, pending, pendingRawText, pendingAudioUri)
+         VALUES
+          ($id, $threadId, $createdAt, $updatedAt, $source, $transcript, $blocks, $leftOff, $nextStep,
+           $filing, $pending, $pendingRawText, $pendingAudioUri)`,
+        entryToParams(entry),
+      );
+    }
+  });
+}
+
 export async function deleteEntryRow(id: string): Promise<void> {
   const db = await getDb();
   await db.runAsync('DELETE FROM entries WHERE id = $id', { $id: id });

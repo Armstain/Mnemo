@@ -17,7 +17,9 @@ import {
   getAllEntries,
   insertEntry,
   deleteEntryRow,
+  saveThreadsAndEntries,
 } from '@/lib/db';
+import { mergeBackup, type BackupPayload, type MergeResult } from '@/lib/backup';
 import { deriveThreadCache, generateEntryId, newestFirst } from '@/lib/threads';
 import { deleteAllRecordings } from '@/lib/capture';
 import { syncReminderForItem, cancelReminder, cancelAllReminders } from '@/lib/reminders';
@@ -101,6 +103,10 @@ interface MnemoStoreType {
   undoDelete: (id: string) => void;
   /** Irreversibly wipes every item, embedding, and voice recording on disk. */
   clearAllData: () => Promise<void>;
+  /** Everything to put in an encrypted backup. */
+  exportBackup: () => BackupPayload;
+  /** Merges a decrypted backup in (nothing here is deleted; newer copies win). */
+  importBackup: (payload: BackupPayload) => Promise<Omit<MergeResult, 'items' | 'entries'>>;
 
   // Status transitions
   resumeItem: (id: string) => void;
@@ -570,6 +576,27 @@ export function MnemoStoreProvider({ children }: { children: React.ReactNode }) 
     setFocusThread(null);
   }, [setFocusThread]);
 
+  // ─── Backup ─────────────────────────────────────────────────
+  const exportBackup = useCallback(
+    (): BackupPayload => ({
+      app: 'mnemo',
+      exportedAt: Date.now(),
+      items: itemsRef.current.filter((i) => !removedItemsRef.current[i.id]),
+      entries: entriesRef.current,
+    }),
+    [],
+  );
+
+  const importBackup = useCallback(async (payload: BackupPayload) => {
+    const merged = mergeBackup({ items: itemsRef.current, entries: entriesRef.current }, payload);
+    // Persist first: if the write fails, nothing on screen claims it worked.
+    await saveThreadsAndEntries(merged.items, merged.entries);
+    commitItems(merged.items);
+    commitEntries(merged.entries);
+    merged.items.forEach((item) => syncReminderForItem(item));
+    return { added: merged.added, updated: merged.updated, unchanged: merged.unchanged };
+  }, []);
+
   // ─── Status transitions ─────────────────────────────────────
   const resumeItem = useCallback(
     (id: string) => {
@@ -664,6 +691,8 @@ export function MnemoStoreProvider({ children }: { children: React.ReactNode }) 
       deleteItem,
       undoDelete,
       clearAllData,
+      exportBackup,
+      importBackup,
       resumeItem,
       pauseItem,
       completeItem,
@@ -696,6 +725,8 @@ export function MnemoStoreProvider({ children }: { children: React.ReactNode }) 
       deleteItem,
       undoDelete,
       clearAllData,
+      exportBackup,
+      importBackup,
       resumeItem,
       pauseItem,
       completeItem,

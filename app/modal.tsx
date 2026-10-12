@@ -24,6 +24,7 @@ import { useEffect, useState } from 'react';
 import { Button, IconButton } from '@/components/ui/Button';
 import { Pill } from '@/components/ui/Pill';
 import { Eyebrow } from '@/components/ui/Eyebrow';
+import { BackupCard } from '@/components/settings/BackupCard';
 import { noFocusRing } from '@/utils/web';
 import { Icon } from '@/components/ui/Icon';
 import {
@@ -629,6 +630,12 @@ export default function ModalScreen() {
                 You will never lose a note.
               </Text>
             </View>
+          </MotiView>
+
+          {/* Backup */}
+          <MotiView {...enter.rise(2)} className="gap-3 mb-10">
+            <Eyebrow className="mb-1">Backup</Eyebrow>
+            <BackupCard />
           </MotiView>
 
           {/* Privacy */}
