@@ -18,7 +18,7 @@ const MODES: { value: Exclude<AiMode, 'unset'>; icon: IconName; title: string; b
     value: 'offline',
     icon: 'pin',
     title: 'Offline',
-    body: 'Nothing leaves your phone. Lists, links, amounts and next steps are still picked out on the phone; filing uses keywords and your focus thread.',
+    body: 'Nothing leaves your phone. Titles, lists, amounts, next steps and dates are still picked out on the phone, and it suggests a thread when a note shares its words.',
   },
 ];
 

@@ -14,6 +14,7 @@ import { formatDueDate } from '@/components/ui/DueDatePicker';
 import { CONTENT_BOTTOM_CLEARANCE } from '@/components/ui/FloatingTabBar';
 import { useMnemoStore } from '@/hooks/use-mnemo-store';
 import { useThemeColors } from '@/hooks/use-theme';
+import { useAiProblem, type AiProblem } from '@/lib/ai-mode';
 import { formatCompactDistance, freshness } from '@/utils/time';
 import { CATEGORY_LIST, useCategories } from '@/utils/categories';
 import { useEnter } from '@/utils/motion';
@@ -120,8 +121,14 @@ function ResumeCard({ item }: { item: MnemoItem }) {
 }
 
 /** PulseHome — the Home tab: greeting, one resume hero, what's due, what else is open. */
+const AI_PROBLEM_TEXT: Record<AiProblem, string> = {
+  invalid: "Gemini isn't accepting your key. Notes are saved as you wrote them.",
+  quota: "Your Gemini key's daily limit is used up. Notes are saved and tidied up later.",
+};
+
 export function PulseHome() {
   const enter = useEnter();
+  const aiProblem = useAiProblem();
   const insets = useSafeAreaInsets();
   const { items, getActiveItems, focusThreadId, setFocusThread } = useMnemoStore();
   const focusThread = focusThreadId ? items.find((i) => i.id === focusThreadId) : undefined;
@@ -220,6 +227,24 @@ export function PulseHome() {
               </Text>
             </Pressable>
           </View>
+        ) : null}
+        {/* Gemini stopped answering for a reason the person can fix. */}
+        {aiProblem ? (
+          <Pressable
+            onPress={() => router.push('/modal' as any)}
+            accessibilityRole="button"
+            accessibilityLabel={`${AI_PROBLEM_TEXT[aiProblem]} Open settings.`}
+            className="flex-row items-center rounded-lg px-4 py-3 mt-4 active:opacity-80"
+            style={{ backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border }}
+          >
+            <Icon name="sparkles" size={16} color={colors.accentWarm} />
+            <Text className="flex-1 font-sans text-sm leading-snug mx-3" style={{ color: colors.fgSecondary }}>
+              {AI_PROBLEM_TEXT[aiProblem]}
+            </Text>
+            <Text className="font-sans-semi text-sm" style={{ color: colors.accent }}>
+              Fix
+            </Text>
+          </Pressable>
         ) : null}
       </MotiView>
 

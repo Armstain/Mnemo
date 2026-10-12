@@ -1,6 +1,7 @@
 import { embedText, fromBlob, dot } from '@/lib/embeddings';
 import { getAllEmbeddings } from '@/lib/db';
-import { bm25Scored } from '@/lib/bm25';
+import { bm25Scored, tokenize } from '@/lib/bm25';
+import { telling } from '@/lib/filing';
 import type { MnemoItem } from '@/types/mnemo';
 
 // The standard constant from the original Reciprocal Rank Fusion paper —
@@ -123,7 +124,8 @@ export async function relatedThreads(
     const self = items.find((i) => i.id === itemId);
     const rows = await getAllEmbeddings();
     const selfRow = rows.find((r) => r.itemId === itemId);
-    if (!self || !selfRow) return [];
+    if (!self) return [];
+    if (!selfRow) return relatedByWords(self, items, limit);
 
     const selfVector = fromBlob(selfRow.vector);
     const selfTags = new Set(self.tags.map((t) => t.toLowerCase()));
@@ -149,4 +151,28 @@ export async function relatedThreads(
   } catch {
     return [];
   }
+}
+
+/**
+ * Without embeddings (offline, or not embedded yet): threads that share a
+ * tag, or a telling word in both titles. Few and plainly explained.
+ */
+export function relatedByWords(self: MnemoItem, items: MnemoItem[], limit = 3): RelatedThread[] {
+  const selfTags = new Set(self.tags.map((t) => t.toLowerCase()));
+  const selfTitle = telling(tokenize(self.title));
+  const found: (RelatedThread & { score: number })[] = [];
+  for (const item of items) {
+    if (item.id === self.id || item.status === 'archived' || item.pending) continue;
+    const shared = item.tags.filter((t) => selfTags.has(t.toLowerCase()));
+    if (shared.length > 0) {
+      found.push({ item, score: 2 + shared.length, reason: `Also tagged ${shared.slice(0, 2).map((t) => `#${t}`).join(' ')}` });
+      continue;
+    }
+    const words = [...telling(tokenize(item.title))].filter((w) => selfTitle.has(w));
+    if (words.length > 0) found.push({ item, score: words.length, reason: `Also about “${words[0]}”` });
+  }
+  return found
+    .sort((a, b) => b.score - a.score || b.item.updatedAt - a.item.updatedAt)
+    .slice(0, limit)
+    .map(({ item, reason }) => ({ item, reason }));
 }

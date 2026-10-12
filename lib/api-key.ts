@@ -39,9 +39,19 @@ export function getActiveApiKey(): string {
   return cachedGeminiApiKey?.trim() ?? '';
 }
 
+const keyListeners = new Set<() => void>();
+
+/** Called after the key changes (a new key deserves a fresh try at everything). */
+export function onApiKeyChanged(listener: () => void): () => void {
+  keyListeners.add(listener);
+  return () => keyListeners.delete(listener);
+}
+
 export async function saveApiKey(key: string): Promise<void> {
   const trimmed = key.trim();
+  const changed = (cachedGeminiApiKey ?? '') !== trimmed;
   cachedGeminiApiKey = trimmed || null;
+  if (changed) keyListeners.forEach((l) => l());
   try {
     if (!trimmed) {
       if (Platform.OS === 'web') {

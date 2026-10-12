@@ -6,12 +6,41 @@ const B = 0.75;  // Document length normalization — 0 = no length norm, 1 = fu
 /** Minimum number of characters for a token to be indexed. Excludes noise like "a", "I". */
 const MIN_TOKEN_LENGTH = 2;
 
-function tokenize(text: string): string[] {
-  return text
-    .toLowerCase()
-    .replace(/[^\w\s]/g, ' ')
+// Bangla words carry their endings ("ট্যুরের", "ঢাকায়", "বইগুলো"); without
+// them "ট্যুর" finds "ট্যুরের". Longest first.
+const BANGLA_ENDINGS = ['গুলোর', 'গুলো', 'গুলি', 'দের', 'েরা', 'ের', 'এর', 'য়ের', 'কে', 'তে', 'টা', 'টি', 'টার', 'য়', 'র', 'ে']
+  .map((e) => e.normalize('NFC'))
+  .sort((a, b) => b.length - a.length);
+
+function stem(token: string): string {
+  if (/[\u0980-\u09FF]/.test(token)) {
+    for (const ending of BANGLA_ENDINGS) {
+      if (token.length > ending.length + 1 && token.endsWith(ending)) return token.slice(0, -ending.length);
+    }
+    return token;
+  }
+  // English plurals: "tickets" finds "ticket".
+  if (token.length > 3 && token.endsWith('s') && !token.endsWith('ss')) return token.slice(0, -1);
+  return token;
+}
+
+/**
+ * Words for matching, in any script the app meets: Latin (with accents),
+ * Bangla and digits. Punctuation splits words; Bangla vowel signs don't.
+ */
+export function tokenize(text: string): string[] {
+  let normal = text.toLowerCase();
+  try {
+    normal = normal.normalize('NFC');
+  } catch {
+    // Older engines: compare as typed.
+  }
+  return normal
+    .replace(/[^a-z0-9\u00c0-\u024f\u0980-\u09ff]+/g, ' ')
+    .replace(/[\u0964\u0965]/g, ' ')
     .split(/\s+/)
-    .filter((t) => t.length >= MIN_TOKEN_LENGTH);
+    .filter((t) => t.length >= MIN_TOKEN_LENGTH)
+    .map(stem);
 }
 
 function termFrequency(term: string, tokens: string[]): number {

@@ -1,4 +1,4 @@
-import { bm25Scored } from '@/lib/bm25';
+import { bm25Scored, tokenize } from '@/lib/bm25';
 import { dot } from '@/lib/embeddings';
 import { entryText, newestFirst } from '@/lib/threads';
 import { trackedMetrics } from '@/lib/measures';
@@ -100,6 +100,71 @@ export function gatherCandidates(input: {
       tracks: tracks.length > 0 ? tracks : undefined,
     };
   });
+}
+
+// Words too common to say two notes are about the same thing.
+const COMMON = new Set(
+  (
+    'the and for with this that from have has had was were are will would should could about into over just ' +
+    'need today tomorrow yesterday then also some more very really what when where which who why how note ' +
+    'taka spent paid got went did done make made take took call called get buy' +
+    ' ami amar tumi ache ase gese hobe korte korbo kore kal aj ajke'
+  ).split(' '),
+);
+const COMMON_BN = new Set('আমি আমার আজ কাল আজকে হবে করতে করবো করে আছে গেছে টাকা এবং আর'.split(' ').map((w) => w.normalize('NFC')));
+
+/** The words in a text that could say what it's about. */
+export function telling(words: string[]): Set<string> {
+  return new Set(
+    words.filter((w) => w.length >= 3 && !/^\d+$/.test(w) && !COMMON.has(w) && !COMMON_BN.has(w)),
+  );
+}
+
+/**
+ * Offline filing: the open thread a note shares telling words with, if one
+ * clearly stands out. Only ever a suggestion (the person taps to move it);
+ * without AI there's no understanding behind it, just matching words.
+ */
+export function keywordMatch(input: {
+  text: string;
+  threads: MnemoItem[];
+  excludeId?: string;
+}): { threadId: string; title: string; reason: string; confidence: number } | null {
+  const open = input.threads.filter(
+    (t) => t.id !== input.excludeId && !t.pending && (t.status === 'active' || t.status === 'paused'),
+  );
+  const said = telling(tokenize(input.text));
+  if (said.size === 0) return null;
+  const docs = open.map((t) => ({
+    thread: t,
+    title: telling(tokenize(t.title)),
+    body: telling(tokenize(`${t.title} ${t.content} ${t.tags.join(' ')}`)),
+  }));
+  // Rarer words say more: "sylhet" in one thread beats "hotel" in five.
+  const weight = (w: string) => Math.log(1 + docs.length / (1 + docs.filter((d) => d.body.has(w)).length));
+  const scored = docs
+    .map((d) => {
+      const shared = [...said].filter((w) => d.body.has(w));
+      const inTitle = shared.filter((w) => d.title.has(w));
+      const score = shared.reduce((sum, w) => sum + weight(w) * (d.title.has(w) ? 2 : 1), 0);
+      return { ...d, shared, inTitle, score };
+    })
+    .filter((d) => d.shared.length >= 2 || d.inTitle.length > 0)
+    .sort((a, b) => b.score - a.score);
+  const best = scored[0];
+  if (!best) return null;
+  // A close second means the words don't decide it: no suggestion beats a wrong one.
+  if (scored[1] && best.score < scored[1].score * 1.5) return null;
+  const top = { doc: best.thread };
+  const { shared, inTitle } = best;
+
+  const word = inTitle[0] ?? shared[0];
+  return {
+    threadId: top.doc.id,
+    title: top.doc.title,
+    reason: `Mentions “${word}”, like this thread`,
+    confidence: SUGGEST_CONFIDENCE,
+  };
 }
 
 export type FilingDecision =

@@ -11,6 +11,7 @@ import { MoveSheet } from '@/components/thread/MoveSheet';
 import { useMnemoStore } from '@/hooks/use-mnemo-store';
 import { useUndoToast } from '@/hooks/use-undo-toast';
 import { isStructuring } from '@/lib/capture';
+import { useAiProblem } from '@/lib/ai-mode';
 import { useThemeColors, type ThemeColors } from '@/hooks/use-theme';
 import { formatEntryTime } from '@/utils/time';
 import { noFocusRing } from '@/utils/web';
@@ -129,6 +130,7 @@ export function EntryCard({
   const md = useMarkdownStyles();
   const { updateEntry, deleteEntry, undoDeleteEntry, getThread } = useMnemoStore();
   const { showUndoToast } = useUndoToast();
+  const aiProblem = useAiProblem();
   const [menuOpen, setMenuOpen] = React.useState(false);
   const [editing, setEditing] = React.useState(false);
   const [moving, setMoving] = React.useState(false);
@@ -189,7 +191,8 @@ export function EntryCard({
             style={{ backgroundColor: colors.surfaceHigh }}
           >
             <Text className="font-sans-medium text-xs" style={{ color: colors.fgSecondary }}>
-              {onRetry ? 'Processing · Retry' : 'Processing'}
+              {aiProblem ? 'Waiting for Gemini' : 'Processing'}
+              {onRetry ? ' · Retry' : ''}
             </Text>
           </Pressable>
         ) : null}

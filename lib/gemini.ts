@@ -1,7 +1,22 @@
 import { GoogleGenAI, Modality, Type, type GenerateContentParameters } from '@google/genai';
 import { getActiveApiKey } from './api-key';
+import { aiEnabled } from './ai-mode';
 
+/** Thrown instead of calling Google when the person chose offline. */
+export class AiOffError extends Error {
+  constructor() {
+    super('AI is off');
+    this.name = 'AiOffError';
+  }
+}
+
+/**
+ * The one way out to Gemini. Offline means nothing leaves the phone, even
+ * with a key saved, so every caller (search, related threads, digests)
+ * fails here and falls back to what the phone can do.
+ */
 export function getAIClient(): GoogleGenAI {
+  if (!aiEnabled()) throw new AiOffError();
   return new GoogleGenAI({ apiKey: getActiveApiKey() });
 }
 

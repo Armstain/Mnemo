@@ -2,10 +2,12 @@ import { Directory, File, Paths } from 'expo-file-system';
 import {
   processAudioDump,
   processVoiceDump,
+  AiOffError,
   type CaptureContext,
   type ProcessedCapture,
 } from '@/lib/gemini';
-import { aiEnabled } from '@/lib/ai-mode';
+import { aiEnabled, setAiProblem } from '@/lib/ai-mode';
+import { classifyAiError, onApiKeyChanged } from '@/lib/api-key';
 import {
   embedText,
   embeddableText,
@@ -15,15 +17,17 @@ import {
   EMBEDDING_DIMS,
 } from '@/lib/embeddings';
 import { getAllEmbeddings, upsertEmbedding } from '@/lib/db';
-import type { Block, Category, ChecklistItem, Entry, Filing } from '@/types/mnemo';
+import type { Block, Category, ChecklistItem, Entry, Filing, MnemoItem } from '@/types/mnemo';
 import type { CaptureStore } from '@/hooks/use-mnemo-store';
 import { buildBlocks } from '@/lib/threads';
-import { trackedMetrics, verifyMeasures } from '@/lib/measures';
+import { summarizeMeasures, trackedMetrics, verifyMeasures } from '@/lib/measures';
+import { understand, type KnownMetric } from '@/lib/understand';
 import {
   ATTACH_CONFIDENCE,
   decideFiling,
   emitFiling,
   gatherCandidates,
+  keywordMatch,
   similarityTo,
   type FilingDecision,
 } from '@/lib/filing';
@@ -64,97 +68,159 @@ async function embedAndStore(item: {
   }
 }
 
-/**
- * Saves what was said in a voice note (transcribed live on the phone; no
- * audio is kept) as a voice entry. With a `threadId` it joins that thread;
- * otherwise it starts one. When AI is on, it's then tidied up and filed in
- * the background; offline, the words are the note.
- */
-export function saveVoiceNote(params: {
+interface NoteInput {
   text: string;
   category: Category;
   threadId?: string;
   /** How it got into `threadId`: picked there by the person, or their focus thread. */
-  filing?: Filing;
-  store: CaptureStore;
-}): { threadId: string; entry: Entry } {
-  const { text, category, threadId, filing, store } = params;
-  const words = text.trim();
-  const ai = aiEnabled();
-  const entryInput = {
-    source: 'voice' as const,
-    transcript: words,
-    blocks: buildBlocks({ text: words }),
-    pending: ai,
-    pendingRawText: ai ? words : undefined,
-  };
-
-  let saved: { threadId: string; entry: Entry };
-  if (threadId) {
-    saved = { threadId, entry: store.addEntry(threadId, { ...entryInput, filing: filing ?? { by: 'user' } }) };
-  } else {
-    const firstLine = words.split(/[.!?\n]/)[0].trim();
-    const created = store.createThread(
-      {
-        title: firstLine.length > 50 ? `${firstLine.slice(0, 50)}…` : firstLine || 'Voice note',
-        category,
-        tags: [],
-        status: 'active',
-        // A placeholder title the AI replaces, when AI is on.
-        pending: ai,
-      },
-      entryInput,
-    );
-    saved = { threadId: created.thread.id, entry: created.entry };
-  }
-  if (ai) resolvePendingEntry(saved.entry, store);
-  return saved;
-}
-
-/**
- * Saves a typed note. Same shape as `saveVoiceNote`: with a `threadId` it
- * joins that thread, otherwise it starts one titled from its first line.
- */
-export function saveTextNote(params: {
-  text: string;
-  category: Category;
-  threadId?: string;
   filing?: Filing;
   checklistItems?: ChecklistItem[];
   leftOff?: string;
   nextStep?: string;
   dueDate?: number;
   store: CaptureStore;
-}): { threadId: string; entry: Entry } {
-  const { text, category, threadId, filing, checklistItems, store } = params;
-  const words = text.trim();
+}
+
+/** What a thread already tracks, so the phone reuses its names. */
+function knownMetrics(store: CaptureStore, threadId?: string): KnownMetric[] {
+  if (!threadId) return [];
+  const entries = store.snapshot().entries.filter((e) => e.threadId === threadId);
+  return summarizeMeasures(entries).map((m) => ({ metric: m.metric, unit: m.unit }));
+}
+
+/**
+ * Every note is read on the phone the moment it's saved (lib/understand):
+ * offline that's all it gets; with AI on it's what shows until Gemini's
+ * version arrives, and what stays if Gemini never answers.
+ */
+function saveNote(source: 'voice' | 'text', params: NoteInput): { threadId: string; entry: Entry } {
+  const { category, threadId, store } = params;
+  const words = params.text.trim();
   const ai = aiEnabled() && words.length > 0;
+  const reading = understand(words, { known: knownMetrics(store, threadId), monthFirst: monthFirst() });
+
+  // With AI on, the text stays exactly as said: Gemini rewrites it, and an
+  // edit made meanwhile is noticed against it. Offline, list lines become a
+  // checklist.
+  const checklist = [...(params.checklistItems ?? []), ...(ai ? [] : reading.checklist)];
+  const blocks: Block[] = [
+    ...buildBlocks({ text: ai ? words : reading.text, checklistItems: checklist }),
+    ...(reading.measures.length > 0 ? [{ kind: 'measures' as const, items: reading.measures }] : []),
+    ...buildBlocks({ links: reading.links }),
+  ];
   const entryInput = {
-    source: 'text' as const,
+    source,
     transcript: words || undefined,
-    blocks: buildBlocks({ text: words, checklistItems }),
-    leftOff: params.leftOff?.trim() || undefined,
-    nextStep: params.nextStep?.trim() || undefined,
+    blocks,
+    leftOff: params.leftOff?.trim() || (ai ? undefined : reading.leftOff),
+    nextStep: params.nextStep?.trim() || (ai ? undefined : reading.nextStep),
     pending: ai,
     pendingRawText: ai ? words : undefined,
   };
+  const due = params.dueDate ?? reading.due;
 
   let saved: { threadId: string; entry: Entry };
   if (threadId) {
-    saved = { threadId, entry: store.addEntry(threadId, { ...entryInput, filing: filing ?? { by: 'user' } }) };
-    if (params.dueDate) store.updateItem(threadId, { dueDate: params.dueDate });
+    saved = { threadId, entry: store.addEntry(threadId, { ...entryInput, filing: params.filing ?? { by: 'user' } }) };
+    const thread = store.getThread(threadId);
+    if (thread) {
+      const updates: Partial<MnemoItem> = {};
+      // A day named in the note sets the reminder, unless one's already coming.
+      if (due && (params.dueDate || !thread.dueDate || thread.dueDate < Date.now())) updates.dueDate = due;
+      if (reading.tags.some((t) => !thread.tags.includes(t))) updates.tags = [...new Set([...thread.tags, ...reading.tags])].slice(0, 8);
+      if (Object.keys(updates).length > 0) store.updateItem(threadId, updates);
+    }
   } else {
-    const firstLine = words.split('\n')[0].trim();
-    const title =
-      firstLine.length > 50 ? `${firstLine.slice(0, 50)}…` : firstLine || (checklistItems?.length ? 'Checklist' : 'Quick note');
+    const fallback = checklist.length > 0 ? 'Checklist' : source === 'voice' ? 'Voice note' : 'Quick note';
     const created = store.createThread(
-      { title, category, tags: [], status: 'active', dueDate: params.dueDate, pending: ai },
+      {
+        title: reading.title || fallback,
+        // Offline, the phone's guess beats "General"; with AI on, Gemini guesses.
+        category: category === 'general' && !ai ? reading.category ?? 'general' : category,
+        tags: reading.tags,
+        status: 'active',
+        dueDate: due,
+        // A placeholder title the AI replaces, when AI is on.
+        pending: ai,
+      },
       entryInput,
     );
     saved = { threadId: created.thread.id, entry: created.entry };
+    if (!ai) suggestByKeywords(saved, words, store);
   }
   if (ai) resolvePendingEntry(saved.entry, store);
   return saved;
+}
+
+/** Offline: point out an open thread the note clearly shares words with. */
+function suggestByKeywords(saved: { threadId: string; entry: Entry }, text: string, store: CaptureStore) {
+  const match = keywordMatch({ text, threads: store.snapshot().items, excludeId: saved.threadId });
+  if (!match) return;
+  store.updateEntry(saved.entry.id, {
+    filing: { by: 'suggested', threadId: match.threadId, confidence: match.confidence },
+  });
+  emitFiling({
+    type: 'suggested',
+    entryId: saved.entry.id,
+    threadId: saved.threadId,
+    toThreadId: match.threadId,
+    toTitle: match.title,
+    reason: match.reason,
+  });
+}
+
+/** 3/4 is March 4 on phones set to US English, 3 April elsewhere. */
+function monthFirst(): boolean {
+  try {
+    return /^en-US$/i.test(Intl.DateTimeFormat().resolvedOptions().locale);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Saves what was said in a voice note (transcribed live on the phone; no
+ * audio is kept). With a `threadId` it joins that thread; otherwise it
+ * starts one.
+ */
+export function saveVoiceNote(params: Omit<NoteInput, 'checklistItems' | 'leftOff' | 'nextStep' | 'dueDate'>) {
+  return saveNote('voice', params);
+}
+
+/** Saves a typed note. Same shape as `saveVoiceNote`, plus the Write screen's own fields. */
+export function saveTextNote(params: NoteInput) {
+  return saveNote('text', params);
+}
+
+/**
+ * Finishes a note that was waiting for an AI that won't come (the person
+ * switched to offline): it gets the phone's reading instead.
+ */
+export function finishOnDevice(entry: Entry, store: CaptureStore): void {
+  const words = (entry.pendingRawText ?? textOf(entry)).trim();
+  const reading = understand(words, { known: knownMetrics(store, entry.threadId), monthFirst: monthFirst() });
+  const hasMeasures = entry.blocks.some((b) => b.kind === 'measures');
+  const links = entry.blocks.flatMap((b) => (b.kind === 'link' ? [b.url] : []));
+  const newLinks = reading.links.filter((l) => !links.includes(l));
+  store.updateEntry(entry.id, {
+    blocks: [
+      ...entry.blocks,
+      ...(!hasMeasures && reading.measures.length > 0 ? [{ kind: 'measures' as const, items: reading.measures }] : []),
+      ...buildBlocks({ links: newLinks }),
+    ],
+    leftOff: entry.leftOff || reading.leftOff,
+    nextStep: entry.nextStep || reading.nextStep,
+    pending: false,
+    pendingRawText: undefined,
+  });
+  const thread = store.getThread(entry.threadId);
+  if (thread?.pending) {
+    store.updateItem(thread.id, {
+      title: thread.pinned?.title ? thread.title : reading.title || thread.title,
+      category: thread.category === 'general' ? reading.category ?? 'general' : thread.category,
+      pending: false,
+    });
+  }
 }
 
 /** Deletes the whole recordings directory. Used by "Clear all data" in Settings. */
@@ -374,7 +440,7 @@ async function structure(entry: PendingEntry, store: CaptureStore): Promise<void
   if (thread.pending) {
     store.updateItem(thread.id, {
       title: thread.pinned?.title ? thread.title : processed.title,
-      tags,
+      tags: [...new Set([...thread.tags, ...tags])].slice(0, 8),
       // The category picker defaults to General; a better guess wins.
       ...(thread.category === 'general' && aiCategory ? { category: aiCategory } : {}),
       aiSummary: processed.summary,
@@ -414,19 +480,33 @@ async function embedThread(store: CaptureStore, threadId: string): Promise<void>
   await embedAndStore(thread);
 }
 
+// How long to wait before trying a note again after Gemini failed on it:
+// half a minute, then longer each time, up to half an hour.
+const BACKOFF_MS = [30_000, 60_000, 2 * 60_000, 5 * 60_000, 10 * 60_000, 30 * 60_000];
+const attempts = new Map<string, { count: number; nextAt: number }>();
+
 /**
  * Fire-and-forget version of `structurePendingEntry` for background callers
- * (freshly saved entries, PendingProcessor's startup sweep). Never throws —
- * on failure the entry simply stays pending, retried on next launch or by
- * hand from the thread screen.
+ * (freshly saved entries, PendingProcessor's sweeps). Never throws. On
+ * failure the entry stays pending (it already shows the phone's reading)
+ * and is tried again later, backing off; a problem the person can fix
+ * (bad key, quota) is reported through `setAiProblem`.
  */
-export async function resolvePendingEntry(
-  entry: PendingEntry,
-  store: CaptureStore,
-): Promise<void> {
+export async function resolvePendingEntry(entry: PendingEntry, store: CaptureStore): Promise<void> {
+  const previous = attempts.get(entry.id);
+  if (previous && Date.now() < previous.nextAt) return;
   try {
     await structurePendingEntry(entry, store);
-  } catch {
-    // Keep the entry as pending — retried next launch or by hand.
+    attempts.delete(entry.id);
+    setAiProblem(null);
+  } catch (e) {
+    if (e instanceof AiOffError) return;
+    const count = (previous?.count ?? 0) + 1;
+    attempts.set(entry.id, { count, nextAt: Date.now() + BACKOFF_MS[Math.min(count, BACKOFF_MS.length) - 1] });
+    const problem = classifyAiError(e);
+    if (problem === 'invalid' || problem === 'quota') setAiProblem(problem);
   }
 }
+
+// A new key: forget past failures, so the next sweep tries everything.
+onApiKeyChanged(() => attempts.clear());

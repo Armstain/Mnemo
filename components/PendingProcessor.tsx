@@ -1,6 +1,9 @@
 import { useEffect, useRef } from 'react';
+import { AppState } from 'react-native';
 import { useMnemoStore } from '@/hooks/use-mnemo-store';
-import { resolvePendingEntry } from '@/lib/capture';
+import { finishOnDevice, resolvePendingEntry } from '@/lib/capture';
+import { usePreferences } from '@/lib/preferences';
+import { onApiKeyChanged } from '@/lib/api-key';
 import { aiEnabled, appReady } from '@/lib/ai-mode';
 import { embedBatch, embeddableText, toBlob, EMBEDDING_MODEL, EMBEDDING_DIMS } from '@/lib/embeddings';
 import { getEmbeddedItemIds, upsertEmbedding } from '@/lib/db';
@@ -46,36 +49,64 @@ async function backfillEmbeddings(items: MnemoItem[]): Promise<void> {
   }
 }
 
+const SWEEP_EVERY_MS = 60_000;
+
 /**
- * Invisible component mounted at the app root. On startup it:
- * 1. Retries AI structuring for any entry saved while offline or that
- *    never finished.
- * 2. Backfills embeddings for already-structured notes that don't have one
- *    yet — covers notes created before this feature shipped, and any that
- *    failed to embed earlier (rate limits, offline).
+ * Invisible component mounted at the app root. It:
+ * 1. Sends notes still waiting for Gemini, at startup, whenever the app
+ *    comes back to the foreground, and every minute while any wait (each
+ *    note backs off on its own after a failure; see resolvePendingEntry).
+ * 2. Offline, finishes any waiting note with the phone's own reading.
+ * 3. Backfills embeddings for notes that don't have one yet.
  */
 export function PendingProcessor() {
   const store = useMnemoStore();
-  const { items, entries, isLoaded } = store;
-  const hasRun = useRef(false);
+  const { isLoaded } = store;
+  const { aiMode } = usePreferences();
+  const storeRef = useRef(store);
+  storeRef.current = store;
 
   useEffect(() => {
-    if (!isLoaded || hasRun.current) return;
-    hasRun.current = true;
+    if (!isLoaded) return;
+    let cancelled = false;
+    let backfilled = false;
 
-    appReady.then(() => {
+    const sweep = () => {
+      if (cancelled) return;
+      const current = storeRef.current;
+      const { entries, items } = current.snapshot();
       const pending = entries.filter((e) => e.pending);
       if (!aiEnabled()) {
-        // Offline (or the key was removed): nothing will tidy these up, so
-        // they're finished as written rather than waiting forever.
-        for (const entry of pending) store.updateEntry(entry.id, { pending: false, pendingRawText: undefined });
-        for (const item of items.filter((i) => i.pending)) store.updateItem(item.id, { pending: false });
+        // Nothing will come from Gemini: finish them as the phone reads them.
+        for (const entry of pending) finishOnDevice(entry, current);
+        for (const item of items.filter((i) => i.pending && !pending.some((e) => e.threadId === i.id))) {
+          current.updateItem(item.id, { pending: false });
+        }
         return;
       }
-      for (const entry of pending) resolvePendingEntry(entry, store);
-      backfillEmbeddings(items);
+      for (const entry of pending) resolvePendingEntry(entry, current);
+      if (!backfilled) {
+        backfilled = true;
+        backfillEmbeddings(items);
+      }
+    };
+
+    appReady.then(sweep);
+    const timer = setInterval(() => {
+      if (storeRef.current.snapshot().entries.some((e) => e.pending)) sweep();
+    }, SWEEP_EVERY_MS);
+    const subscription = AppState.addEventListener('change', (state) => {
+      if (state === 'active') sweep();
     });
-  }, [isLoaded]); // eslint-disable-line react-hooks/exhaustive-deps
+    // A new key: try the waiting notes right away (after it's stored).
+    const offKey = onApiKeyChanged(() => setTimeout(sweep, 0));
+    return () => {
+      cancelled = true;
+      offKey();
+      clearInterval(timer);
+      subscription.remove();
+    };
+  }, [isLoaded, aiMode]);
 
   return null;
 }

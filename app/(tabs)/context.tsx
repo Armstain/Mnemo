@@ -36,6 +36,9 @@ import { useRebrief } from '@/hooks/use-rebrief';
 import { useUndoToast } from '@/hooks/use-undo-toast';
 import { useThemeColors } from '@/hooks/use-theme';
 import { summarizeContext } from '@/lib/gemini';
+import { aiEnabled } from '@/lib/ai-mode';
+import { classifyAiError, KEY_PROBLEM_TEXT } from '@/lib/api-key';
+import { usePreferences } from '@/lib/preferences';
 import { structurePendingEntry } from '@/lib/capture';
 import { relatedThreads, type RelatedThread } from '@/lib/search';
 import { entryText } from '@/lib/threads';
@@ -81,6 +84,17 @@ export default function ThreadScreen() {
 
   const thread = items.find((c) => c.id === id);
   const entries = thread ? getEntries(thread.id) : [];
+  usePreferences(); // re-render when AI is switched on or off
+  const ai = aiEnabled();
+  // Offline digest: next steps and unticked items from the notes, newest first.
+  const openSteps = React.useMemo(() => {
+    const steps: string[] = [];
+    for (const e of entries) {
+      if (e.nextStep) steps.push(e.nextStep);
+      for (const b of e.blocks) if (b.kind === 'checklist') steps.push(...b.items.filter((i) => !i.checked).map((i) => i.text));
+    }
+    return [...new Set(steps.map((s) => s.trim()).filter(Boolean))].slice(0, 5);
+  }, [entries]);
   const numbers = React.useMemo(() => summarizeMeasures(entries), [entries]);
   const isFocus = !!thread && focusThreadId === thread.id;
   // An entry auto-filing thought might belong elsewhere (lib/filing.ts).
@@ -210,8 +224,11 @@ export default function ThreadScreen() {
         await structurePendingEntry(entry, store);
       }
     } catch (e) {
-      console.error(e);
-      Alert.alert('Still offline?', 'It will be retried automatically next time you open Mnemo.');
+      const problem = classifyAiError(e);
+      Alert.alert(
+        problem === 'offline' ? 'Still offline?' : 'Gemini had a problem',
+        `${KEY_PROBLEM_TEXT[problem]} It's tried again by itself.`,
+      );
     } finally {
       setIsGenerating(false);
     }
@@ -227,8 +244,7 @@ export default function ThreadScreen() {
         nextStep: thread.nextStep || summary.nextSteps?.[0],
       });
     } catch (e) {
-      console.error(e);
-      Alert.alert('Could not generate a digest', 'Check your connection and try again.');
+      Alert.alert('Could not generate a digest', KEY_PROBLEM_TEXT[classifyAiError(e)]);
     } finally {
       setIsGenerating(false);
     }
@@ -568,6 +584,26 @@ export default function ThreadScreen() {
               </MotiView>
 
               {/* ─── Smart digest ───────────────────────── */}
+              {/* Offline: what's still open, gathered from the notes on the phone. */}
+              {!ai && !thread.aiSummary && openSteps.length > 0 && (
+                <View className="px-6 mt-9">
+                  <Eyebrow>Still open</Eyebrow>
+                  <View className="gap-3">
+                    {openSteps.map((step, i) => (
+                      <View key={i} className="flex-row items-start">
+                        <View
+                          className="w-1.5 h-1.5 rounded-full mr-3 mt-2.5"
+                          style={{ backgroundColor: colors.accent }}
+                        />
+                        <Text className="flex-1 font-sans text-body leading-relaxed" style={{ color: colors.fg }}>
+                          {step}
+                        </Text>
+                      </View>
+                    ))}
+                  </View>
+                </View>
+              )}
+              {(ai || thread.aiSummary) && (
               <View className="px-6 mt-9">
                 <Eyebrow>Smart digest</Eyebrow>
                 {thread.aiSummary ? (
@@ -600,6 +636,7 @@ export default function ThreadScreen() {
                   </Card>
                 )}
               </View>
+              )}
 
               {/* ─── Related ────────────────────────────── */}
               {related.length > 0 && (
