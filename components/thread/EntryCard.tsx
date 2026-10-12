@@ -8,7 +8,8 @@ import { Button, IconButton } from '@/components/ui/Button';
 import { ChecklistEditor } from '@/components/ui/ChecklistEditor';
 import { Icon, type IconName } from '@/components/ui/Icon';
 import { ExternalLink } from '@/components/ExternalLink';
-import { MeasureRows } from '@/components/thread/Measures';
+import { MeasureEditor, MeasureRows } from '@/components/thread/Measures';
+import { summarizeMeasures } from '@/lib/measures';
 import { MoveSheet } from '@/components/thread/MoveSheet';
 import { useMnemoStore } from '@/hooks/use-mnemo-store';
 import { useUndoToast } from '@/hooks/use-undo-toast';
@@ -139,7 +140,7 @@ export function EntryCard({
 }) {
   const colors = useThemeColors();
   const md = useMarkdownStyles(/[\u0980-\u09FF]/.test(entryText(entry)));
-  const { updateEntry, deleteEntry, undoDeleteEntry, getThread } = useMnemoStore();
+  const { updateEntry, deleteEntry, undoDeleteEntry, getThread, entries: allEntries } = useMnemoStore();
   const { showUndoToast } = useUndoToast();
   const aiProblem = useAiProblem();
   const [menuOpen, setMenuOpen] = React.useState(false);
@@ -152,8 +153,30 @@ export function EntryCard({
   const source = SOURCE[entry.source];
   const waitingForVoice = entry.pending && entry.blocks.length === 0;
 
+  // Ticking a box outside Edit is just a tick; inside Edit, every change
+  // is a correction (see `correct`).
   const replaceBlock = (index: number, block: Block) =>
     updateEntry(entry.id, { blocks: entry.blocks.map((b, i) => (i === index ? block : b)) });
+
+  // The blocks as they were when Edit was opened, for Cancel.
+  const [before, setBefore] = React.useState<Block[] | null>(null);
+  const startEditing = () => {
+    setDraft(text);
+    setBefore(entry.blocks);
+    setEditing(true);
+  };
+
+  /**
+   * A correction to the numbers, list or links. A note still waiting for
+   * the AI keeps the person's version: it won't be redone over it.
+   */
+  const correct = (blocks: Block[]) =>
+    updateEntry(entry.id, {
+      blocks,
+      ...(entry.pending && !isStructuring(entry.id) ? { pending: false, pendingRawText: undefined } : {}),
+    });
+  const correctBlock = (index: number, block: Block | null) =>
+    correct(block ? entry.blocks.map((b, i) => (i === index ? block : b)) : entry.blocks.filter((_, i) => i !== index));
 
   const saveText = () => {
     const markdown = draft.trim();
@@ -167,7 +190,32 @@ export function EntryCard({
         : {}),
     });
     setEditing(false);
+    setBefore(null);
   };
+
+  const cancelEditing = () => {
+    if (before && before !== entry.blocks) updateEntry(entry.id, { blocks: before });
+    setEditing(false);
+    setBefore(null);
+  };
+
+  const addBlock = (block: Block) => {
+    // Lists sit after the text, numbers after lists, links last.
+    const order: Record<Block['kind'], number> = { text: 0, checklist: 1, chart: 2, measures: 3, link: 4 };
+    correct([...entry.blocks, block].sort((a, b) => order[a.kind] - order[b.kind]));
+  };
+
+  // What the person said, when the note shown is the AI's rewrite of it.
+  const said = entry.transcript?.trim();
+  const rewritten = !!said && !editing && said !== text.trim();
+  const [showSaid, setShowSaid] = React.useState(false);
+  const known = React.useMemo(
+    () =>
+      editing
+        ? summarizeMeasures(allEntries.filter((e) => e.threadId === entry.threadId)).map((m) => ({ metric: m.metric, unit: m.unit }))
+        : [],
+    [editing, allEntries, entry.threadId],
+  );
 
   // No "are you sure?": the entry can be brought back from the toast.
   const remove = () => {
@@ -225,8 +273,7 @@ export function EntryCard({
             size="sm"
             icon="pencil"
             onPress={() => {
-              setDraft(text);
-              setEditing(true);
+              startEditing();
               setMenuOpen(false);
             }}
           >
@@ -288,14 +335,6 @@ export function EntryCard({
                 noFocusRing,
               ]}
             />
-            <View className="flex-row justify-end gap-2 mt-3">
-              <Button variant="ghost" size="sm" onPress={() => setEditing(false)}>
-                Cancel
-              </Button>
-              <Button variant="primary" size="sm" icon="check" onPress={saveText}>
-                Save
-              </Button>
-            </View>
           </View>
         ) : null}
 
@@ -303,9 +342,46 @@ export function EntryCard({
           if (block.kind === 'text') {
             if (editing) return null;
             return (
-              <Markdown key={index} style={md}>
-                {block.markdown}
-              </Markdown>
+              <View key={index}>
+                <Markdown style={md}>{block.markdown}</Markdown>
+                {rewritten ? (
+                  <View>
+                    <Pressable
+                      onPress={() => setShowSaid((v) => !v)}
+                      accessibilityRole="button"
+                      accessibilityState={{ expanded: showSaid }}
+                      hitSlop={6}
+                      className="flex-row items-center self-start active:opacity-60"
+                    >
+                      <Text className="font-sans-medium text-sm" style={{ color: colors.fgTertiary }}>
+                        {entry.source === 'voice' ? 'What you said' : 'What you wrote'}
+                      </Text>
+                      <Icon name={showSaid ? 'chevronUp' : 'chevronDown'} size={14} color={colors.fgTertiary} />
+                    </Pressable>
+                    {showSaid ? (
+                      <View className="mt-2 pl-3" style={{ borderLeftWidth: 2, borderLeftColor: colors.border }}>
+                        <Text className="font-quote text-body leading-relaxed" style={{ color: colors.fgSecondary }}>
+                          {said}
+                        </Text>
+                        <Pressable
+                          onPress={() => {
+                            // Put the person's own words back in place of the rewrite.
+                            correctBlock(index, { kind: 'text', markdown: said! });
+                            setShowSaid(false);
+                          }}
+                          accessibilityRole="button"
+                          hitSlop={6}
+                          className="self-start mt-2 active:opacity-60"
+                        >
+                          <Text className="font-sans-semi text-sm" style={{ color: colors.accent }}>
+                            Use these words instead
+                          </Text>
+                        </Pressable>
+                      </View>
+                    ) : null}
+                  </View>
+                ) : null}
+              </View>
             );
           }
           if (block.kind === 'checklist') {
@@ -313,13 +389,47 @@ export function EntryCard({
               <ChecklistEditor
                 key={index}
                 items={block.items}
-                editable={false}
-                onChange={(items) => replaceBlock(index, { ...block, items })}
+                editable={editing}
+                onChange={(items) =>
+                  editing
+                    ? correctBlock(index, items.length > 0 ? { ...block, items } : null)
+                    : replaceBlock(index, { ...block, items })
+                }
               />
             );
           }
-          if (block.kind === 'link') return <LinkBlock key={index} block={block} />;
-          if (block.kind === 'measures') return <MeasureRows key={index} items={block.items} />;
+          if (block.kind === 'link') {
+            return editing ? (
+              <View key={index} className="flex-row items-center">
+                <View className="flex-1">
+                  <LinkBlock block={block} />
+                </View>
+                <Pressable
+                  onPress={() => correctBlock(index, null)}
+                  hitSlop={8}
+                  accessibilityRole="button"
+                  accessibilityLabel="Remove link"
+                  className="p-2 ml-1 active:opacity-50"
+                >
+                  <Icon name="x" size={16} color={colors.fgTertiary} />
+                </Pressable>
+              </View>
+            ) : (
+              <LinkBlock key={index} block={block} />
+            );
+          }
+          if (block.kind === 'measures') {
+            return editing ? (
+              <MeasureEditor
+                key={index}
+                items={block.items}
+                known={known}
+                onChange={(items) => correctBlock(index, items.length > 0 ? { ...block, items } : null)}
+              />
+            ) : (
+              <MeasureRows key={index} items={block.items} />
+            );
+          }
           // Charts arrive with smart captures (spec step 3); until then show their title.
           return (
             <Text key={index} className="font-sans-medium text-sm" style={{ color: colors.fgSecondary }}>
@@ -327,6 +437,26 @@ export function EntryCard({
             </Text>
           );
         })}
+
+        {editing ? (
+          <>
+            {/* Room to add what was missed. */}
+            {!entry.blocks.some((b) => b.kind === 'checklist') ? (
+              <ChecklistEditor items={[]} editable onChange={(items) => items.length > 0 && addBlock({ kind: 'checklist', items })} />
+            ) : null}
+            {!entry.blocks.some((b) => b.kind === 'measures') ? (
+              <MeasureEditor items={[]} known={known} onChange={(items) => items.length > 0 && addBlock({ kind: 'measures', items })} />
+            ) : null}
+            <View className="flex-row justify-end gap-2">
+              <Button variant="ghost" size="sm" onPress={cancelEditing}>
+                Cancel
+              </Button>
+              <Button variant="primary" size="sm" icon="check" onPress={saveText}>
+                Save
+              </Button>
+            </View>
+          </>
+        ) : null}
 
       </View>
       <MoveSheet entry={entry} visible={moving} onClose={() => setMoving(false)} onMoved={onMoved} />

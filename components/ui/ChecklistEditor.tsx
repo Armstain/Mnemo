@@ -1,6 +1,7 @@
 import React, { useState, useRef } from 'react';
 import { View, Pressable } from 'react-native';
 import { TextInput } from '@/components/ui/TextInput';
+import { noFocusRing } from '@/utils/web';
 import type { TextInput as RNTextInput } from 'react-native';
 import { Text } from '@/components/ui/Text';
 import * as Haptics from 'expo-haptics';
@@ -112,12 +113,27 @@ export function ChecklistEditor({
               animate={{ opacity: item.checked ? 0.7 : 1 }}
               transition={{ type: 'timing', duration: 200 }}
             >
-              <Text
-                className={`font-sans text-sm ${item.checked ? 'line-through' : ''}`}
-                style={{ color: item.checked ? colors.fgTertiary : colors.fg }}
-              >
-                {item.text}
-              </Text>
+              {editable ? (
+                // Fix a misheard or mis-split item in place.
+                <TextInput
+                  value={item.text}
+                  onChangeText={(text) => onChange(items.map((i) => (i.id === item.id ? { ...i, text } : i)))}
+                  onEndEditing={() => {
+                    if (!item.text.trim()) removeItem(item.id);
+                  }}
+                  accessibilityLabel="Checklist item"
+                  selectionColor={colors.accent}
+                  className="font-sans text-sm py-0"
+                  style={[{ color: colors.fg }, noFocusRing]}
+                />
+              ) : (
+                <Text
+                  className={`font-sans text-sm ${item.checked ? 'line-through' : ''}`}
+                  style={{ color: item.checked ? colors.fgTertiary : colors.fg }}
+                >
+                  {item.text}
+                </Text>
+              )}
             </MotiView>
 
             {editable && (
@@ -125,6 +141,8 @@ export function ChecklistEditor({
                 onPress={() => removeItem(item.id)}
                 className="p-1 ml-2 active:opacity-50"
                 hitSlop={8}
+                accessibilityRole="button"
+                accessibilityLabel={`Remove ${item.text}`}
               >
                 <Icon name="x" size={14} color={colors.fgTertiary} />
               </Pressable>

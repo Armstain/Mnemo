@@ -24,13 +24,14 @@ import { Eyebrow } from '@/components/ui/Eyebrow';
 import { Icon } from '@/components/ui/Icon';
 import { ThreadList, ThreadRow } from '@/components/ui/ThreadRow';
 import { CategoryPicker } from '@/components/ui/CategoryPicker';
+import { TagEditor } from '@/components/ui/TagEditor';
 import { LabeledInput } from '@/components/ui/LabeledInput';
 import { noFocusRing } from '@/utils/web';
 import { DetailSkeleton } from '@/components/ui/NoteListSkeleton';
 import { DueDatePicker, DueDateLabel } from '@/components/ui/DueDatePicker';
 import { ThreadRing } from '@/components/ui/ThreadRing';
 import { EntryCard } from '@/components/thread/EntryCard';
-import { NumbersSection } from '@/components/thread/Measures';
+import { NumbersSection, type MetricFix } from '@/components/thread/Measures';
 import { useMnemoStore } from '@/hooks/use-mnemo-store';
 import { useRebrief } from '@/hooks/use-rebrief';
 import { useUndoToast } from '@/hooks/use-undo-toast';
@@ -42,7 +43,7 @@ import { usePreferences } from '@/lib/preferences';
 import { structurePendingEntry } from '@/lib/capture';
 import { relatedThreads, type RelatedThread } from '@/lib/search';
 import { entryText } from '@/lib/threads';
-import { summarizeMeasures } from '@/lib/measures';
+import { metricKey, summarizeMeasures, type MetricSummary } from '@/lib/measures';
 import { useCategories, useStatusConfig } from '@/utils/categories';
 import { EASE_IN_OUT, useEnter } from '@/utils/motion';
 import { freshness } from '@/utils/time';
@@ -192,6 +193,26 @@ export default function ThreadScreen() {
       },
     });
     setIsEditing(false);
+  };
+
+  // A correction to one tracked number across the thread: a new name (the
+  // same name as another merges them) or a different way of adding up.
+  const fixMetric = (summary: MetricSummary, fix: MetricFix) => {
+    for (const entry of entries) {
+      let touched = false;
+      const blocks = entry.blocks.map((b) => {
+        if (b.kind !== 'measures') return b;
+        return {
+          ...b,
+          items: b.items.map((m) => {
+            if (metricKey(m.metric) !== summary.key) return m;
+            touched = true;
+            return { ...m, ...(fix.metric ? { metric: fix.metric } : {}), ...(fix.rollup ? { rollup: fix.rollup } : {}) };
+          }),
+        };
+      });
+      if (touched) store.updateEntry(entry.id, { blocks });
+    }
   };
 
   const handleDelete = () => {
@@ -358,6 +379,10 @@ export default function ThreadScreen() {
                 <View>
                   <Eyebrow className="mb-2">Category</Eyebrow>
                   <CategoryPicker value={thread.category} onChange={(cat) => updateItem(thread.id, { category: cat })} />
+                </View>
+                <View>
+                  <Eyebrow className="mb-2">Tags</Eyebrow>
+                  <TagEditor tags={thread.tags} onChange={(tags) => updateItem(thread.id, { tags })} />
                 </View>
                 <View>
                   <Eyebrow className="mb-2">Due</Eyebrow>
@@ -550,7 +575,7 @@ export default function ThreadScreen() {
               {/* ─── Numbers it tracks ──────────────────── */}
               {numbers.length > 0 && (
                 <MotiView {...enter.rise(2)} className="px-6 mt-9">
-                  <NumbersSection summaries={numbers} />
+                  <NumbersSection summaries={numbers} onFix={fixMetric} />
                 </MotiView>
               )}
 

@@ -348,12 +348,18 @@ async function structure(entry: PendingEntry, store: CaptureStore): Promise<void
   const handMadeChecklists = now.blocks.filter((b) => b.kind === 'checklist');
   const existingLinks = now.blocks.flatMap((b) => (b.kind === 'link' ? [b.url] : []));
   const links = [...new Set([...existingLinks, ...(processed.links ?? [])])];
-  const blocks: Block[] = [
-    ...buildBlocks({ text: editedMeanwhile ? textOf(now) : processed.notes }),
-    ...handMadeChecklists,
-    ...(measures.length > 0 ? [{ kind: 'measures' as const, items: measures }] : []),
-    ...buildBlocks({ links }),
-  ];
+  // Numbers, lists or links corrected by hand while it waited stay as they are.
+  const rest = (e: Pick<Entry, 'blocks'>) => JSON.stringify(e.blocks.filter((b) => b.kind !== 'text'));
+  const correctedMeanwhile = rest(now) !== rest(live);
+  const text = buildBlocks({ text: editedMeanwhile ? textOf(now) : processed.notes });
+  const blocks: Block[] = correctedMeanwhile
+    ? [...text, ...now.blocks.filter((b) => b.kind !== 'text')]
+    : [
+        ...text,
+        ...handMadeChecklists,
+        ...(measures.length > 0 ? [{ kind: 'measures' as const, items: measures }] : []),
+        ...buildBlocks({ links }),
+      ];
   const leftOff = now.leftOff || (editedMeanwhile ? undefined : processed.summary?.leftOff);
   const nextStep = now.nextStep || (editedMeanwhile ? undefined : processed.summary?.nextSteps?.[0]);
 
