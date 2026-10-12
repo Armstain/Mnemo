@@ -9,6 +9,8 @@ export interface WidgetSnapshot {
   id?: string;
   title?: string;
   nextStep?: string;
+  /** This install's launch key (lib/launch-key), so Record starts listening. */
+  launchKey?: string;
 }
 
 const THEMES = {
@@ -80,7 +82,7 @@ function Widget({ snapshot, theme }: { snapshot: WidgetSnapshot; theme: keyof ty
         />
       </FlexWidget>
       <FlexWidget style={{ width: 'match_parent', flexDirection: 'row', flexGap: 8 }}>
-        <Button label="Record" svg={micSvg(c.ink)} uri="mnemo:///dump?autostart=1" bg={c.accent} fg={c.ink} />
+        <Button label="Record" svg={micSvg(c.ink)} uri={snapshot.launchKey ? `mnemo:///dump?autostart=1&key=${snapshot.launchKey}` : 'mnemo:///dump'} bg={c.accent} fg={c.ink} />
         <Button label="Write" svg={penSvg(c.fg)} uri="mnemo:///capture" bg={c.chip} fg={c.fg} />
       </FlexWidget>
     </FlexWidget>

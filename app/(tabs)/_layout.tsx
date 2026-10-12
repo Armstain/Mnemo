@@ -3,10 +3,11 @@ import { ActionCluster } from '@/components/ui/ActionCluster';
 import { Tabs } from 'expo-router';
 import * as QuickActions from 'expo-quick-actions';
 import { useQuickActionRouting, type RouterAction } from 'expo-quick-actions/router';
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Platform, View } from 'react-native';
 
 import { useMnemoStore } from '@/hooks/use-mnemo-store';
+import { getLaunchKey, recordNowHref } from '@/lib/launch-key';
 import { useThemeColors } from '@/hooks/use-theme';
 
 // Long-press-the-app-icon shortcuts. iOS draws SF Symbols; Android loads
@@ -27,14 +28,19 @@ function useCaptureShortcuts() {
   const { getActiveItems, isLoaded } = useMnemoStore();
   const latest = isLoaded ? getActiveItems()[0] : undefined;
 
+  const [launchKey, setLaunchKey] = useState<string | null>(null);
   useEffect(() => {
-    if (!isLoaded) return;
+    getLaunchKey().then(setLaunchKey);
+  }, []);
+
+  useEffect(() => {
+    if (!isLoaded || !launchKey) return;
     const actions: RouterAction[] = [
       {
         id: 'record',
         title: 'Record a thought',
         icon: SHORTCUT_ICONS.record,
-        params: { href: '/dump?autostart=1' },
+        params: { href: recordNowHref(launchKey) },
       },
       {
         id: 'note',
@@ -56,7 +62,7 @@ function useCaptureShortcuts() {
     QuickActions.setItems(actions).catch(() => {
       // Unsupported launcher — the shortcuts are a convenience, never required.
     });
-  }, [isLoaded, latest?.id, latest?.title]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [isLoaded, launchKey, latest?.id, latest?.title]); // eslint-disable-line react-hooks/exhaustive-deps
 }
 
 export default function TabLayout() {

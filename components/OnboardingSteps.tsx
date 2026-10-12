@@ -196,7 +196,7 @@ export function AiChoiceStep({
             icon="pin"
             title="Offline, on this phone"
             points={[
-              'Nothing leaves your phone',
+              'Your notes never leave your phone',
               'Still finds lists, links, amounts and next steps',
               'No key, no account',
             ]}
@@ -205,7 +205,7 @@ export function AiChoiceStep({
         </MotiView>
       </View>
       <Text className="font-sans text-sm text-center" style={{ color: colors.fgTertiary }}>
-        Voice is turned into text on your phone. Audio is never saved.
+        Your phone's speech service turns voice into text. Mnemo never keeps the audio.
       </Text>
     </StepFrame>
   );

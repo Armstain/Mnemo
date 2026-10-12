@@ -28,7 +28,6 @@ export function CategoryPicker<T extends Category | 'all'>({
   includeAll = false,
   inset = 24,
 }: CategoryPickerProps<T>) {
-  const colors = useThemeColors();
   const categories = useCategories();
   const options = (includeAll ? ['all', ...CATEGORY_LIST] : CATEGORY_LIST) as T[];
 

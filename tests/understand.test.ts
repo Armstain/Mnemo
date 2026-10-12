@@ -1,0 +1,93 @@
+import { describe, expect, it } from 'vitest';
+import { readWhen, understand } from '@/lib/understand';
+
+const now = new Date('2026-10-12T10:00:00').getTime(); // a Monday
+const read = (text: string) => understand(text, { now });
+const at = (ts?: number) => (ts ? new Date(ts).toString().slice(0, 21) : undefined);
+
+describe('reading a note on the phone', () => {
+  it('Banglish and Bangla amounts', () => {
+    expect(read('cng khoroch gese der hajar taka').measures).toEqual([
+      { metric: 'spent', value: 1500, unit: 'BDT', label: 'cng', group: 'transport', rollup: 'sum' },
+    ]);
+    expect(read('সিএনজি খরচ গেছে দেড় হাজার টাকা').measures[0]).toMatchObject({ value: 1500, unit: 'BDT', label: 'সিএনজি' });
+  });
+
+  it('several amounts in one note, one currency', () => {
+    const m = read('rickshaw 50, lunch 120, hotel 2,500 taka').measures;
+    expect(m.map((x) => [x.label, x.value, x.group])).toEqual([
+      ['rickshaw', 50, 'transport'],
+      ['lunch', 120, 'food'],
+      ['hotel', 2500, 'stay'],
+    ]);
+  });
+
+  it('labels after the amount', () => {
+    const m = read('Spent $20 on lunch and 15 dollars on a cab').measures;
+    expect(m.map((x) => [x.label, x.value, x.unit])).toEqual([
+      ['lunch', 20, 'USD'],
+      ['cab', 15, 'USD'],
+    ]);
+  });
+
+  it('quantities, phone numbers and "in 5 minutes" are not readings', () => {
+    expect(read('bought 2 kg rice for 180 taka').measures.map((m) => m.value)).toEqual([180]);
+    expect(read('call mom 01712345678. paid 500 taka for fuel').measures.map((m) => m.value)).toEqual([500]);
+    expect(read('the shop is 2 km away, will go in 5 minutes').measures).toEqual([]);
+  });
+
+  it('activity readings', () => {
+    expect(read('ran 5 km, weight 72.4 kg').measures.map((m) => [m.metric, m.value, m.rollup])).toEqual([
+      ['ran', 5, 'sum'],
+      ['weight', 72.4, 'latest'],
+    ]);
+    expect(read('slept 6 hours').measures[0]).toMatchObject({ metric: 'sleep', rollup: 'average' });
+  });
+
+  it('next step, due time, title without the time', () => {
+    const r = read('Need to call the plumber tomorrow at 5pm about the kitchen leak');
+    expect(r.nextStep).toBe('Call the plumber tomorrow at 5pm about the kitchen leak');
+    expect(at(r.due)).toBe('Tue Oct 13 2026 17:00');
+    expect(r.title).toBe('Call the plumber about the kitchen leak');
+  });
+
+  it('Bangla and Banglish steps and times', () => {
+    expect(at(read('কাল বিকাল ৫টায় ডাক্তারের কাছে যেতে হবে').due)).toBe('Tue Oct 13 2026 17:00');
+    expect(at(read('kal sokal 10 tay bank e jete hobe').due)).toBe('Tue Oct 13 2026 10:00');
+    expect(read('আজকে অফিসে মিটিং ছিল, কাল প্রেজেন্টেশন দিতে হবে').nextStep).toBe('কাল প্রেজেন্টেশন দিতে হবে');
+  });
+
+  it('lists, typed or said', () => {
+    expect(read('Shopping list:\n- milk\n- eggs\n- [x] bread').checklist.map((c) => [c.text, c.checked])).toEqual([
+      ['milk', false],
+      ['eggs', false],
+      ['bread', true],
+    ]);
+    expect(read('buy milk, eggs, bread and butter').checklist.map((c) => c.text)).toEqual(['Milk', 'Eggs', 'Bread', 'Butter']);
+    const bn = read('ঢাকা ফিরে বাজার করতে হবে: চাল, ডাল, তেল আর পেঁয়াজ');
+    expect(bn.checklist).toHaveLength(4);
+    expect(bn.nextStep).toBe('ঢাকা ফিরে বাজার করতে হবে');
+  });
+
+  it('links, tags, category, left off', () => {
+    const r = read('check https://example.com/foo. and www.test.org #trip #ঢাকা');
+    expect(r.links).toEqual(['https://example.com/foo', 'https://www.test.org']);
+    expect(r.tags).toEqual(['trip', 'ঢাকা']);
+    expect(r.title).toBe('example.com');
+    const book = read('Read 30 pages of Sapiens, stopped at chapter 4. Finish it by friday');
+    expect(book.leftOff).toBe('Read 30 pages of Sapiens, stopped at chapter 4');
+    expect(book.nextStep).toBe('Finish it by friday');
+    expect(at(book.due)).toBe('Fri Oct 16 2026 09:00');
+    expect(read('Meeting with client about the invoice').category).toBe('work');
+  });
+
+  it('a heading before a colon is the title', () => {
+    expect(read('Lisbon trip: dinner €40, museum 12 euros').title).toBe('Lisbon trip');
+  });
+
+  it('dates: day/month order follows the phone', () => {
+    expect(at(readWhen('pay rent on 3/11', now))).toBe('Tue Nov 03 2026 09:00');
+    expect(at(readWhen('pay rent on 3/11', now, true))).toBe('Thu Mar 11 2027 09:00');
+    expect(readWhen('call today', new Date('2026-10-12T20:00:00').getTime())).toBeUndefined();
+  });
+});

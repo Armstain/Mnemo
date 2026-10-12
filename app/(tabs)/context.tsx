@@ -45,11 +45,11 @@ import { structurePendingEntry } from '@/lib/capture';
 import { relatedThreads, type RelatedThread } from '@/lib/search';
 import { entryText } from '@/lib/threads';
 import { matchEntries } from '@/lib/find';
+import { confirmAction } from '@/utils/confirm';
 import { metricKey, summarizeMeasures, type MetricSummary } from '@/lib/measures';
 import { useCategories, useStatusConfig } from '@/utils/categories';
 import { EASE_IN_OUT, useEnter } from '@/utils/motion';
 import { freshness } from '@/utils/time';
-import type { MnemoItem } from '@/types/mnemo';
 
 /**
  * ThreadScreen — one thread: where you are (left off, next step), what to
@@ -239,15 +239,12 @@ export default function ThreadScreen() {
     };
     // One note is undone from the toast; a whole history deserves a question first.
     if (entries.length <= 1) return remove();
-    const message = `All ${entries.length} entries in "${thread.title}" will be deleted.`;
-    if (Platform.OS === 'web') {
-      if (typeof window !== 'undefined' && window.confirm(`Delete thread? ${message}`)) remove();
-      return;
-    }
-    Alert.alert('Delete thread?', message, [
-      { text: 'Cancel', style: 'cancel' },
-      { text: 'Delete', style: 'destructive', onPress: remove },
-    ]);
+    confirmAction({
+      title: 'Delete thread?',
+      message: `All ${entries.length} entries in "${thread.title}" will be deleted.`,
+      confirmLabel: 'Delete',
+      onConfirm: remove,
+    });
   };
 
   const handleRetryProcessing = async () => {

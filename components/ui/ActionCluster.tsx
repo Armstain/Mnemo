@@ -1063,10 +1063,6 @@ function TailContent({ tail, reduceMotion }: { tail: NonNullable<Tail>; reduceMo
   );
 }
 
-/** Rough dBFS to 0..1. Decoration, not a meter. */
-function normalise(dbfs: number) {
-  return Math.max(0, Math.min(1, (dbfs + 50) / 45));
-}
 
 const OPTION_W = 120;
 const OPTION_LABEL_H = 48;

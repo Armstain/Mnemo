@@ -24,16 +24,10 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { Notifications, notificationsAvailable } from '@/lib/notifications';
 import "../global.css";
 
-// moti still bundles an unused MotiSafeAreaView built on RN's deprecated
-// SafeAreaView; importing anything from moti's barrel pulls that
-// submodule in and fires this warning at startup. We never use
-// MotiSafeAreaView — nothing to fix on our side, and no newer moti
-// release drops it yet.
-LogBox.ignoreLogs(['SafeAreaView has been deprecated']);
-
 import { ONBOARDING_KEY } from '@/app/onboarding';
 import { NudgeScheduler } from '@/components/NudgeScheduler';
 import { ReminderActions } from '@/components/ReminderActions';
+import { installGlobalErrorLog } from '@/lib/errors';
 import { ShareIntake } from '@/components/ShareIntake';
 import { WidgetSync } from '@/components/WidgetSync';
 import { PendingProcessor } from '@/components/PendingProcessor';
@@ -43,6 +37,13 @@ import { MnemoStoreProvider } from '@/hooks/use-mnemo-store';
 import { UndoToastProvider } from '@/hooks/use-undo-toast';
 import { applyStoredThemePreference, PALETTE, useThemeName } from '@/hooks/use-theme';
 import { appReady } from '@/lib/ai-mode';
+
+// moti still bundles an unused MotiSafeAreaView built on RN's deprecated
+// SafeAreaView; importing anything from moti's barrel pulls that
+// submodule in and fires this warning at startup. We never use
+// MotiSafeAreaView — nothing to fix on our side, and no newer moti
+// release drops it yet.
+LogBox.ignoreLogs(['SafeAreaView has been deprecated']);
 
 // Reads the saved key and preferences (AI or offline) as early as possible.
 void appReady;
@@ -62,10 +63,10 @@ if (notificationsAvailable) {
   });
 }
 
-export {
-  // Catch any errors thrown by the Layout component.
-  ErrorBoundary
-} from 'expo-router';
+// Anything that breaks while drawing shows a way back instead of a blank
+// screen, and is noted in the local problem log.
+export { CrashScreen as ErrorBoundary } from '@/components/CrashScreen';
+installGlobalErrorLog();
 
 export const unstable_settings = {
   // Ensure that reloading on `/modal` keeps a back button present.

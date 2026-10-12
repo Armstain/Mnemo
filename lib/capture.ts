@@ -3,11 +3,11 @@ import {
   processAudioDump,
   processVoiceDump,
   AiOffError,
-  type CaptureContext,
   type ProcessedCapture,
 } from '@/lib/gemini';
 import { aiEnabled, setAiProblem } from '@/lib/ai-mode';
 import { classifyAiError, onApiKeyChanged } from '@/lib/api-key';
+import { logError } from '@/lib/errors';
 import {
   embedText,
   embeddableText,
@@ -579,6 +579,7 @@ export async function resolvePendingEntry(entry: PendingEntry, store: CaptureSto
     attempts.set(entry.id, { count, nextAt: Date.now() + BACKOFF_MS[Math.min(count, BACKOFF_MS.length) - 1] });
     const problem = classifyAiError(e);
     if (problem === 'invalid' || problem === 'quota') setAiProblem(problem);
+    if (problem === 'other') logError('ai', e);
   }
 }
 

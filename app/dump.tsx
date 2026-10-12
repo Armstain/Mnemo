@@ -13,6 +13,7 @@ import { useSpeechCapture } from '@/hooks/use-speech-capture';
 import { useMnemoStore } from '@/hooks/use-mnemo-store';
 import { useThemeColors } from '@/hooks/use-theme';
 import { saveVoiceNote } from '@/lib/capture';
+import { mayAutostart } from '@/lib/launch-key';
 import { FocusDestination } from '@/components/ui/FocusDestination';
 import { Button, IconButton } from '@/components/ui/Button';
 import { Eyebrow } from '@/components/ui/Eyebrow';
@@ -38,7 +39,7 @@ export default function DumpScreen() {
   const store = useMnemoStore();
   const colors = useThemeColors();
 
-  const { autostart, threadId } = useLocalSearchParams<{ autostart?: string; threadId?: string }>();
+  const { autostart, key, threadId } = useLocalSearchParams<{ autostart?: string; key?: string; threadId?: string }>();
   const target = useCaptureTarget(threadId);
   const targetThread = target.destination;
 
@@ -72,13 +73,16 @@ export default function DumpScreen() {
     setPhase('listening');
   }
 
-  // Opened from the home-screen "Record" shortcut: start listening at once.
+  // Opened from the Record shortcut or widget: start listening at once.
+  // Only those carry this install's key; any other link waits for a tap.
   const autostarted = useRef(false);
   useEffect(() => {
     if (autostart !== '1' || autostarted.current) return;
     autostarted.current = true;
-    startListening();
-  }, [autostart]); // eslint-disable-line react-hooks/exhaustive-deps
+    mayAutostart(key).then((ok) => {
+      if (ok) startListening();
+    });
+  }, [autostart, key]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function finishListening() {
     const words = await speech.stop();

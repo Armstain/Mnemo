@@ -6,7 +6,6 @@ const GEMINI_KEY_STORAGE = 'mnemo_user_gemini_api_key';
 
 // In-memory cache for fast synchronous access
 let cachedGeminiApiKey: string | null = null;
-let isLoaded = false;
 
 /** Load stored API keys on app initialization. */
 export async function loadStoredApiKeys(): Promise<void> {
@@ -21,7 +20,6 @@ export async function loadStoredApiKeys(): Promise<void> {
   } catch (e) {
     console.error('Failed to load stored API keys:', e);
   } finally {
-    isLoaded = true;
   }
 }
 

@@ -1,5 +1,5 @@
 import { bm25Scored, tokenize } from '@/lib/bm25';
-import { dot } from '@/lib/embeddings';
+import { dot } from '@/lib/vector-math';
 import { entryText, newestFirst } from '@/lib/threads';
 import { trackedMetrics } from '@/lib/measures';
 import type { ThreadCandidate, ThreadMatch } from '@/lib/gemini';

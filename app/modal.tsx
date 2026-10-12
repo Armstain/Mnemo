@@ -29,6 +29,9 @@ import { Eyebrow } from '@/components/ui/Eyebrow';
 import { BackupCard } from '@/components/settings/BackupCard';
 import { AiModeCard } from '@/components/settings/AiModeCard';
 import { noFocusRing } from '@/utils/web';
+import { confirmAction } from '@/utils/confirm';
+import { problemReport } from '@/lib/errors';
+import * as Clipboard from 'expo-clipboard';
 import { Icon } from '@/components/ui/Icon';
 import {
   useThemeColors,
@@ -186,7 +189,7 @@ function ApiKeyConfigCard() {
       } else {
         setTestResult({ success: true, message: 'Custom key cleared.' });
       }
-    } catch (e: any) {
+    } catch {
       setTestResult({ success: false, message: 'Failed to save key.' });
     } finally {
       setIsSaving(false);
@@ -325,6 +328,24 @@ function ApiKeyConfigCard() {
   );
 }
 
+// What leaves the phone, and when: said plainly, every case.
+const PRIVACY_FACTS = [
+  {
+    title: 'With Gemini on',
+    body:
+      'Sent to Google with your key: the text of each new note and any photo on it; the titles and a line from your recently active threads, so it can file the note; your question and the notes that best match it, when you ask; note text for meaning search and digests. On a free key, Google may use what you send to improve its products, and people may review it. Offline, none of this happens.',
+  },
+  {
+    title: 'Voice',
+    body:
+      "Your phone's speech service turns what you say into text. On many phones that is Google's, which may process it online. Mnemo never keeps the audio.",
+  },
+  {
+    title: 'Links',
+    body: 'A link you save is opened by the phone, once, to show its title and picture. That page sees the request like any visit.',
+  },
+];
+
 export default function ModalScreen() {
   const enter = useEnter();
   const insets = useSafeAreaInsets();
@@ -333,43 +354,38 @@ export default function ModalScreen() {
   const { preference, setPreference } = useThemePreference();
   const { clearAllData } = useMnemoStore();
   const [isClearing, setIsClearing] = useState(false);
+  const [reportCopied, setReportCopied] = useState(false);
 
   // No undo here, unlike a single-item delete — wiping every note and
   // recording at once needs a real confirmation, not a grace window.
-  const handleClearAllData = () => {
-    Alert.alert(
-      'Clear all data',
-      'This permanently deletes every note, checklist, and voice recording on this device. This cannot be undone.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete everything',
-          style: 'destructive',
-          onPress: async () => {
-            setIsClearing(true);
-            try {
-              await clearAllData();
-              // Reset onboarding too — a full data wipe should read as a
-              // fresh install, not just an empty library.
-              if (Platform.OS === 'web') {
-                localStorage.removeItem(ONBOARDING_KEY);
-              } else {
-                await SecureStore.deleteItemAsync(ONBOARDING_KEY);
-              }
-              Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-              router.replace('/onboarding');
-            } catch (e) {
-              console.error('Failed to clear all data', e);
-              Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-              Alert.alert('Something went wrong', 'Not everything could be deleted. Please try again.');
-            } finally {
-              setIsClearing(false);
-            }
-          },
-        },
-      ],
-    );
-  };
+  const handleClearAllData = () =>
+    confirmAction({
+      title: 'Clear all data',
+      message:
+        'This permanently deletes every thread, note, photo and reminder on this phone. Make a backup first if you might want them back. This cannot be undone.',
+      confirmLabel: 'Delete everything',
+      onConfirm: async () => {
+        setIsClearing(true);
+        try {
+          await clearAllData();
+          // Reset onboarding too — a full data wipe should read as a
+          // fresh install, not just an empty library.
+          if (Platform.OS === 'web') {
+            localStorage.removeItem(ONBOARDING_KEY);
+          } else {
+            await SecureStore.deleteItemAsync(ONBOARDING_KEY);
+          }
+          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+          router.replace('/onboarding');
+        } catch (e) {
+          console.error('Failed to clear all data', e);
+          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+          Alert.alert('Something went wrong', 'Not everything could be deleted. Please try again.');
+        } finally {
+          setIsClearing(false);
+        }
+      },
+    });
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.bg }}>
@@ -470,11 +486,17 @@ export default function ModalScreen() {
                 <Text className="font-sans-semi text-sm text-fg ml-2">Your data</Text>
               </View>
               <Text className="font-sans text-sm text-fg-secondary leading-relaxed">
-                Your notes live only on this device. Mnemo has no server and no account. To
-                transcribe and organise a note, its audio or text is sent to Google Gemini (and to
-                Groq if you add a Groq key), using the keys you enter here.
+                Your notes, photos and reminders live only on this phone. Mnemo has no server and no
+                account; a backup is a file you keep, locked with your passphrase.
               </Text>
             </View>
+
+            {PRIVACY_FACTS.map((fact) => (
+              <View key={fact.title} className="bg-surface rounded-lg p-5 border border-border/50">
+                <Text className="font-sans-semi text-sm text-fg mb-1.5">{fact.title}</Text>
+                <Text className="font-sans text-sm text-fg-secondary leading-relaxed">{fact.body}</Text>
+              </View>
+            ))}
 
             <Pressable
               onPress={handleClearAllData}
@@ -489,10 +511,34 @@ export default function ModalScreen() {
               <View className="ml-2 flex-1">
                 <Text className="font-sans-semi text-sm text-error">Clear all data</Text>
                 <Text className="font-sans text-sm text-fg-tertiary mt-0.5">
-                  Permanently deletes every note and recording on this device
+                  Permanently deletes every thread, note and photo on this phone
                 </Text>
               </View>
               {isClearing && <ActivityIndicator size="small" color={colors.error} />}
+            </Pressable>
+          </MotiView>
+
+          {/* Problems */}
+          <MotiView {...enter.rise(2)} className="gap-3 mb-10">
+            <Eyebrow className="mb-1">Something not working?</Eyebrow>
+            <Pressable
+              onPress={async () => {
+                await Clipboard.setStringAsync(await problemReport());
+                Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+                setReportCopied(true);
+              }}
+              accessibilityRole="button"
+              className="bg-surface rounded-lg p-5 border border-border/50 flex-row items-center active:opacity-80"
+            >
+              <Icon name="copy" size={15} color={colors.accent} />
+              <View className="ml-2 flex-1">
+                <Text className="font-sans-semi text-sm text-fg">
+                  {reportCopied ? 'Problem report copied' : 'Copy problem report'}
+                </Text>
+                <Text className="font-sans text-sm text-fg-tertiary mt-0.5">
+                  The app version and its recent error messages, to paste into a message. No notes.
+                </Text>
+              </View>
             </Pressable>
           </MotiView>
 

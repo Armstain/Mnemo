@@ -69,7 +69,7 @@ export function sentences(text: string): string[] {
 // ─── Lists ──────────────────────────────────────────────────────
 
 const LIST_LINE = /^\s*(?:[-*•▪◦–]|\[\s?[xX✓ ]?\s?\]|\d{1,2}[.)]|[০-৯]{1,2}[.)])\s+(.+)$/;
-const DONE_LINE = /^\s*\[\s?[xX✓]\s?\]/;
+const DONE_LINE = /^\s*(?:[-*•▪◦–]\s+)?\[\s?[xX✓]\s?\]/;
 
 // "buy milk, eggs and bread" / "কিনতে হবে: চাল, ডাল, তেল"
 const LIST_VERBS =
@@ -575,7 +575,7 @@ function readTitle(text: string, items: ChecklistItem[]): string {
   const multiLine = text.trim().includes('\n');
   let title = multiLine && firstLine.length <= 60 ? firstLine : sentences(text)[0] ?? '';
   // "Lisbon trip: dinner €40, …" is about the Lisbon trip.
-  const head = title.match(/^([^:]{2,40}):\s*\S/);
+  const head = title.match(/^([^:]{2,40}):\s+\S/);
   if (head && head[1].trim().split(/\s+/).length <= 6) title = head[1];
   title = trimEnd(title.replace(/^#+\s*/, '').replace(TITLE_LEAD, '').replace(LEAD_INS, ''));
   // A title is no place for a link or a hashtag.

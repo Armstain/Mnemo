@@ -13,7 +13,7 @@ const MODES: { value: Exclude<AiMode, 'unset'>; icon: IconName; title: string; b
     value: 'gemini',
     icon: 'sparkles',
     title: 'Smart, with Gemini',
-    body: 'Your notes are tidied up, numbers and next steps found, and each note filed into the right thread. Note text goes to Google using your key.',
+    body: 'Your notes are tidied up, numbers and next steps found, and each note filed into the right thread. Each new note (and any photo on it) goes to Google with your key, along with the titles of your recent threads so it can be filed.',
   },
   {
     value: 'offline',
@@ -81,8 +81,8 @@ export function AiModeCard({ children }: { children?: React.ReactNode }) {
           <Text className="font-sans-semi text-sm text-fg ml-2">Voice notes</Text>
         </View>
         <Text className="font-sans text-sm text-fg-secondary leading-relaxed">
-          Speak in Bangla, English or a mix. Your phone turns it into text as you talk, and the audio
-          is never saved.
+          Speak in Bangla, English or a mix. Your phone's speech service turns it into text as you
+          talk (on many phones that's Google's, which may work online). Mnemo never keeps the audio.
         </Text>
       </View>
     </View>
