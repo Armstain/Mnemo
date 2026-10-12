@@ -300,6 +300,7 @@ export async function deleteItemRow(id: string): Promise<void> {
 export async function deleteAllItems(): Promise<void> {
   const db = await getDb();
   await db.execAsync('DELETE FROM items; DELETE FROM entries; DELETE FROM embeddings;');
+  vectorCache = new Map();
 }
 
 // ─── Entries ────────────────────────────────────────────────────
@@ -425,7 +426,35 @@ interface EmbeddingRow {
   updatedAt: number;
 }
 
+// Decoded vectors, read from SQLite once and kept in step with every write:
+// search, related threads and filing compare against all of them, often.
+let vectorCache: Map<string, Float32Array> | null = null;
+let vectorLoad: Promise<Map<string, Float32Array>> | null = null;
+
+function decodeVector(blob: Uint8Array): Float32Array {
+  // A copy: Float32Array needs a 4-byte-aligned buffer, which a BLOB may not be.
+  const copy = blob.slice();
+  return new Float32Array(copy.buffer, copy.byteOffset, copy.byteLength / 4);
+}
+
+/** Every stored vector, by item id. */
+export async function getVectors(): Promise<Map<string, Float32Array>> {
+  if (vectorCache) return vectorCache;
+  if (!vectorLoad) {
+    vectorLoad = getAllEmbeddings()
+      .then((rows) => {
+        vectorCache = new Map(rows.map((r) => [r.itemId, decodeVector(r.vector)]));
+        return vectorCache;
+      })
+      .finally(() => {
+        vectorLoad = null;
+      });
+  }
+  return vectorLoad;
+}
+
 export async function upsertEmbedding(record: EmbeddingRecord): Promise<void> {
+  vectorCache?.set(record.itemId, decodeVector(record.vector));
   const db = await getDb();
   await db.runAsync(
     `INSERT INTO embeddings (itemId, vector, model, dims, updatedAt)
@@ -455,6 +484,7 @@ export async function getEmbeddedItemIds(): Promise<Set<string>> {
 }
 
 export async function deleteEmbedding(itemId: string): Promise<void> {
+  vectorCache?.delete(itemId);
   const db = await getDb();
   await db.runAsync('DELETE FROM embeddings WHERE itemId = $itemId', { $itemId: itemId });
 }

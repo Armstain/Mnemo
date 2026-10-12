@@ -74,6 +74,13 @@ export function gatherCandidates(input: {
       (t.status === 'active' || t.status === 'paused'),
   );
   const picked = new Map<string, MnemoItem>();
+  // Each thread's entries, gathered once (not once per thread).
+  const byThread = new Map<string, Entry[]>();
+  for (const e of input.entries) {
+    const list = byThread.get(e.threadId);
+    if (list) list.push(e);
+    else byThread.set(e.threadId, [e]);
+  }
 
   const focus = open.find((t) => t.id === input.focusId);
   if (focus) picked.set(focus.id, focus);
@@ -82,15 +89,15 @@ export function gatherCandidates(input: {
   }
   for (const t of [...open].sort((a, b) => b.updatedAt - a.updatedAt)) {
     if (picked.size >= MAX_CANDIDATES) break;
-    if (now - lastActivity(t, input.entries) <= RECENT_MS) picked.set(t.id, t);
+    if (now - lastActivity(t, byThread.get(t.id) ?? []) <= RECENT_MS) picked.set(t.id, t);
   }
 
   return [...picked.values()].map((t) => {
-    const threadEntries = input.entries.filter((e) => e.threadId === t.id);
+    const threadEntries = byThread.get(t.id) ?? [];
     const latest = newestFirst(threadEntries)[0];
     const tracks = trackedMetrics(threadEntries, 3);
     return {
-      idleDays: Math.max(0, Math.floor((now - lastActivity(t, input.entries)) / DAY_MS)),
+      idleDays: Math.max(0, Math.floor((now - lastActivity(t, threadEntries)) / DAY_MS)),
       id: t.id,
       title: t.title,
       category: t.category,

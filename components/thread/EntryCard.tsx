@@ -135,6 +135,20 @@ function LinkBlock({ block }: { block: Extract<Block, { kind: 'link' }> }) {
 }
 
 /**
+ * Markdown is the costly part of a timeline to draw; it's only redrawn
+ * when the text (or its styles) actually change, not on every store update.
+ */
+const MarkdownText = React.memo(function MarkdownText({
+  markdown,
+  style,
+}: {
+  markdown: string;
+  style: ReturnType<typeof markdownStyles>;
+}) {
+  return <Markdown style={style}>{markdown}</Markdown>;
+});
+
+/**
  * One capture in a thread's timeline: when and how it arrived, then its
  * blocks. Its menu edits the text or deletes the entry.
  */
@@ -356,7 +370,7 @@ export function EntryCard({
             if (editing) return null;
             return (
               <View key={index}>
-                <Markdown style={md}>{block.markdown}</Markdown>
+                <MarkdownText markdown={block.markdown} style={md} />
                 {rewritten ? (
                   <View>
                     <Pressable

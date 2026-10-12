@@ -1,11 +1,11 @@
-import React, { useState, useMemo, useEffect } from 'react';
-import { Pressable, ScrollView, View } from 'react-native';
+import React, { useState, useMemo, useEffect, useDeferredValue, useCallback } from 'react';
+import { FlatList, Pressable, View } from 'react-native';
 import { Text } from '@/components/ui/Text';
 import { router, useLocalSearchParams } from 'expo-router';
 import { MotiView } from 'moti';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { ThreadList, ThreadRow } from '@/components/ui/ThreadRow';
+import { ThreadRow } from '@/components/ui/ThreadRow';
 import { CategoryPicker } from '@/components/ui/CategoryPicker';
 import { NoteListSkeleton } from '@/components/ui/NoteListSkeleton';
 import { SearchBar } from '@/components/SearchBar';
@@ -63,12 +63,15 @@ export default function LibraryScreen() {
 
   // Instant keyword results on every keystroke, so search never feels
   // network-gated...
+  // Ranked from a deferred copy of the query: the field updates on every
+  // key at once, the list catches up when there's a moment.
+  const deferredQuery = useDeferredValue(searchQuery);
   const keywordResults = useMemo(
     () =>
-      searchQuery.trim()
-        ? bm25Search(searchQuery, scopedItems)
+      deferredQuery.trim()
+        ? bm25Search(deferredQuery, scopedItems)
         : [...scopedItems].sort((a, b) => b.updatedAt - a.updatedAt),
-    [searchQuery, scopedItems],
+    [deferredQuery, scopedItems],
   );
 
   // ...upgraded to the hybrid keyword + meaning ranking once it resolves,
@@ -93,6 +96,20 @@ export default function LibraryScreen() {
   }, [searchQuery, scopedItems]);
 
   const filteredItems = hybridResults ?? keywordResults;
+
+  const renderRow = useCallback(
+    ({ item, index }: { item: MnemoItem; index: number }) => (
+      <ThreadRow
+        item={item}
+        index={index}
+        last={index === filteredItems.length - 1}
+        // Only the first screenful plays the entrance; rows scrolled in just appear.
+        cell={{ first: index === 0, animate: index < 10 }}
+        onPress={() => router.push(`/(tabs)/context?id=${item.id}` as any)}
+      />
+    ),
+    [filteredItems.length],
+  );
 
   if (!isLoaded) {
     return (
@@ -165,13 +182,19 @@ export default function LibraryScreen() {
         />
       </MotiView>
 
-      {/* Results */}
-      <ScrollView
+      {/* Results: virtualized, so a big library scrolls as lightly as a small one. */}
+      <FlatList
         className="flex-1"
+        data={filteredItems}
+        keyExtractor={(item) => item.id}
+        renderItem={renderRow}
         showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+        initialNumToRender={14}
+        windowSize={7}
+        removeClippedSubviews
         contentContainerStyle={{ paddingBottom: insets.bottom + NAV_CLEARANCE }}
-      >
-        {filteredItems.length === 0 ? (
+        ListEmptyComponent={
           <MotiView {...enter.fade(0)} className="py-20 items-center px-6">
             <Icon name="layers" size={28} color={colors.fgTertiary} stroke={1.6} />
             <Text className="font-sans-medium text-body mt-4" style={{ color: colors.fg }}>
@@ -181,20 +204,8 @@ export default function LibraryScreen() {
               {searchQuery ? 'Try other words, or clear the filters.' : 'Threads you capture show up here.'}
             </Text>
           </MotiView>
-        ) : (
-          <ThreadList>
-            {filteredItems.map((item, index) => (
-              <ThreadRow
-                key={item.id}
-                item={item}
-                index={index}
-                last={index === filteredItems.length - 1}
-                onPress={() => router.push(`/(tabs)/context?id=${item.id}` as any)}
-              />
-            ))}
-          </ThreadList>
-        )}
-      </ScrollView>
+        }
+      />
     </View>
   );
 }

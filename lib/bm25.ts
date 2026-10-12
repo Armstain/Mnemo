@@ -43,17 +43,56 @@ export function tokenize(text: string): string[] {
     .map(stem);
 }
 
-function termFrequency(term: string, tokens: string[]): number {
-  let count = 0;
-  for (const t of tokens) {
-    if (t === term) count++;
-  }
-  return count;
-}
-
 export interface ScoredItem {
   doc: MnemoItem;
   score: number;
+}
+
+interface IndexedDoc {
+  /** How often each word appears. */
+  tf: Map<string, number>;
+  length: number;
+}
+
+interface Corpus {
+  docs: IndexedDoc[];
+  /** How many documents each word appears in. */
+  df: Map<string, number>;
+  avgdl: number;
+}
+
+// Tokenizing every note on every keystroke was most of a search's cost. A
+// note's words are kept until it changes (its updatedAt moves), and a list
+// of notes' word counts until the list itself changes.
+const docCache = new Map<string, { updatedAt: number; doc: IndexedDoc }>();
+const corpusCache = new WeakMap<MnemoItem[], Corpus>();
+
+function indexDoc(item: MnemoItem): IndexedDoc {
+  const cached = docCache.get(item.id);
+  if (cached && cached.updatedAt === item.updatedAt) return cached.doc;
+  const tokens = tokenize(
+    `${item.title} ${item.content} ${item.nextStep ?? ''} ${item.whereLeftOff ?? ''} ${item.tags?.join(' ') ?? ''} ${item.category}`,
+  );
+  const tf = new Map<string, number>();
+  for (const t of tokens) tf.set(t, (tf.get(t) ?? 0) + 1);
+  const doc = { tf, length: tokens.length };
+  docCache.set(item.id, { updatedAt: item.updatedAt, doc });
+  return doc;
+}
+
+function corpusOf(documents: MnemoItem[]): Corpus {
+  const cached = corpusCache.get(documents);
+  if (cached) return cached;
+  const docs = documents.map(indexDoc);
+  const df = new Map<string, number>();
+  let total = 0;
+  for (const d of docs) {
+    total += d.length;
+    for (const term of d.tf.keys()) df.set(term, (df.get(term) ?? 0) + 1);
+  }
+  const corpus = { docs, df, avgdl: total / (docs.length || 1) };
+  corpusCache.set(documents, corpus);
+  return corpus;
 }
 
 /**
@@ -64,42 +103,27 @@ export interface ScoredItem {
  * `bm25Search` below.
  */
 export function bm25Scored(query: string, documents: MnemoItem[]): ScoredItem[] {
-  const queryTerms = tokenize(query);
+  const queryTerms = [...new Set(tokenize(query))];
   if (queryTerms.length === 0) return [];
 
-  const docTokens = documents.map((doc) =>
-    tokenize(
-      `${doc.title} ${doc.content} ${doc.nextStep ?? ''} ${doc.whereLeftOff ?? ''} ${doc.tags?.join(' ') ?? ''} ${doc.category}`
-    )
-  );
-
+  const { docs, df, avgdl } = corpusOf(documents);
   const N = documents.length;
-  const avgdl =
-    docTokens.reduce((sum, tokens) => sum + tokens.length, 0) / (N || 1);
+  const idf = new Map(queryTerms.map((term) => {
+    const ni = df.get(term) ?? 0;
+    return [term, Math.log((N - ni + 0.5) / (ni + 0.5) + 1)] as const;
+  }));
 
-  const idf = (term: string): number => {
-    const ni = docTokens.filter((tokens) => tokens.includes(term)).length;
-    return Math.log((N - ni + 0.5) / (ni + 0.5) + 1);
-  };
-
-  const scored = documents.map((doc, i) => {
-    const tokens = docTokens[i];
-    const dl = tokens.length;
+  const scored: ScoredItem[] = [];
+  docs.forEach((d, i) => {
     let score = 0;
-
     for (const term of queryTerms) {
-      const tf = termFrequency(term, tokens);
-      if (tf === 0) continue;
-      const termIdf = idf(term);
-      score +=
-        termIdf *
-        ((tf * (K1 + 1)) / (tf + K1 * (1 - B + B * (dl / avgdl))));
+      const tf = d.tf.get(term);
+      if (!tf) continue;
+      score += idf.get(term)! * ((tf * (K1 + 1)) / (tf + K1 * (1 - B + B * (d.length / avgdl))));
     }
-
-    return { doc, score };
+    if (score > 0) scored.push({ doc: documents[i], score });
   });
-
-  return scored.filter(({ score }) => score > 0).sort((a, b) => b.score - a.score);
+  return scored.sort((a, b) => b.score - a.score);
 }
 
 /**

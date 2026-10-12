@@ -1,5 +1,5 @@
-import { embedText, fromBlob, dot } from '@/lib/embeddings';
-import { getAllEmbeddings } from '@/lib/db';
+import { embedText, dot } from '@/lib/embeddings';
+import { getVectors } from '@/lib/db';
 import { bm25Scored, tokenize } from '@/lib/bm25';
 import { telling } from '@/lib/filing';
 import type { MnemoItem } from '@/types/mnemo';
@@ -37,16 +37,15 @@ const QUERY_MIN_SIMILARITY = 0.65;
  * that case, same as the rest of the AI layer's contract.
  */
 async function vectorRank(query: string, items: MnemoItem[]): Promise<MnemoItem[]> {
-  const rows = await getAllEmbeddings();
-  if (rows.length === 0) return [];
+  const vectors = await getVectors();
+  if (vectors.size === 0) return [];
 
-  const byId = new Map(items.map((item) => [item.id, item]));
   const queryVector = await embedText(query, 'RETRIEVAL_QUERY');
 
-  return rows
-    .map((row) => {
-      const item = byId.get(row.itemId);
-      return item ? { doc: item, score: dot(queryVector, fromBlob(row.vector)) } : null;
+  return items
+    .map((item) => {
+      const vector = vectors.get(item.id);
+      return vector ? { doc: item, score: dot(queryVector, vector) } : null;
     })
     .filter((x): x is { doc: MnemoItem; score: number } => x !== null && x.score >= QUERY_MIN_SIMILARITY)
     .sort((a, b) => b.score - a.score)
@@ -122,21 +121,19 @@ export async function relatedThreads(
 ): Promise<RelatedThread[]> {
   try {
     const self = items.find((i) => i.id === itemId);
-    const rows = await getAllEmbeddings();
-    const selfRow = rows.find((r) => r.itemId === itemId);
     if (!self) return [];
-    if (!selfRow) return relatedByWords(self, items, limit);
+    const vectors = await getVectors();
+    const selfVector = vectors.get(itemId);
+    if (!selfVector) return relatedByWords(self, items, limit);
 
-    const selfVector = fromBlob(selfRow.vector);
     const selfTags = new Set(self.tags.map((t) => t.toLowerCase()));
-    const byId = new Map(items.map((item) => [item.id, item]));
     const found: (RelatedThread & { score: number })[] = [];
 
-    for (const row of rows) {
-      if (row.itemId === itemId) continue;
-      const item = byId.get(row.itemId);
-      if (!item || item.status === 'archived') continue;
-      const score = dot(selfVector, fromBlob(row.vector));
+    for (const item of items) {
+      if (item.id === itemId || item.status === 'archived') continue;
+      const vector = vectors.get(item.id);
+      if (!vector) continue;
+      const score = dot(selfVector, vector);
       const shared = item.tags.filter((t) => selfTags.has(t.toLowerCase()));
       if (shared.length > 0 && score >= RELATED_WITH_TAG) {
         found.push({ item, score, reason: `Also tagged ${shared.slice(0, 2).map((t) => `#${t}`).join(' ')}` });

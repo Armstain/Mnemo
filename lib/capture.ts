@@ -11,12 +11,11 @@ import { classifyAiError, onApiKeyChanged } from '@/lib/api-key';
 import {
   embedText,
   embeddableText,
-  fromBlob,
   toBlob,
   EMBEDDING_MODEL,
   EMBEDDING_DIMS,
 } from '@/lib/embeddings';
-import { getAllEmbeddings, upsertEmbedding } from '@/lib/db';
+import { getVectors, upsertEmbedding } from '@/lib/db';
 import type { Block, Category, ChecklistItem, Entry, Filing, MnemoItem } from '@/types/mnemo';
 import type { CaptureStore } from '@/hooks/use-mnemo-store';
 import { buildBlocks } from '@/lib/threads';
@@ -457,8 +456,8 @@ async function structure(entry: PendingEntry, store: CaptureStore): Promise<void
       try {
         const vector = await embedText(processed.notes, 'RETRIEVAL_DOCUMENT');
         const ids = new Set(candidates.map((c) => c.id));
-        const rows = (await getAllEmbeddings()).filter((r) => ids.has(r.itemId));
-        similarity = similarityTo(vector, new Map(rows.map((r) => [r.itemId, fromBlob(r.vector)])));
+        const all = await getVectors();
+        similarity = similarityTo(vector, new Map([...ids].flatMap((id) => (all.has(id) ? [[id, all.get(id)!] as const] : []))));
       } catch {
         // Offline or not embedded yet: the model's answer stands alone.
       }
