@@ -109,7 +109,15 @@ export default function LibraryScreen() {
     };
   }, [words, inPeriod, ai]);
 
-  const filteredItems = hybridResults ?? keywordResults;
+  // A thread behind a total is a result even when its words don't match
+  // ("spent" adds up amounts whose label is "lunch").
+  const filteredItems = useMemo(() => {
+    const ranked = hybridResults ?? keywordResults;
+    const fromTotals = new Set(totals.flatMap((t) => t.threadIds));
+    if (fromTotals.size === 0) return ranked;
+    const shown = new Set(ranked.map((i) => i.id));
+    return [...ranked, ...inPeriod.filter((i) => fromTotals.has(i.id) && !shown.has(i.id))];
+  }, [hybridResults, keywordResults, totals, inPeriod]);
 
   const renderRow = useCallback(
     ({ item, index }: { item: MnemoItem; index: number }) => (

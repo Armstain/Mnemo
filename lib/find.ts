@@ -146,6 +146,8 @@ export interface Total {
   total: number;
   count: number;
   threads: number;
+  /** The threads these numbers came from. */
+  threadIds: string[];
 }
 
 /**
@@ -163,7 +165,7 @@ export function totalsFor(query: string, entries: Entry[], period?: Period): Tot
         for (const m of block.items) for (const w of tokenize(`${m.label ?? ''} ${m.metric} ${m.group ?? ''}`)) named.add(w);
   const terms = tokenize(query).filter((t) => named.has(t));
   if (terms.length === 0) return [];
-  const groups = new Map<string, Total & { threadIds: Set<string> }>();
+  const groups = new Map<string, Omit<Total, 'threadIds'> & { threadIds: Set<string> }>();
   for (const entry of entries) {
     if (period && (entry.createdAt < period.from || entry.createdAt >= period.to)) continue;
     for (const block of entry.blocks) {
@@ -193,7 +195,7 @@ export function totalsFor(query: string, entries: Entry[], period?: Period): Tot
   return [...groups.values()]
     .sort((a, b) => b.count - a.count)
     .slice(0, 3)
-    .map(({ threadIds: _, ...t }) => ({ ...t, total: Math.round(t.total * 100) / 100 }));
+    .map((t) => ({ ...t, threadIds: [...t.threadIds], total: Math.round(t.total * 100) / 100 }));
 }
 
 /** Entries of one thread that contain every word searched for (any order, word starts count). */

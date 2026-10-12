@@ -19,6 +19,7 @@ describe('finding', () => {
   it('totals across threads, by time, ignoring question words', () => {
     const entries = [entry('1', 'a', now - 864e5, [spent(1500, 'CNG'), spent(200, 'lunch')]), entry('2', 'b', now - 20 * 864e5, [spent(800, 'cng')])];
     expect(totalsFor('cng', entries)[0]).toMatchObject({ total: 2300, count: 2, threads: 2 });
+    expect(totalsFor('spent', entries)[0].threadIds.sort()).toEqual(['a', 'b']);
     expect(totalsFor('cng', entries, readPeriod('this week', now).period)[0]).toMatchObject({ total: 1500 });
     expect(totalsFor('how much did I spend on cng', entries)[0]).toMatchObject({ total: 2300 });
     expect(totalsFor('weight', [entry('3', 'c', now, [{ metric: 'weight', value: 70, unit: 'kg', rollup: 'latest' }])])).toEqual([]);
