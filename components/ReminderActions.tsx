@@ -37,22 +37,35 @@ export function ReminderActions() {
       const key = `${identifier}|${response.notification.date}|${response.actionIdentifier}`;
       if (handled.current.has(key)) return;
       handled.current.add(key);
+      // Handled once: a later remount (or relaunch) mustn't replay it, which
+      // for a reply would add the same note twice.
+      Notifications.clearLastNotificationResponseAsync?.().catch(() => {});
 
-      // The weekly review notification opens the review.
+      // The weekly review notification opens the review (once, if it's already open).
       if (content.data?.route === '/review') {
-        router.push('/review' as any);
+        router.navigate('/review' as any);
         return;
       }
 
       const itemId = typeof content.data?.itemId === 'string' ? content.data.itemId : identifier;
       const s = storeRef.current;
       const item = s.getThread(itemId);
-      if (!item) return;
-      Notifications.dismissNotificationAsync(response.notification.request.identifier).catch(() => {});
+      const text = response.actionIdentifier === 'reply' ? response.userText?.trim() : undefined;
+      Notifications.dismissNotificationAsync(identifier).catch(() => {});
+      if (!item) {
+        // The thread was deleted after the notification went out. Whatever
+        // was typed is still kept, as a note of its own.
+        if (text) {
+          const saved = saveTextNote({ text, category: 'general', store: s });
+          showToast({ message: "That thread is gone, so it's saved as a new note" });
+          router.push(`/(tabs)/context?id=${saved.threadId}` as any);
+        }
+        return;
+      }
 
       if (response.actionIdentifier === 'reply') {
-        // What was typed into the notification goes into the thread.
-        const text = response.userText?.trim();
+        // What was typed into the notification goes into the thread; with
+        // nothing typed, it just opens it.
         if (text) {
           saveTextNote({ text, category: item.category, threadId: item.id, filing: { by: 'user' }, store: s });
           showToast({ message: `Added to ${item.title}` });

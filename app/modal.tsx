@@ -51,6 +51,7 @@ import {
   type NudgePrefs,
   type NudgeTime,
 } from '@/lib/nudges';
+import { reviewTimeLabel, scheduleWeeklyReview } from '@/lib/review-notice';
 import {
   getActiveApiKey,
   getApiKeySource,
@@ -69,7 +70,7 @@ const NUDGE_TIME_KEYS = Object.keys(NUDGE_TIMES) as NudgeTime[];
 
 function NudgeSettingsCard() {
   const colors = useThemeColors();
-  const { items } = useMnemoStore();
+  const { items, entries } = useMnemoStore();
   const [prefs, setPrefs] = useState<NudgePrefs | null>(null);
   const [granted, setGranted] = useState(false);
   // Set once a turn-on attempt comes back refused — at that point only
@@ -86,6 +87,7 @@ function NudgeSettingsCard() {
     setPrefs(next);
     await saveNudgePrefs(next);
     scheduleNudges(items);
+    scheduleWeeklyReview(items, entries);
   };
 
   const handleToggle = async (on: boolean) => {
@@ -143,6 +145,25 @@ function NudgeSettingsCard() {
               {NUDGE_TIMES[key].label}
             </Pill>
           ))}
+        </View>
+      )}
+
+      {isOn && (
+        <View className="flex-row items-center justify-between pt-4 border-t border-border/50">
+          <View className="flex-1 mr-3">
+            <Text className="font-sans-semi text-sm text-fg">Weekly review</Text>
+            <Text className="font-sans text-sm text-fg-secondary mt-0.5">
+              {reviewTimeLabel()}: your week, what's due and what went quiet.
+            </Text>
+          </View>
+          <Switch
+            value={prefs.weekly}
+            onValueChange={(weekly) => apply({ ...prefs, weekly })}
+            accessibilityLabel="Weekly review"
+            trackColor={{ false: colors.border, true: colors.accent }}
+            thumbColor={Platform.OS === 'android' ? colors.surfaceLowest : undefined}
+            ios_backgroundColor={colors.border}
+          />
         </View>
       )}
 

@@ -17,7 +17,7 @@ export interface ThreadWrap {
   photos: number;
   links: number;
   stepsDone: number;
-  /** Next steps never ticked off, newest first. */
+  /** Next steps never ticked off and unticked list items, newest first. */
   openSteps: string[];
   numbers: MetricSummary[];
 }
@@ -28,15 +28,28 @@ function dayOf(ts: number): number {
   return d.getTime();
 }
 
+/**
+ * What's still to do in a thread: its next step, steps notes gave that were
+ * never ticked off, and unticked list items. Newest first, no repeats.
+ */
+export function openStepsOf(entries: Entry[], thread?: Pick<MnemoItem, 'nextStep'>): string[] {
+  const steps: string[] = thread?.nextStep ? [thread.nextStep] : [];
+  for (const e of [...entries].sort((a, b) => b.createdAt - a.createdAt)) {
+    if (e.nextStep && !e.stepDone) steps.push(e.nextStep);
+    for (const b of e.blocks) if (b.kind === 'checklist') steps.push(...b.items.filter((i) => !i.checked).map((i) => i.text));
+  }
+  const seen = new Set<string>();
+  return steps
+    .map((s) => s.trim())
+    .filter((s) => s && !seen.has(s.toLowerCase()) && seen.add(s.toLowerCase()));
+}
+
 export function wrapThread(thread: MnemoItem, entries: Entry[]): ThreadWrap {
   const mine = entries.filter((e) => e.threadId === thread.id);
   const times = mine.map((e) => e.createdAt);
   const from = Math.min(thread.createdAt, ...times);
   const to = Math.max(thread.createdAt, ...times);
   const blocks = mine.flatMap((e) => e.blocks);
-  const open = [...mine]
-    .sort((a, b) => b.createdAt - a.createdAt)
-    .flatMap((e) => (e.nextStep && !e.stepDone ? [e.nextStep] : []));
   return {
     from,
     to,
@@ -46,18 +59,24 @@ export function wrapThread(thread: MnemoItem, entries: Entry[]): ThreadWrap {
     photos: blocks.filter((b) => b.kind === 'image').length,
     links: blocks.filter((b) => b.kind === 'link').length,
     stepsDone: mine.filter((e) => e.nextStep && e.stepDone).length,
-    openSteps: [...new Set(open)],
+    openSteps: openStepsOf(mine, thread),
     numbers: summarizeMeasures(mine),
   };
 }
 
-/** "Oct 9 – 12" / "Oct 30 – Nov 2" / "Oct 9". */
-export function spanLabel(from: number, to: number): string {
+/**
+ * "Oct 9 – 12" / "Oct 30 – Nov 2" / "Oct 9", with the year when it isn't
+ * this one: "Dec 28, 2025 – Jan 3, 2026", "Mar 3 – 9, 2025".
+ */
+export function spanLabel(from: number, to: number, now = Date.now()): string {
   const a = new Date(from), b = new Date(to);
   const month = (d: Date) => d.toLocaleDateString('en-US', { month: 'short' });
-  if (dayOf(from) === dayOf(to)) return `${month(a)} ${a.getDate()}`;
-  if (a.getMonth() === b.getMonth() && a.getFullYear() === b.getFullYear()) return `${month(a)} ${a.getDate()} – ${b.getDate()}`;
-  return `${month(a)} ${a.getDate()} – ${month(b)} ${b.getDate()}`;
+  const thisYear = new Date(now).getFullYear();
+  const sameYear = a.getFullYear() === b.getFullYear();
+  const year = (d: Date) => (sameYear && d.getFullYear() === thisYear ? '' : `, ${d.getFullYear()}`);
+  if (dayOf(from) === dayOf(to)) return `${month(a)} ${a.getDate()}${year(a)}`;
+  if (sameYear && a.getMonth() === b.getMonth()) return `${month(a)} ${a.getDate()} – ${b.getDate()}${year(b)}`;
+  return `${month(a)} ${a.getDate()}${sameYear ? '' : year(a)} – ${month(b)} ${b.getDate()}${year(b)}`;
 }
 
 /** The headline figure of a tracked number, as its card shows it. */

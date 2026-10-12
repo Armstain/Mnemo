@@ -21,6 +21,8 @@ export type NudgeTime = 'morning' | 'midday' | 'evening';
 export interface NudgePrefs {
   enabled: boolean;
   time: NudgeTime;
+  /** The weekly review notification (lib/review-notice.ts), under the same switch. */
+  weekly: boolean;
 }
 
 export const NUDGE_TIMES: Record<NudgeTime, { label: string; hour: number; minute: number }> = {
@@ -29,7 +31,7 @@ export const NUDGE_TIMES: Record<NudgeTime, { label: string; hour: number; minut
   evening: { label: 'Evening · 18:00', hour: 18, minute: 0 },
 };
 
-const DEFAULT_PREFS: NudgePrefs = { enabled: true, time: 'morning' };
+const DEFAULT_PREFS: NudgePrefs = { enabled: true, time: 'morning', weekly: true };
 
 const PREFS_KEY = 'mnemo-nudge-prefs';
 const STATE_KEY = 'mnemo-nudge-state';
@@ -73,6 +75,7 @@ export async function loadNudgePrefs(): Promise<NudgePrefs> {
       return {
         enabled: parsed.enabled !== false,
         time: parsed.time in NUDGE_TIMES ? parsed.time : DEFAULT_PREFS.time,
+        weekly: parsed.weekly !== false,
       };
     }
   } catch {
@@ -107,7 +110,7 @@ async function loadState(): Promise<NudgeState> {
 
 // ─── Permission ─────────────────────────────────────────────────
 
-async function ensureAndroidChannel(): Promise<void> {
+export async function ensureAndroidChannel(): Promise<void> {
   if (Platform.OS !== 'android') return;
   await Notifications.setNotificationChannelAsync(ANDROID_CHANNEL_ID, {
     name: 'Gentle nudges',

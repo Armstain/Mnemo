@@ -12,7 +12,7 @@ import { Eyebrow } from '@/components/ui/Eyebrow';
 import { ThreadList, ThreadRow } from '@/components/ui/ThreadRow';
 import { OpenRing, ThreadRing } from '@/components/ui/ThreadRing';
 import { formatReminder, resumeOrder } from '@/lib/when';
-import { weekReview } from '@/lib/review';
+import { shortLine, weekReview } from '@/lib/review';
 import { CONTENT_BOTTOM_CLEARANCE } from '@/components/ui/FloatingTabBar';
 import { useMnemoStore } from '@/hooks/use-mnemo-store';
 import { useThemeColors } from '@/hooks/use-theme';
@@ -134,16 +134,7 @@ export function PulseHome() {
   const aiProblem = useAiProblem();
   const insets = useSafeAreaInsets();
   const { items, entries, getActiveItems, focusThreadId, setFocusThread } = useMnemoStore();
-  const weekLine = React.useMemo(() => {
-    const r = weekReview(items, entries);
-    const open = r.due.length + r.steps.length;
-    const parts = [
-      r.notes > 0 ? `${r.notes} ${r.notes === 1 ? 'note' : 'notes'}` : '',
-      open > 0 ? `${open} ${open === 1 ? 'step' : 'steps'} open` : '',
-      r.quiet.length > 0 ? `${r.quiet.length} quiet` : '',
-    ].filter(Boolean);
-    return parts.join(' · ');
-  }, [items, entries]);
+  const weekLine = React.useMemo(() => shortLine(weekReview(items, entries)), [items, entries]);
   const focusThread = focusThreadId ? items.find((i) => i.id === focusThreadId) : undefined;
   const colors = useThemeColors();
   const categories = useCategories();

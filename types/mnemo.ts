@@ -60,6 +60,10 @@ export interface MnemoItem {
   repeat?: 'daily' | 'weekly' | 'monthly';
   /** Kept at the top of Home's "pick up where you left off". */
   starred?: boolean;
+  /** When it was marked done (kept if it's reopened, replaced if it's done again). */
+  completedAt?: number;
+  /** "Still on it": don't call this thread quiet before then. */
+  quietUntil?: number;
 
   /** Optional due date as Unix timestamp (ms). */
   dueDate?: number;

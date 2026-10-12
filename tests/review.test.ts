@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { reviewLine, weekReview } from '@/lib/review';
-import { spanLabel, wrapText, wrapThread } from '@/lib/wrapup';
+import { openStepsOf, spanLabel, wrapText, wrapThread } from '@/lib/wrapup';
+import { quietDays, shortLine } from '@/lib/review';
 
 const now = new Date('2026-10-12T10:00:00').getTime();
 const D = 864e5;
@@ -33,7 +34,7 @@ describe('weekly review', () => {
     expect(r.threadsTouched).toBe(3);
   });
   it('due first, then steps without a reminder', () => {
-    expect(r.due.map((t: { id: string }) => t.id)).toEqual(['pitch']);
+    expect(r.due.map((d) => [d.item.id, d.missed])).toEqual([['pitch', false]]);
     expect(r.steps.map((t: { id: string }) => t.id)).toEqual(['trip']);
   });
   it('quiet: a week or more, not forgotten, not paused', () => {
@@ -52,8 +53,72 @@ describe('weekly review', () => {
   it('finished this week', () => {
     expect(r.finished.map((t: { id: string }) => t.id)).toEqual(['done']);
   });
+  it('seven calendar days ending today, notes per day', () => {
+    expect(new Date(r.from).toString()).toContain('Oct 06 2026 00:00');
+    expect(r.days).toHaveLength(7);
+    expect(r.days.map((d) => d.notes)).toEqual([0, 0, 0, 1, 2, 1, 0]);
+    expect(r.days.reduce((n, d) => n + d.notes, 0)).toBe(r.notes);
+  });
+  it('home line', () => {
+    expect(shortLine(r)).toBe('4 notes · 2 steps open · 1 quiet');
+    expect(shortLine(weekReview([], [], now))).toBe('');
+  });
   it('one line for the notification', () => {
     expect(reviewLine(r, (t) => `${t.metric} ${t.total}`)).toBe('4 notes in 3 threads, spent 5000, 2 steps open, 1 gone quiet.');
+  });
+});
+
+describe('edge cases', () => {
+  it('a missed reminder is listed as missed; a month-old one is just quiet', () => {
+    const r = weekReview(
+      [thread('call', { dueDate: now - 2 * D, updatedAt: now - 10 * D }), thread('ancient', { dueDate: now - 40 * D, updatedAt: now - 45 * D })],
+      [],
+      now,
+    );
+    expect(r.due.map((d) => [d.item.id, d.missed])).toEqual([['call', true]]);
+    expect(r.quiet.map((q) => q.item.id)).toEqual(['ancient']);
+  });
+  it('a repeating reminder is never missed, and never quiet', () => {
+    const plants = thread('plants', { dueDate: now - 13 * D, repeat: 'weekly', updatedAt: now - 20 * D });
+    const r = weekReview([plants], [], now);
+    expect(r.due.map((d) => [d.item.id, d.missed, d.at - now])).toEqual([['plants', false, D]]);
+    expect(quietDays(plants, [], now)).toBeNull();
+  });
+  it('waiting on a reminder later than a week: not quiet, not due', () => {
+    const r = weekReview([thread('visa', { dueDate: now + 20 * D, updatedAt: now - 15 * D })], [], now);
+    expect([r.due.length, r.quiet.length]).toEqual([0, 0]);
+  });
+  it('"still on it" holds the question off until then', () => {
+    const t = thread('shed', { updatedAt: now - 12 * D, quietUntil: now + 5 * D });
+    expect(quietDays(t, [], now)).toBeNull();
+    expect(quietDays(t, [], now + 6 * D)).toBe(18);
+  });
+  it('paused and pending threads are never quiet', () => {
+    expect(quietDays(thread('p', { status: 'paused', updatedAt: now - 20 * D }), [], now)).toBeNull();
+    expect(quietDays(thread('q', { pending: true, updatedAt: now - 20 * D }), [], now)).toBeNull();
+  });
+  it('a recent note keeps a thread from being quiet', () => {
+    const t = thread('shed', { updatedAt: now - 12 * D });
+    expect(quietDays(t, [entry('x', 'shed', now - 2 * D)], now)).toBeNull();
+  });
+  it('finished means finished this week, not edited this week', () => {
+    const r = weekReview(
+      [
+        thread('renamed', { status: 'completed', completedAt: now - 90 * D, updatedAt: now - 1 * D }),
+        thread('legacy', { status: 'completed', updatedAt: now - 1 * D }),
+        thread('reopened', { status: 'active', completedAt: now - 1 * D, updatedAt: now - 1 * D }),
+      ],
+      [],
+      now,
+    );
+    expect(r.finished.map((t: { id: string }) => t.id)).toEqual(['legacy']);
+  });
+  it('steps done this week', () => {
+    const r = weekReview([], [entry('s', 'x', now - 9 * D, { nextStep: 'Call', stepDone: true, updatedAt: now - D }), entry('o', 'x', now - 9 * D, { nextStep: 'Old', stepDone: true, updatedAt: now - 9 * D })], now);
+    expect(r.stepsDone).toBe(1);
+  });
+  it('a quiet week says so', () => {
+    expect(reviewLine(weekReview([], [], now), () => '')).toBe('A quiet week. Anything to pick back up?');
   });
 });
 
@@ -66,7 +131,7 @@ describe('wrapping up a thread', () => {
   ];
   const w = wrapThread(t, entries);
   it('span, counts and steps', () => {
-    expect(spanLabel(w.from, w.to)).toBe('Oct 9 – 12');
+    expect(spanLabel(w.from, w.to, now)).toBe('Oct 9 – 12');
     expect([w.days, w.entries, w.voice, w.photos, w.stepsDone]).toEqual([4, 3, 1, 1, 1]);
     expect(w.openSteps).toEqual(['Send photos to Rumi']);
     expect(w.numbers[0]).toMatchObject({ metric: 'spent', total: 5000 });
@@ -77,7 +142,23 @@ describe('wrapping up a thread', () => {
     expect(text).toContain('Spent: ৳5,000');
     expect(text).toContain('Still open: Send photos to Rumi');
   });
-  it('months apart', () => {
-    expect(spanLabel(new Date('2026-10-30').getTime(), new Date('2026-11-02').getTime())).toBe('Oct 30 – Nov 2');
+  it('months and years apart', () => {
+    const at = (d: string) => new Date(`${d}T12:00`).getTime();
+    expect(spanLabel(at('2026-10-30'), at('2026-11-02'), now)).toBe('Oct 30 – Nov 2');
+    expect(spanLabel(at('2025-12-28'), at('2026-01-03'), now)).toBe('Dec 28, 2025 – Jan 3, 2026');
+    expect(spanLabel(at('2025-03-03'), at('2025-03-09'), now)).toBe('Mar 3 – 9, 2025');
+    expect(spanLabel(at('2025-03-03'), at('2025-03-03'), now)).toBe('Mar 3, 2025');
+  });
+  it('open steps: next step, unticked steps and list items, once each', () => {
+    const list = { kind: 'checklist', items: [{ id: '1', text: 'Buy paint', checked: false }, { id: '2', text: 'Sand', checked: true }, { id: '3', text: 'send photos to rumi', checked: false }] };
+    expect(openStepsOf([entries[2], entry('d', 'trip', now, { blocks: [list] })], { nextStep: 'Pay the hotel' })).toEqual([
+      'Pay the hotel',
+      'Buy paint',
+      'send photos to rumi',
+    ]);
+  });
+  it('a thread with no notes', () => {
+    const empty = wrapThread(thread('blank', { createdAt: now }), []);
+    expect([empty.entries, empty.days, empty.openSteps.length]).toEqual([0, 1, 0]);
   });
 });

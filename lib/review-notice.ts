@@ -1,7 +1,7 @@
 import { Platform } from 'react-native';
 
 import { formatValue } from '@/lib/measures';
-import { hasNudgePermission, loadNudgePrefs } from '@/lib/nudges';
+import { ensureAndroidChannel, hasNudgePermission, loadNudgePrefs } from '@/lib/nudges';
 import { Notifications } from '@/lib/notifications';
 import { reviewLine, weekReview } from '@/lib/review';
 import type { Entry, MnemoItem } from '@/types/mnemo';
@@ -23,6 +23,11 @@ function inBangladesh(): boolean {
   }
 }
 
+/** When the weekly review notification goes out, for Settings to say. */
+export function reviewTimeLabel(bangladesh = inBangladesh()): string {
+  return bangladesh ? 'Fridays at 10:00' : 'Sundays at 18:00';
+}
+
 /** The next weekly review time after `now`. */
 export function nextReviewAt(now = Date.now(), bangladesh = inBangladesh()): number {
   const [weekday, hour] = bangladesh ? [5, 10] : [0, 18]; // Friday 10:00 or Sunday 18:00
@@ -40,8 +45,10 @@ export async function scheduleWeeklyReview(items: MnemoItem[], entries: Entry[])
   try {
     await Notifications.cancelScheduledNotificationAsync(ID);
     const prefs = await loadNudgePrefs();
-    if (!prefs.enabled || !(await hasNudgePermission())) return;
+    if (!prefs.enabled || !prefs.weekly || !(await hasNudgePermission())) return;
+    // Nothing open and nothing written lately: there's no week to look back on.
     if (!items.some((t) => t.status === 'active' || t.status === 'paused')) return;
+    await ensureAndroidChannel();
     const at = nextReviewAt();
     // What the review will show then: this is close enough, and it's
     // re-planned every time the app is used.
