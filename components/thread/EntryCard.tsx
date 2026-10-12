@@ -1,5 +1,7 @@
 import React from 'react';
-import { Pressable, Text, TextInput, View } from 'react-native';
+import { Platform, Pressable, View } from 'react-native';
+import { TextInput } from '@/components/ui/TextInput';
+import { Text } from '@/components/ui/Text';
 import Markdown from 'react-native-markdown-display';
 
 import { Button, IconButton } from '@/components/ui/Button';
@@ -12,6 +14,7 @@ import { useMnemoStore } from '@/hooks/use-mnemo-store';
 import { useUndoToast } from '@/hooks/use-undo-toast';
 import { isStructuring } from '@/lib/capture';
 import { useAiProblem } from '@/lib/ai-mode';
+import { entryText } from '@/lib/threads';
 import { useThemeColors, type ThemeColors } from '@/hooks/use-theme';
 import { formatEntryTime } from '@/utils/time';
 import { noFocusRing } from '@/utils/web';
@@ -24,14 +27,22 @@ const SOURCE: Record<Entry['source'], { label: string; icon: IconName }> = {
 };
 
 /** Markdown styles matched to the app's type scale and palette. */
-export function useMarkdownStyles() {
+export function useMarkdownStyles(bangla = false) {
   const colors = useThemeColors();
-  return React.useMemo(() => markdownStyles(colors), [colors]);
+  return React.useMemo(() => markdownStyles(colors, bangla), [colors, bangla]);
 }
 
-function markdownStyles(colors: ThemeColors) {
+// The web falls back letter by letter; phones need the Bangla face named.
+const BODY_FONT = Platform.OS === 'web' ? 'InstrumentSans_400Regular, NotoSansBengali_400Regular' : 'InstrumentSans_400Regular';
+
+function markdownStyles(colors: ThemeColors, bangla: boolean) {
   return {
-    body: { color: colors.fg, fontSize: 15, lineHeight: 23, fontFamily: 'InstrumentSans_400Regular' },
+    body: {
+      color: colors.fg,
+      fontSize: 15,
+      lineHeight: bangla ? 24 : 23,
+      fontFamily: bangla && Platform.OS !== 'web' ? 'NotoSansBengali_400Regular' : BODY_FONT,
+    },
     paragraph: { marginTop: 0, marginBottom: 8 },
     heading1: { color: colors.fg, fontSize: 20, fontWeight: '600' as const, marginTop: 4, marginBottom: 6 },
     heading2: { color: colors.fg, fontSize: 17, fontWeight: '600' as const, marginTop: 4, marginBottom: 6 },
@@ -127,7 +138,7 @@ export function EntryCard({
   onDeleted?: (threadRemoved: boolean) => void;
 }) {
   const colors = useThemeColors();
-  const md = useMarkdownStyles();
+  const md = useMarkdownStyles(/[\u0980-\u09FF]/.test(entryText(entry)));
   const { updateEntry, deleteEntry, undoDeleteEntry, getThread } = useMnemoStore();
   const { showUndoToast } = useUndoToast();
   const aiProblem = useAiProblem();

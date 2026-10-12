@@ -1,5 +1,8 @@
 import React, { useState, useRef } from 'react';
-import { View, Text, TextInput, Pressable } from 'react-native';
+import { View, Pressable } from 'react-native';
+import { TextInput } from '@/components/ui/TextInput';
+import type { TextInput as RNTextInput } from 'react-native';
+import { Text } from '@/components/ui/Text';
 import * as Haptics from 'expo-haptics';
 import { useThemeColors } from '@/hooks/use-theme';
 import { useStatusConfig } from '@/utils/categories';
@@ -28,7 +31,7 @@ export function ChecklistEditor({
   compact = false,
 }: ChecklistEditorProps) {
   const [newItemText, setNewItemText] = useState('');
-  const inputRef = useRef<TextInput>(null);
+  const inputRef = useRef<RNTextInput>(null);
   const colors = useThemeColors();
   const statusColors = useStatusConfig();
 

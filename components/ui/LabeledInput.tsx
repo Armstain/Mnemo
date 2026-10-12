@@ -1,5 +1,6 @@
 import React from 'react';
-import { TextInput, View } from 'react-native';
+import { View } from 'react-native';
+import { TextInput } from '@/components/ui/TextInput';
 
 import { Eyebrow } from '@/components/ui/Eyebrow';
 import { useThemeColors } from '@/hooks/use-theme';

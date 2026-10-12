@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { TextInput, Pressable } from 'react-native';
+import { Pressable } from 'react-native';
+import { TextInput } from '@/components/ui/TextInput';
 import { MotiView } from 'moti';
 
 import { Icon } from '@/components/ui/Icon';

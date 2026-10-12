@@ -1,5 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { View, Text, Alert, ScrollView, TextInput, KeyboardAvoidingView, Platform } from 'react-native';
+import { View, Alert, ScrollView, KeyboardAvoidingView, Platform } from 'react-native';
+import { TextInput } from '@/components/ui/TextInput';
+import { Text } from '@/components/ui/Text';
 import { router, useLocalSearchParams } from 'expo-router';
 import { MotiView } from 'moti';
 import * as Haptics from 'expo-haptics';

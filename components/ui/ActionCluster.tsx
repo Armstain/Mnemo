@@ -4,10 +4,10 @@ import {
   GestureResponderEvent,
   Pressable,
   StyleSheet,
-  Text,
   useWindowDimensions,
   View,
 } from 'react-native';
+import { Text } from '@/components/ui/Text';
 import { MotiView, AnimatePresence } from 'moti';
 import Animated, {
   Easing,

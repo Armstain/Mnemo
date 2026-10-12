@@ -357,8 +357,11 @@ function readNextStep(text: string): { step?: string; sentence?: string } {
   for (const sentence of sentences(text)) {
     if (!isIntent(sentence)) continue;
     // "Met them today, need to send the quote": just the part that's a step.
-    const part = sentence.split(/,\s*|;\s*/).find((p) => isIntent(p) && p.trim().split(/\s+/).length >= 2);
-    const step = cleanStep(part ?? sentence);
+    // A step that introduces a list ("buy for home: rice, lentils") ends at the colon.
+    const colon = sentence.split(/:\s/)[0];
+    const head = isIntent(colon) ? colon : sentence;
+    const part = head.split(/,\s*|;\s*/).find((p) => isIntent(p) && p.trim().split(/\s+/).length >= 2);
+    const step = cleanStep(part ?? head);
     if (step.length >= 3) return { step, sentence: part ?? sentence };
   }
   return {};
@@ -573,7 +576,7 @@ function readTitle(text: string, items: ChecklistItem[]): string {
   let title = multiLine && firstLine.length <= 60 ? firstLine : sentences(text)[0] ?? '';
   // "Lisbon trip: dinner €40, …" is about the Lisbon trip.
   const head = title.match(/^([^:]{2,40}):\s*\S/);
-  if (head && head[1].trim().split(/\s+/).length <= 4) title = head[1];
+  if (head && head[1].trim().split(/\s+/).length <= 6) title = head[1];
   title = trimEnd(title.replace(/^#+\s*/, '').replace(TITLE_LEAD, '').replace(LEAD_INS, ''));
   // A title is no place for a link or a hashtag.
   title = title.replace(/\b(?:https?:\/\/|www\.)\S+/gi, '').replace(/(?:^|\s)#\S+/g, '').trim();

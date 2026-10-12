@@ -1,6 +1,8 @@
 import { StatusBar } from 'expo-status-bar';
 import { useEnter } from '@/utils/motion';
-import { View, Text, ScrollView, Pressable, TextInput, ActivityIndicator, Alert, Platform, Switch, Linking } from 'react-native';
+import { View, ScrollView, Pressable, ActivityIndicator, Alert, Platform, Switch, Linking } from 'react-native';
+import { TextInput } from '@/components/ui/TextInput';
+import { Text } from '@/components/ui/Text';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import * as SecureStore from 'expo-secure-store';

@@ -1,5 +1,6 @@
 import React from 'react';
-import { View, Pressable, Text, StyleSheet } from 'react-native';
+import { View, Pressable, StyleSheet } from 'react-native';
+import { Text } from '@/components/ui/Text';
 import { Bold, ListChecks, Type } from 'lucide-react-native';
 import { MotiView } from 'moti';
 

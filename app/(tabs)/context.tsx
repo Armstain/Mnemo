@@ -1,16 +1,16 @@
 import React from 'react';
 import {
   View,
-  Text,
   Pressable,
   ScrollView,
   ActivityIndicator,
   Share,
-  TextInput,
   Alert,
   KeyboardAvoidingView,
   Platform,
 } from 'react-native';
+import { TextInput } from '@/components/ui/TextInput';
+import { Text } from '@/components/ui/Text';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams } from 'expo-router';
 import { File } from 'expo-file-system';

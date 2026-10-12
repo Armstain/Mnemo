@@ -1,5 +1,7 @@
 import React, { useState } from 'react';
-import { ActivityIndicator, Platform, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Platform, View } from 'react-native';
+import { TextInput } from '@/components/ui/TextInput';
+import { Text } from '@/components/ui/Text';
 import * as Haptics from 'expo-haptics';
 import * as Crypto from 'expo-crypto';
 import * as DocumentPicker from 'expo-document-picker';

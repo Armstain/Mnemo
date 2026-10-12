@@ -194,13 +194,14 @@
      anything the app says back to you (AI paraphrases). Keeping the serif
      to those two jobs is what makes a captured thought read as writing
      rather than as a database record (loaded via expo-google-fonts in
-     _layout.tsx). */
-  --font-display: "Literata_500Medium", "Literata_400Regular", serif;
-  --font-serif: "Literata_400Regular", serif;
-  --font-quote: "Literata_400Regular_Italic", serif;
-  --font-sans: "InstrumentSans_400Regular", sans-serif;
-  --font-sans-medium: "InstrumentSans_500Medium", sans-serif;
-  --font-sans-semi: "InstrumentSans_600SemiBold", sans-serif;
+     _layout.tsx). Each is followed by its Noto Bengali match: the web falls
+     back to it letter by letter; on phones components/ui/Text switches. */
+  --font-display: "Literata_500Medium", "NotoSerifBengali_500Medium", serif;
+  --font-serif: "Literata_400Regular", "NotoSerifBengali_400Regular", serif;
+  --font-quote: "Literata_400Regular_Italic", "NotoSerifBengali_400Regular", serif;
+  --font-sans: "InstrumentSans_400Regular", "NotoSansBengali_400Regular", sans-serif;
+  --font-sans-medium: "InstrumentSans_500Medium", "NotoSansBengali_500Medium", sans-serif;
+  --font-sans-semi: "InstrumentSans_600SemiBold", "NotoSansBengali_600SemiBold", sans-serif;
 
   --text-display: 34px;
   --text-title: 26px;

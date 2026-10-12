@@ -1,13 +1,13 @@
 import React, { useState, useMemo } from 'react';
 import {
   View,
-  Text,
-  TextInput,
   ScrollView,
   Pressable,
   KeyboardAvoidingView,
   Platform,
 } from 'react-native';
+import { TextInput } from '@/components/ui/TextInput';
+import { Text } from '@/components/ui/Text';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useCaptureTarget } from '@/hooks/use-capture-target';
 import { FocusDestination } from '@/components/ui/FocusDestination';

@@ -191,6 +191,10 @@ export interface ProcessedCapture {
   thread?: ThreadMatch;
 }
 
+// Many notes are Bangla, Banglish (Bangla typed in Latin letters) or a mix
+// with English. Each stays as it was said.
+const LANGUAGE_RULES = `LANGUAGE: Write title, notes, tags, leftOff and nextSteps in the language and script the person used. Bangla stays in Bangla script; Banglish stays in Latin letters; a mix stays a mix, keeping the English words they used. Never translate the note, and never switch it to another script. Fix obvious speech-recognition slips, but don't "correct" one language into the other.`;
+
 const MEASURE_RULES = `
 MEASURES ("measures"):
 Numbers the person reports about their life that they'd want to add up or follow over time: money spent, distance, weight, hours slept or studied, pages read, reps, counts, scores, prices of options they're comparing.
@@ -316,7 +320,7 @@ export async function processVoiceDump(
     "${transcript}"
 
     Understand the context, fix any errors, and structure this into a clean JSON object.
-    IMPORTANT: Detect the language and provide the entire analysis in that SAME language.
+    ${LANGUAGE_RULES}
     
     Also suggest the best category from this list: ${VALID_CATEGORIES.join(', ')}
     
@@ -389,6 +393,7 @@ export async function processAudioDump(
     1. Transcribe the audio precisely.
     2. Detect the language of the speaker.
     3. Generate a structured analysis in the SAME language as the speaker.
+    ${LANGUAGE_RULES}
     4. Suggest the best category from this list: ${VALID_CATEGORIES.join(', ')}
     
     Return a clean JSON object:

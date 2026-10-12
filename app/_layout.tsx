@@ -1,13 +1,16 @@
-import {
-  InstrumentSans_400Regular,
-  InstrumentSans_500Medium,
-  InstrumentSans_600SemiBold,
-} from '@expo-google-fonts/instrument-sans';
-import {
-  Literata_400Regular,
-  Literata_400Regular_Italic,
-  Literata_500Medium,
-} from '@expo-google-fonts/literata';
+// One import per weight: the package roots pull in every weight they have.
+import { InstrumentSans_400Regular } from '@expo-google-fonts/instrument-sans/400Regular';
+import { InstrumentSans_500Medium } from '@expo-google-fonts/instrument-sans/500Medium';
+import { InstrumentSans_600SemiBold } from '@expo-google-fonts/instrument-sans/600SemiBold';
+import { Literata_400Regular } from '@expo-google-fonts/literata/400Regular';
+import { Literata_400Regular_Italic } from '@expo-google-fonts/literata/400Regular_Italic';
+import { Literata_500Medium } from '@expo-google-fonts/literata/500Medium';
+// Bangla: the phone's own Bangla font is small beside these (see components/ui/Text).
+import { NotoSansBengali_400Regular } from '@expo-google-fonts/noto-sans-bengali/400Regular';
+import { NotoSansBengali_500Medium } from '@expo-google-fonts/noto-sans-bengali/500Medium';
+import { NotoSansBengali_600SemiBold } from '@expo-google-fonts/noto-sans-bengali/600SemiBold';
+import { NotoSerifBengali_400Regular } from '@expo-google-fonts/noto-serif-bengali/400Regular';
+import { NotoSerifBengali_500Medium } from '@expo-google-fonts/noto-serif-bengali/500Medium';
 import { DarkTheme, DefaultTheme, ThemeProvider } from 'expo-router/react-navigation';
 import { useFonts } from 'expo-font';
 import { router, Stack } from 'expo-router';
@@ -108,6 +111,11 @@ export default function RootLayout() {
     InstrumentSans_400Regular,
     InstrumentSans_500Medium,
     InstrumentSans_600SemiBold,
+    NotoSansBengali_400Regular,
+    NotoSansBengali_500Medium,
+    NotoSansBengali_600SemiBold,
+    NotoSerifBengali_400Regular,
+    NotoSerifBengali_500Medium,
   });
 
   useEffect(() => {

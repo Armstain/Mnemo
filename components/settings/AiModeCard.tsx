@@ -1,5 +1,6 @@
 import React from 'react';
-import { Pressable, Text, View } from 'react-native';
+import { Pressable, View } from 'react-native';
+import { Text } from '@/components/ui/Text';
 import * as Haptics from 'expo-haptics';
 
 import { Icon, type IconName } from '@/components/ui/Icon';
