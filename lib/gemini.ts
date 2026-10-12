@@ -312,12 +312,19 @@ export async function generateTitle(notes: string) {
 export async function processVoiceDump(
   transcript: string,
   ctx?: CaptureContext,
+  /** Photos attached to the note, as base64 JPEG. */
+  images: string[] = [],
 ): Promise<ProcessedCapture> {
+  const photoRules = images.length
+    ? `
+    The note comes with ${images.length === 1 ? 'a photo' : `${images.length} photos`} (a receipt, a page, a whiteboard, a place…). Read what matters in ${images.length === 1 ? 'it' : 'them'} into the notes, and put every number you read in the "transcript" field, word for word, so it can be checked.`
+    : '';
   const prompt = `
     You are an expert productivity assistant. The user just captured a thought — it could be about anything in their life: work, errands, shopping, study, health, ideas, or personal matters.
     
     Raw text:
     "${transcript}"
+    ${photoRules}
 
     Understand the context, fix any errors, and structure this into a clean JSON object.
     ${LANGUAGE_RULES}
@@ -344,10 +351,12 @@ export async function processVoiceDump(
   `;
 
   const response = await generateText({
-    contents: prompt,
+    contents: images.length
+      ? [{ role: 'user', parts: [...images.map((data) => ({ inlineData: { mimeType: 'image/jpeg', data } })), { text: prompt }] }]
+      : prompt,
     config: {
       responseMimeType: 'application/json',
-      responseSchema: dumpSchema({ threads: !!ctx?.candidates.length, transcript: false }),
+      responseSchema: dumpSchema({ threads: !!ctx?.candidates.length, transcript: images.length > 0 }),
     },
   });
 

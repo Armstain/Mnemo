@@ -21,6 +21,7 @@ import {
   type BackupPayload,
 } from '@/lib/backup';
 import { noFocusRing } from '@/utils/web';
+import { imageBase64, imagesOf } from '@/lib/images';
 
 type Step =
   | { kind: 'idle' }
@@ -88,6 +89,13 @@ export function BackupCard() {
     const payload = exportBackup();
     setStep({ kind: 'working', label: 'Encrypting…' });
     try {
+      // Photos go in too, so a restored note is whole.
+      const images: Record<string, string> = {};
+      for (const block of imagesOf(payload.entries)) {
+        const data = block.file ? await imageBase64(block) : undefined;
+        if (block.file && data) images[block.file] = data;
+      }
+      if (Object.keys(images).length > 0) payload.images = images;
       const text = await sealBackup(payload, pass, Crypto.getRandomBytes);
       await deliver(backupFileName(), text);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);

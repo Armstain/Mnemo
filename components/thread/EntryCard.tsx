@@ -1,5 +1,5 @@
 import React from 'react';
-import { Platform, Pressable, View } from 'react-native';
+import { Image, Platform, Pressable, View } from 'react-native';
 import { TextInput } from '@/components/ui/TextInput';
 import { Text } from '@/components/ui/Text';
 import Markdown from 'react-native-markdown-display';
@@ -9,6 +9,7 @@ import { ChecklistEditor } from '@/components/ui/ChecklistEditor';
 import { Icon, type IconName } from '@/components/ui/Icon';
 import { ExternalLink } from '@/components/ExternalLink';
 import { MeasureEditor, MeasureRows } from '@/components/thread/Measures';
+import { Photo } from '@/components/thread/Photo';
 import { summarizeMeasures } from '@/lib/measures';
 import { MoveSheet } from '@/components/thread/MoveSheet';
 import { useMnemoStore } from '@/hooks/use-mnemo-store';
@@ -95,6 +96,13 @@ function LinkBlock({ block }: { block: Extract<Block, { kind: 'link' }> }) {
         className="flex-row items-center rounded-sm px-3.5 py-3 active:opacity-70"
         style={{ backgroundColor: colors.surfaceLowest, borderWidth: 1, borderColor: colors.border }}
       >
+        {block.imageUrl ? (
+          <Image
+            source={{ uri: block.imageUrl }}
+            style={{ width: 52, height: 52, borderRadius: 8, marginRight: 12, backgroundColor: colors.surfaceHigh }}
+            resizeMode="cover"
+          />
+        ) : null}
         <View className="flex-1 mr-3" style={{ minWidth: 0 }}>
           <Text className="font-sans-medium text-sm" style={{ color: colors.fg }} numberOfLines={1}>
             {block.title || hostOf(block.url)}
@@ -109,6 +117,11 @@ function LinkBlock({ block }: { block: Extract<Block, { kind: 'link' }> }) {
               </Text>
             ) : null;
           })()}
+          {block.description && !block.why ? (
+            <Text className="font-sans text-sm mt-1" style={{ color: colors.fgSecondary }} numberOfLines={2}>
+              {block.description}
+            </Text>
+          ) : null}
           {block.why ? (
             <Text className="font-sans text-sm mt-1.5" style={{ color: colors.fgSecondary }}>
               {block.why}
@@ -201,7 +214,7 @@ export function EntryCard({
 
   const addBlock = (block: Block) => {
     // Lists sit after the text, numbers after lists, links last.
-    const order: Record<Block['kind'], number> = { text: 0, checklist: 1, chart: 2, measures: 3, link: 4 };
+    const order: Record<Block['kind'], number> = { text: 0, image: 1, checklist: 2, chart: 3, measures: 4, link: 5 };
     correct([...entry.blocks, block].sort((a, b) => order[a.kind] - order[b.kind]));
   };
 
@@ -418,6 +431,24 @@ export function EntryCard({
               <LinkBlock key={index} block={block} />
             );
           }
+          if (block.kind === 'image') {
+            return editing ? (
+              <View key={index}>
+                <Photo block={block} />
+                <Pressable
+                  onPress={() => correctBlock(index, null)}
+                  accessibilityRole="button"
+                  accessibilityLabel="Remove photo"
+                  className="absolute top-2 right-2 w-8 h-8 rounded-full items-center justify-center active:opacity-70"
+                  style={{ backgroundColor: 'rgba(0,0,0,0.55)' }}
+                >
+                  <Icon name="x" size={15} color="#FFFFFF" />
+                </Pressable>
+              </View>
+            ) : (
+              <Photo key={index} block={block} />
+            );
+          }
           if (block.kind === 'measures') {
             return editing ? (
               <MeasureEditor
@@ -431,6 +462,7 @@ export function EntryCard({
             );
           }
           // Charts arrive with smart captures (spec step 3); until then show their title.
+          if (block.kind !== 'chart') return null;
           return (
             <Text key={index} className="font-sans-medium text-sm" style={{ color: colors.fgSecondary }}>
               {block.title}

@@ -34,6 +34,7 @@ LogBox.ignoreLogs(['SafeAreaView has been deprecated']);
 import { ONBOARDING_KEY } from '@/app/onboarding';
 import { NudgeScheduler } from '@/components/NudgeScheduler';
 import { ReminderActions } from '@/components/ReminderActions';
+import { ShareIntake } from '@/components/ShareIntake';
 import { PendingProcessor } from '@/components/PendingProcessor';
 import { FilingNotifier } from '@/components/FilingNotifier';
 import { UndoToastHost } from '@/components/ui/UndoToastHost';
@@ -181,6 +182,13 @@ function RootLayoutNav() {
               }}
             />
             <Stack.Screen
+              name="share"
+              options={{
+                presentation: 'modal',
+                animation: 'slide_from_bottom',
+              }}
+            />
+            <Stack.Screen
               name="dump"
               options={{
                 presentation: 'modal',
@@ -199,6 +207,8 @@ function RootLayoutNav() {
           <FilingNotifier />
           {/* Tapping a reminder or a nudge opens its thread; reminder buttons act on it. */}
           <ReminderActions />
+          {/* Something shared to Mnemo from another app opens the Save screen. */}
+          <ShareIntake />
           <NudgeScheduler />
           <UndoToastHost />
         </ThemeProvider>

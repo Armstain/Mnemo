@@ -19,7 +19,7 @@ const MODES: { value: Exclude<AiMode, 'unset'>; icon: IconName; title: string; b
     value: 'offline',
     icon: 'pin',
     title: 'Offline',
-    body: 'Nothing leaves your phone. Titles, lists, amounts, next steps and dates are still picked out on the phone, and it suggests a thread when a note shares its words.',
+    body: 'Your notes never leave your phone. Titles, lists, amounts, next steps and dates are still picked out on the phone, and it suggests a thread when a note shares its words. (A link you save is opened by the phone to show its title.)',
   },
 ];
 

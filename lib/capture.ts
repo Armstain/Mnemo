@@ -22,6 +22,8 @@ import type { CaptureStore } from '@/hooks/use-mnemo-store';
 import { buildBlocks } from '@/lib/threads';
 import { summarizeMeasures, trackedMetrics, verifyMeasures } from '@/lib/measures';
 import { understand, type KnownMetric } from '@/lib/understand';
+import { imageBase64, imagesOf } from '@/lib/images';
+import { fetchLinkPreview, type LinkPreview } from '@/lib/link-preview';
 import {
   ATTACH_CONFIDENCE,
   decideFiling,
@@ -78,6 +80,12 @@ interface NoteInput {
   leftOff?: string;
   nextStep?: string;
   dueDate?: number;
+  /** Photos already kept (lib/images). */
+  images?: Block[];
+  /** Links given apart from the text (a shared page). */
+  links?: string[];
+  /** A name for a new thread, when there's a better one than the text's (a shared page's title). */
+  title?: string;
   store: CaptureStore;
 }
 
@@ -93,10 +101,12 @@ function knownMetrics(store: CaptureStore, threadId?: string): KnownMetric[] {
  * offline that's all it gets; with AI on it's what shows until Gemini's
  * version arrives, and what stays if Gemini never answers.
  */
-function saveNote(source: 'voice' | 'text', params: NoteInput): { threadId: string; entry: Entry } {
+function saveNote(source: Entry['source'], params: NoteInput): { threadId: string; entry: Entry } {
   const { category, threadId, store } = params;
   const words = params.text.trim();
-  const ai = aiEnabled() && words.length > 0;
+  const images = params.images ?? [];
+  // Gemini can read a photo too (a receipt, a whiteboard), so one alone is worth sending.
+  const ai = aiEnabled() && (words.length > 0 || images.length > 0);
   const reading = understand(words, { known: knownMetrics(store, threadId), monthFirst: monthFirst() });
 
   // With AI on, the text stays exactly as said: Gemini rewrites it, and an
@@ -104,9 +114,11 @@ function saveNote(source: 'voice' | 'text', params: NoteInput): { threadId: stri
   // checklist.
   const checklist = [...(params.checklistItems ?? []), ...(ai ? [] : reading.checklist)];
   const blocks: Block[] = [
-    ...buildBlocks({ text: ai ? words : reading.text, checklistItems: checklist }),
+    ...buildBlocks({ text: ai ? words : reading.text }),
+    ...images,
+    ...buildBlocks({ checklistItems: checklist }),
     ...(reading.measures.length > 0 ? [{ kind: 'measures' as const, items: reading.measures }] : []),
-    ...buildBlocks({ links: reading.links }),
+    ...buildBlocks({ links: [...new Set([...(params.links ?? []), ...reading.links])] }),
   ];
   const entryInput = {
     source,
@@ -131,10 +143,11 @@ function saveNote(source: 'voice' | 'text', params: NoteInput): { threadId: stri
       if (Object.keys(updates).length > 0) store.updateItem(threadId, updates);
     }
   } else {
-    const fallback = checklist.length > 0 ? 'Checklist' : source === 'voice' ? 'Voice note' : 'Quick note';
+    const fallback =
+      checklist.length > 0 ? 'Checklist' : images.length > 0 ? 'Photo' : source === 'voice' ? 'Voice note' : 'Quick note';
     const created = store.createThread(
       {
-        title: reading.title || fallback,
+        title: (reading.title || params.title?.trim() || fallback).slice(0, 80),
         // Offline, the phone's guess beats "General"; with AI on, Gemini guesses.
         category: category === 'general' && !ai ? reading.category ?? 'general' : category,
         tags: reading.tags,
@@ -149,7 +162,41 @@ function saveNote(source: 'voice' | 'text', params: NoteInput): { threadId: stri
     if (!ai) suggestByKeywords(saved, words, store);
   }
   if (ai) resolvePendingEntry(saved.entry, store);
+  enrichLinks(saved.entry.id, store);
   return saved;
+}
+
+const previewed = new Set<string>();
+const knownPreviews = new Map<string, LinkPreview>();
+
+/** A preview already fetched (the share screen shows one): no need to fetch again. */
+export function rememberPreview(url: string, preview: LinkPreview): void {
+  knownPreviews.set(url, preview);
+}
+
+/**
+ * Gives an entry's links their page title, site and picture, read by the
+ * phone (lib/link-preview). Fire-and-forget; each link is tried once.
+ */
+export async function enrichLinks(entryId: string, store: CaptureStore): Promise<void> {
+  const entry = store.snapshot().entries.find((e) => e.id === entryId);
+  if (!entry) return;
+  const todo = entry.blocks.flatMap((b) => (b.kind === 'link' && !b.title && !previewed.has(b.url) ? [b.url] : []));
+  for (const url of todo) {
+    previewed.add(url);
+    const preview = knownPreviews.get(url) ?? (await fetchLinkPreview(url));
+    if (!preview) continue;
+    // Re-read: the entry may have changed while the page loaded.
+    const now = store.snapshot().entries.find((e) => e.id === entryId);
+    if (!now) return;
+    store.updateEntry(entryId, {
+      blocks: now.blocks.map((b) =>
+        b.kind === 'link' && b.url === url && !b.title
+          ? { ...b, title: preview.title, site: preview.site, description: preview.description, imageUrl: preview.imageUrl }
+          : b,
+      ),
+    });
+  }
 }
 
 /** Offline: point out an open thread the note clearly shares words with. */
@@ -190,6 +237,11 @@ export function saveVoiceNote(params: Omit<NoteInput, 'checklistItems' | 'leftOf
 /** Saves a typed note. Same shape as `saveVoiceNote`, plus the Write screen's own fields. */
 export function saveTextNote(params: NoteInput) {
   return saveNote('text', params);
+}
+
+/** Saves something shared in from another app: text, a link, photos. */
+export function saveSharedNote(params: NoteInput) {
+  return saveNote('share', params);
 }
 
 /**
@@ -269,6 +321,8 @@ export async function structurePendingEntry(
 }
 
 const inFlight = new Set<string>();
+/** Photos sent along with one note; more would be slow and costly. */
+const MAX_PHOTOS_TO_AI = 3;
 
 /** Whether this entry is with the AI right now (an edit then keeps the person's words). */
 export function isStructuring(entryId: string): boolean {
@@ -309,6 +363,7 @@ async function structure(entry: PendingEntry, store: CaptureStore): Promise<void
 
   let processed: ProcessedCapture;
   let transcript = entry.transcript;
+  const photos = imagesOf([live]);
 
   if (entry.pendingAudioUri) {
     // Only from versions that kept recordings. Transcribe it once, then the
@@ -323,14 +378,18 @@ async function structure(entry: PendingEntry, store: CaptureStore): Promise<void
     } finally {
       try { audioFile.delete(); } catch { /* already gone */ }
     }
-  } else if (entry.pendingRawText) {
-    transcript = transcript ?? entry.pendingRawText;
-    processed = await processVoiceDump(entry.pendingRawText, ctx);
+  } else if (entry.pendingRawText || photos.length > 0) {
+    transcript = transcript ?? (entry.pendingRawText || undefined);
+    const images = (await Promise.all(photos.slice(0, MAX_PHOTOS_TO_AI).map(imageBase64))).filter(
+      (b): b is string => !!b,
+    );
+    processed = await processVoiceDump(entry.pendingRawText ?? '', ctx, images);
   } else {
     store.updateEntry(entry.id, { pending: false });
     return;
   }
-  transcript = transcript ?? processed.transcript;
+  // What Gemini read off a photo is not something the person said.
+  transcript = transcript ?? (photos.length > 0 ? undefined : processed.transcript);
 
   // The AI call takes a while. Whatever happened meanwhile wins over it:
   const now = store.snapshot().entries.find((e) => e.id === entry.id);
@@ -341,21 +400,29 @@ async function structure(entry: PendingEntry, store: CaptureStore): Promise<void
   const editedMeanwhile = !!sentText && textOf(now) !== sentText;
 
   // Every number must appear in the person's own words, not only the AI's notes.
+  // (A photo has no words of the person's: what Gemini read off it is checked instead.)
   const measures = verifyMeasures(
     processed.measures,
-    editedMeanwhile ? textOf(now) : entry.pendingRawText ?? processed.transcript ?? processed.notes,
+    editedMeanwhile
+      ? textOf(now)
+      : [entry.pendingRawText, photos.length > 0 ? processed.transcript : undefined].filter(Boolean).join('\n') ||
+          processed.transcript ||
+          processed.notes,
   );
   const handMadeChecklists = now.blocks.filter((b) => b.kind === 'checklist');
   const existingLinks = now.blocks.flatMap((b) => (b.kind === 'link' ? [b.url] : []));
   const links = [...new Set([...existingLinks, ...(processed.links ?? [])])];
   // Numbers, lists or links corrected by hand while it waited stay as they are.
-  const rest = (e: Pick<Entry, 'blocks'>) => JSON.stringify(e.blocks.filter((b) => b.kind !== 'text'));
+  // (A link's fetched preview arriving meanwhile isn't a correction.)
+  const rest = (e: Pick<Entry, 'blocks'>) =>
+    JSON.stringify(e.blocks.filter((b) => b.kind !== 'text').map((b) => (b.kind === 'link' ? { kind: b.kind, url: b.url } : b)));
   const correctedMeanwhile = rest(now) !== rest(live);
   const text = buildBlocks({ text: editedMeanwhile ? textOf(now) : processed.notes });
   const blocks: Block[] = correctedMeanwhile
     ? [...text, ...now.blocks.filter((b) => b.kind !== 'text')]
     : [
         ...text,
+        ...now.blocks.filter((b) => b.kind === 'image'),
         ...handMadeChecklists,
         ...(measures.length > 0 ? [{ kind: 'measures' as const, items: measures }] : []),
         ...buildBlocks({ links }),
@@ -363,6 +430,8 @@ async function structure(entry: PendingEntry, store: CaptureStore): Promise<void
   const leftOff = now.leftOff || (editedMeanwhile ? undefined : processed.summary?.leftOff);
   const nextStep = now.nextStep || (editedMeanwhile ? undefined : processed.summary?.nextSteps?.[0]);
 
+  // Links the AI found get their previews too.
+  setTimeout(() => enrichLinks(entry.id, store), 0);
   store.updateEntry(entry.id, {
     transcript,
     blocks,

@@ -456,7 +456,7 @@ export function NumbersSection({
         ))}
       </View>
       <Text className="font-sans text-sm mt-2.5" style={{ color: colors.fgTertiary }}>
-        Added up on your phone from the numbers you said.
+        Added up on your phone from the numbers in your notes.
       </Text>
     </View>
   );

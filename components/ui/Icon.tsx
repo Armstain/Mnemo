@@ -30,6 +30,8 @@ import {
   Repeat,
   Star,
   CircleCheck,
+  Image as ImageIcon,
+  Camera,
 } from 'lucide-react-native';
 
 type IconComponent = typeof Home;
@@ -65,7 +67,9 @@ export type IconName =
   | 'more'
   | 'repeat'
   | 'star'
-  | 'circleCheck';
+  | 'circleCheck'
+  | 'image'
+  | 'camera';
 
 /**
  * Mnemo's interface-chrome icon vocabulary — a name-keyed wrapper over
@@ -106,6 +110,8 @@ const ICONS: Record<IconName, IconComponent> = {
   repeat: Repeat,
   star: Star,
   circleCheck: CircleCheck,
+  image: ImageIcon,
+  camera: Camera,
 };
 
 export interface IconProps {

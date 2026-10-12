@@ -24,6 +24,7 @@ import { deriveThreadCache, generateEntryId, newestFirst } from '@/lib/threads';
 import { deleteAllRecordings } from '@/lib/capture';
 import { syncReminderForItem, cancelReminder, cancelAllReminders } from '@/lib/reminders';
 import { nextOccurrence } from '@/lib/when';
+import { deleteAllImages, forgetImages, restoreImage } from '@/lib/images';
 import { UNDO_WINDOW_MS } from '@/hooks/use-undo-toast';
 import { focusIsIdle } from '@/lib/filing';
 
@@ -477,6 +478,7 @@ export function MnemoStoreProvider({ children }: { children: React.ReactNode }) 
       entryTimersRef.current[id] = setTimeout(() => {
         delete removedEntriesRef.current[id];
         delete entryTimersRef.current[id];
+        forgetImages([current]);
         deleteEntryRow(id).catch((e) => console.error('Failed to delete entry', e));
       }, UNDO_WINDOW_MS);
       return { threadRemoved: lastOne };
@@ -633,6 +635,7 @@ export function MnemoStoreProvider({ children }: { children: React.ReactNode }) 
       delete removedItemsRef.current[id];
       delete deleteTimersRef.current[id];
       // Its entries go too, now that the delete is final.
+      forgetImages(entriesRef.current.filter((e) => e.threadId === id));
       commitEntries(entriesRef.current.filter((e) => e.threadId !== id));
       deleteItemRow(id).catch((e) => console.error('Failed to persist item delete', e));
     }, UNDO_WINDOW_MS);
@@ -670,6 +673,7 @@ export function MnemoStoreProvider({ children }: { children: React.ReactNode }) 
 
     await deleteAllItems();
     deleteAllRecordings();
+    deleteAllImages();
     await cancelAllReminders();
     commitItems([]);
     commitEntries([]);
@@ -688,6 +692,13 @@ export function MnemoStoreProvider({ children }: { children: React.ReactNode }) 
   );
 
   const importBackup = useCallback(async (payload: BackupPayload) => {
+    for (const [name, data] of Object.entries(payload.images ?? {})) {
+      try {
+        restoreImage(name, data);
+      } catch {
+        // A photo that can't be written shows as "not on this phone".
+      }
+    }
     const merged = mergeBackup({ items: itemsRef.current, entries: entriesRef.current }, payload);
     // Persist first: if the write fails, nothing on screen claims it worked.
     await saveThreadsAndEntries(merged.items, merged.entries);

@@ -28,6 +28,8 @@ export interface BackupPayload {
   exportedAt: number;
   items: MnemoItem[];
   entries: Entry[];
+  /** Photos in the notes, by file name, as base64 JPEG. */
+  images?: Record<string, string>;
 }
 
 export type BackupErrorReason = 'not-a-backup' | 'newer-version' | 'wrong-passphrase' | 'damaged';

@@ -120,6 +120,16 @@ export type Block =
     }
   | { kind: 'measures'; items: Measure[] }
   | {
+      kind: 'image';
+      /** A photo kept in the app's images folder (lib/images.ts)… */
+      file?: string;
+      /** …or, on the web, the photo itself as a data URL. */
+      src?: string;
+      width: number;
+      height: number;
+      caption?: string;
+    }
+  | {
       kind: 'link';
       url: string;
       title?: string;

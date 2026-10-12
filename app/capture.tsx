@@ -5,6 +5,8 @@ import {
   Pressable,
   KeyboardAvoidingView,
   Platform,
+  Alert,
+  Image,
 } from 'react-native';
 import { TextInput } from '@/components/ui/TextInput';
 import { Text } from '@/components/ui/Text';
@@ -26,6 +28,7 @@ import { DueDatePicker } from '@/components/ui/DueDatePicker';
 import { EditorToolbar, type TextSelection } from '@/components/ui/EditorToolbar';
 import { useThemeColors } from '@/hooks/use-theme';
 import type { Category, ChecklistItem } from '@/types/mnemo';
+import { imageUri, pickPhotos, type ImageBlock } from '@/lib/images';
 import { useReduceMotion } from '@/hooks/use-accessibility-motion';
 import { DUR_TOGGLE, EASE_IN_OUT, EASE_OUT, motion, useEnter } from '@/utils/motion';
 
@@ -58,12 +61,27 @@ export default function CaptureScreen() {
   const [nextStep, setNextStep] = useState('');
   const [whereLeftOff, setWhereLeftOff] = useState('');
   const [dueDate, setDueDate] = useState<number | undefined>();
+  const [photos, setPhotos] = useState<ImageBlock[]>([]);
+
+  const addPhotos = async (source: 'camera' | 'library') => {
+    const kept = await pickPhotos(source);
+    if (kept.length > 0) setPhotos((p) => [...p, ...kept]);
+  };
+  const choosePhotoSource = () => {
+    // The web has no camera picker worth offering; phones ask which.
+    if (Platform.OS === 'web') return addPhotos('library');
+    Alert.alert('Add a photo', undefined, [
+      { text: 'Take a photo', onPress: () => addPhotos('camera') },
+      { text: 'Choose from photos', onPress: () => addPhotos('library') },
+      { text: 'Cancel', style: 'cancel' },
+    ]);
+  };
 
   const colors = useThemeColors();
 
   const canSave = useMemo(
-    () => text.trim().length > 0 || checklistItems.length > 0,
-    [text, checklistItems],
+    () => text.trim().length > 0 || checklistItems.length > 0 || photos.length > 0,
+    [text, checklistItems, photos],
   );
 
   const handleSave = () => {
@@ -79,6 +97,7 @@ export default function CaptureScreen() {
       leftOff: whereLeftOff,
       nextStep,
       dueDate,
+      images: photos,
       store,
     });
     router.replace(`/(tabs)/context?id=${saved.threadId}` as any);
@@ -157,6 +176,29 @@ export default function CaptureScreen() {
                 selectionColor={colors.accent}
               />
 
+              {photos.length > 0 && (
+                <View className="flex-row flex-wrap gap-2 mt-3">
+                  {photos.map((p, i) => (
+                    <View key={i}>
+                      <Image
+                        source={{ uri: imageUri(p) }}
+                        style={{ width: 72, height: 72, borderRadius: 10, borderWidth: 1, borderColor: colors.border }}
+                      />
+                      <Pressable
+                        onPress={() => setPhotos((all) => all.filter((_, j) => j !== i))}
+                        hitSlop={6}
+                        accessibilityRole="button"
+                        accessibilityLabel="Remove photo"
+                        className="absolute -top-1.5 -right-1.5 w-6 h-6 rounded-full items-center justify-center"
+                        style={{ backgroundColor: colors.fg }}
+                      >
+                        <Icon name="x" size={12} color={colors.bg} />
+                      </Pressable>
+                    </View>
+                  ))}
+                </View>
+              )}
+
               {showChecklist && (
                 <View className="border-t mt-4 pt-4" style={{ borderColor: colors.border }}>
                   <ChecklistEditor items={checklistItems} onChange={setChecklistItems} editable />
@@ -173,6 +215,7 @@ export default function CaptureScreen() {
                   }}
                   checklistVisible={showChecklist}
                   onToggleChecklist={() => setShowChecklist((v) => !v)}
+                  onAddPhoto={choosePhotoSource}
                 />
               </View>
             </View>

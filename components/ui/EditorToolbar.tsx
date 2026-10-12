@@ -1,7 +1,7 @@
 import React from 'react';
 import { View, Pressable, StyleSheet } from 'react-native';
 import { Text } from '@/components/ui/Text';
-import { Bold, ListChecks, Type } from 'lucide-react-native';
+import { Bold, ListChecks, Type, ImagePlus } from 'lucide-react-native';
 import { MotiView } from 'moti';
 
 import { useThemeColors } from '@/hooks/use-theme';
@@ -79,6 +79,8 @@ interface EditorToolbarProps {
   onApply: (nextValue: string, nextSelection: TextSelection) => void;
   checklistVisible: boolean;
   onToggleChecklist: () => void;
+  /** Shown when given: add a photo to the note. */
+  onAddPhoto?: () => void;
 }
 
 const HEADINGS: { level: 1 | 2 | 3; label: string }[] = [
@@ -101,6 +103,7 @@ export function EditorToolbar({
   onApply,
   checklistVisible,
   onToggleChecklist,
+  onAddPhoto,
 }: EditorToolbarProps) {
   const colors = useThemeColors();
   const enter = useEnter();
@@ -184,6 +187,18 @@ export function EditorToolbar({
             strokeWidth={1.9}
           />
         </Pressable>
+
+        {onAddPhoto ? (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Add a photo"
+            android_ripple={{ color: colors.border, borderless: true, radius: 24 }}
+            onPress={onAddPhoto}
+            style={styles.barButton}
+          >
+            <ImagePlus size={21} color={colors.fgSecondary} strokeWidth={1.9} />
+          </Pressable>
+        ) : null}
       </View>
     </View>
   );
