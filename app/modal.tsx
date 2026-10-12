@@ -52,6 +52,7 @@ import {
   type NudgeTime,
 } from '@/lib/nudges';
 import { reviewTimeLabel, scheduleWeeklyReview } from '@/lib/review-notice';
+import { loadSetup, strictPhone } from '@/lib/reliability';
 import {
   getActiveApiKey,
   getApiKeySource,
@@ -77,10 +78,13 @@ function NudgeSettingsCard() {
   // the OS Settings app can change it, so say so instead of silently
   // leaving the switch off.
   const [blocked, setBlocked] = useState(false);
+  const [verified, setVerified] = useState(false);
+  const strict = strictPhone();
 
   useEffect(() => {
     loadNudgePrefs().then(setPrefs);
     hasNudgePermission().then(setGranted);
+    loadSetup().then((s) => setVerified(!!s.verifiedAt));
   }, []);
 
   const apply = async (next: NudgePrefs) => {
@@ -177,6 +181,25 @@ function NudgeSettingsCard() {
           </Button>
         </View>
       )}
+
+      {/* Reminders and nudges both depend on it, so it's here whether nudges are on or not. */}
+      <Pressable
+        onPress={() => router.push('/reminders-check' as any)}
+        accessibilityRole="button"
+        className="flex-row items-center justify-between pt-4 border-t border-border/50 active:opacity-70"
+      >
+        <View className="flex-1 mr-3">
+          <Text className="font-sans-semi text-sm text-fg">Make sure reminders arrive</Text>
+          <Text className="font-sans text-sm text-fg-secondary mt-0.5">
+            {verified
+              ? 'Tested on this phone and working.'
+              : strict
+                ? `${strict} phones can hold reminders back. Check the settings and send a test.`
+                : 'Check the settings and send a test reminder.'}
+          </Text>
+        </View>
+        <Icon name="chevronRight" size={16} color={colors.fgTertiary} />
+      </Pressable>
     </View>
   );
 }

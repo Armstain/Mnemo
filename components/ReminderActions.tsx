@@ -7,6 +7,7 @@ import { Notifications, notificationsAvailable } from '@/lib/notifications';
 import { remindOnce } from '@/lib/reminders';
 import { formatReminder } from '@/lib/when';
 import { saveTextNote } from '@/lib/capture';
+import { markTestArrived, TEST_ROUTE } from '@/lib/reliability';
 
 type Response = import('expo-notifications').NotificationResponse;
 
@@ -40,6 +41,12 @@ export function ReminderActions() {
       // Handled once: a later remount (or relaunch) mustn't replay it, which
       // for a reply would add the same note twice.
       Notifications.clearLastNotificationResponseAsync?.().catch(() => {});
+
+      // The test reminder came and was tapped: the check passed.
+      if (content.data?.test) {
+        markTestArrived().finally(() => router.navigate(TEST_ROUTE as any));
+        return;
+      }
 
       // The weekly review notification opens the review (once, if it's already open).
       if (content.data?.route === '/review') {

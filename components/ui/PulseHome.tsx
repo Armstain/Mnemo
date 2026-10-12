@@ -6,6 +6,7 @@ import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Card } from '@/components/ui/Card';
+import { ReminderSetupPrompt } from '@/components/ReminderSetupPrompt';
 import { Button, IconButton } from '@/components/ui/Button';
 import { Icon } from '@/components/ui/Icon';
 import { Eyebrow } from '@/components/ui/Eyebrow';
@@ -251,6 +252,8 @@ export function PulseHome() {
             </Pressable>
           </View>
         ) : null}
+        {/* Strict phones: a one-time nudge to check reminders will arrive. */}
+        <ReminderSetupPrompt />
         {/* Gemini stopped answering for a reason the person can fix. */}
         {aiProblem ? (
           <Pressable

@@ -2,7 +2,10 @@ import { Notifications } from '@/lib/notifications';
 import { Platform } from 'react-native';
 import type { MnemoItem } from '@/types/mnemo';
 
-const ANDROID_CHANNEL_ID = 'reminders';
+// Reminders pop up and make a sound (HIGH). Android never raises an existing
+// channel's importance, so they moved off the first, quieter channel.
+export const ANDROID_CHANNEL_ID = 'reminder-alerts';
+const LEGACY_CHANNEL_ID = 'reminders';
 
 // Only asked once per app session — if the user declines, we don't nag on
 // every single due-date set afterward. They can still grant it from OS
@@ -20,12 +23,17 @@ async function ensurePermission(): Promise<boolean> {
 }
 
 let androidChannelReady = false;
-async function ensureAndroidChannel(): Promise<void> {
+export async function ensureAndroidChannel(): Promise<void> {
   if (androidChannelReady || Platform.OS !== 'android') return;
   await Notifications.setNotificationChannelAsync(ANDROID_CHANNEL_ID, {
     name: 'Reminders',
-    importance: Notifications.AndroidImportance.DEFAULT,
+    description: 'The reminders you set on a thread, at the time you chose',
+    importance: Notifications.AndroidImportance.HIGH,
+    enableVibrate: true,
+    vibrationPattern: [0, 250, 200, 250],
   });
+  // Anything still on the old channel is re-set on this one by rearmReminders.
+  await Notifications.deleteNotificationChannelAsync(LEGACY_CHANNEL_ID).catch(() => {});
   androidChannelReady = true;
 }
 
@@ -134,6 +142,34 @@ export async function remindOnce(item: ReminderItem, at: number): Promise<void> 
       },
       trigger: { type: Notifications.SchedulableTriggerInputTypes.DATE, date: new Date(at), channelId: ANDROID_CHANNEL_ID },
     });
+  } catch {
+    // Best-effort, like every reminder.
+  }
+}
+
+/**
+ * Sets every reminder again from the threads. A scheduled alarm doesn't
+ * always survive: a restart on a phone that blocks autostart, the app being
+ * force-stopped (some battery savers do this when it's swiped away), or
+ * exact alarms being switched off and on all drop them. Re-setting them
+ * whenever the app opens means the worst case is one missed, not all.
+ * Never asks for permission.
+ */
+export async function rearmReminders(items: ReminderItem[]): Promise<void> {
+  if (Platform.OS === 'web') return;
+  try {
+    if (!(await Notifications.getPermissionsAsync()).granted) return;
+    const byId = new Map(items.map((i) => [i.id, i]));
+    // One-off "In an hour" reminders on repeating threads: same time again.
+    const again = (await Notifications.getAllScheduledNotificationsAsync()).flatMap((r) => {
+      if (!r.identifier.endsWith(':again')) return [];
+      const t = r.trigger as { value?: number; date?: number | string } | null;
+      const at = typeof t?.value === 'number' ? t.value : t?.date ? new Date(t.date).getTime() : NaN;
+      const item = byId.get(r.identifier.slice(0, -':again'.length));
+      return item && at > Date.now() ? [{ item, at }] : [];
+    });
+    for (const item of items) if (item.dueDate) await syncReminderForItem(item);
+    for (const { item, at } of again) await remindOnce(item, at);
   } catch {
     // Best-effort, like every reminder.
   }
