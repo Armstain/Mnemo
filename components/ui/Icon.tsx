@@ -122,9 +122,11 @@ export interface IconProps {
   stroke?: number;
   /** Defaults to currentColor's RN equivalent — pass explicitly. */
   color?: string;
+  /** Fill the glyph's shape in its colour (a set star). */
+  filled?: boolean;
 }
 
-export function Icon({ name, size = 20, stroke = 1.7, color }: IconProps) {
+export function Icon({ name, size = 20, stroke = 1.7, color, filled = false }: IconProps) {
   const LucideComponent = ICONS[name];
-  return <LucideComponent size={size} strokeWidth={stroke} color={color} />;
+  return <LucideComponent size={size} strokeWidth={stroke} color={color} fill={filled ? color : 'none'} />;
 }

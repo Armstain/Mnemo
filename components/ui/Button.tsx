@@ -189,7 +189,7 @@ export function IconButton({ icon, label, variant = 'default', size = 44, disabl
           press.style,
         ]}
       >
-        <Icon name={icon} size={Math.round(size * 0.42)} color={color} />
+        <Icon name={icon} size={Math.round(size * 0.42)} color={color} filled={active && icon === 'star'} />
       </Animated.View>
     </Pressable>
   );
