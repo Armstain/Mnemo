@@ -56,7 +56,8 @@ function Widget({ snapshot, theme }: { snapshot: WidgetSnapshot; theme: keyof ty
         borderRadius: 24,
         padding: 16,
         flexDirection: 'column',
-        justifyContent: 'space-between',
+        // Grouped, not spread: on a tall widget space-between left a hole in the middle.
+        justifyContent: 'center',
       }}
     >
       <FlexWidget
@@ -81,7 +82,7 @@ function Widget({ snapshot, theme }: { snapshot: WidgetSnapshot; theme: keyof ty
           style={{ fontSize: 13, color: c.muted, marginTop: 2 }}
         />
       </FlexWidget>
-      <FlexWidget style={{ width: 'match_parent', flexDirection: 'row', flexGap: 8 }}>
+      <FlexWidget style={{ width: 'match_parent', flexDirection: 'row', flexGap: 8, marginTop: 14 }}>
         <Button label="Record" svg={micSvg(c.ink)} uri={snapshot.launchKey ? `mnemo:///dump?autostart=1&key=${snapshot.launchKey}` : 'mnemo:///dump'} bg={c.accent} fg={c.ink} />
         <Button label="Write" svg={penSvg(c.fg)} uri="mnemo:///capture" bg={c.chip} fg={c.fg} />
       </FlexWidget>
