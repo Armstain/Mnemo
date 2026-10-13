@@ -298,17 +298,11 @@ export default function ThreadScreen() {
     }
   };
 
+  // Only the digest is shared: the AI one, or offline the steps still open.
+  const digest = thread.aiSummary?.nextSteps.length ? thread.aiSummary.nextSteps : openSteps;
   const onShare = async () => {
-    const text = [
-      thread.title,
-      thread.whereLeftOff ? `Where I left off: ${thread.whereLeftOff}` : '',
-      thread.nextStep ? `Next step: ${thread.nextStep}` : '',
-      ...entries.map((e) => entryText(e)),
-    ]
-      .filter(Boolean)
-      .join('\n\n');
     try {
-      await Share.share({ message: text });
+      await Share.share({ message: digest.map((step, i) => `${i + 1}. ${step}`).join('\n') });
     } catch {
       // Share sheet dismissed or unavailable — nothing to do.
     }
@@ -362,7 +356,7 @@ export default function ThreadScreen() {
                   updateItem(thread.id, { starred: !thread.starred });
                 }}
               />
-              <IconButton icon="share" label="Share" variant="bare" onPress={onShare} />
+              {digest.length > 0 && <IconButton icon="share" label="Share digest" variant="bare" onPress={onShare} />}
               <IconButton icon="pencil" label="Edit thread" variant="bare" onPress={startEditing} />
               <IconButton icon="trash" label="Delete thread" variant="bare" onPress={handleDelete} />
             </View>
