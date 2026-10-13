@@ -9,7 +9,7 @@ import { MotiView } from 'moti';
 import { useReduceMotion } from '@/hooks/use-accessibility-motion';
 import { EASE_OUT, REDUCED } from '@/utils/motion';
 import { Button } from '@/components/ui/Button';
-import { AiChoiceStep, FirstCaptureStep, KeyStep, NudgeStep, RevealStep } from '@/components/OnboardingSteps';
+import { AiChoiceStep, FirstCaptureStep, KeyStep, NameStep, NudgeStep, RevealStep } from '@/components/OnboardingSteps';
 import { setPreferences } from '@/lib/preferences';
 import { OpenRing } from '@/components/ui/ThreadRing';
 import { useThemeColors } from '@/hooks/use-theme';
@@ -59,9 +59,9 @@ export default function OnboardingScreen() {
   const isNarrow = width < 360;
   const horizontalPadding = isNarrow ? 22 : 28;
   const heroTitleSize = isTiny ? 32 : isCompact ? 36 : 44;
-  // Welcome → AI or offline (→ key) → first capture → see it → nudges → app.
+  // Welcome → name → AI or offline (→ key) → first capture → see it → nudges → app.
   // Web has no local notifications, so it skips the nudge step.
-  const [step, setStep] = React.useState<'welcome' | 'ai' | 'key' | 'capture' | 'reveal' | 'nudges'>('welcome');
+  const [step, setStep] = React.useState<'welcome' | 'name' | 'ai' | 'key' | 'capture' | 'reveal' | 'nudges'>('welcome');
   const [capturedId, setCapturedId] = React.useState<string | null>(null);
 
   const finish = async () => {
@@ -82,9 +82,10 @@ export default function OnboardingScreen() {
   if (step !== 'welcome') {
     return (
       <View style={{ flex: 1, backgroundColor: colors.bg }}>
+        {step === 'name' && <NameStep onBack={() => setStep('welcome')} onDone={() => setStep('ai')} />}
         {step === 'ai' && (
           <AiChoiceStep
-            onBack={() => setStep('welcome')}
+            onBack={() => setStep('name')}
             onGemini={() => setStep('key')}
             onOffline={() => {
               setPreferences({ aiMode: 'offline' });
@@ -196,7 +197,7 @@ export default function OnboardingScreen() {
         transition={ONBOARD_CTA}
         style={{ paddingHorizontal: horizontalPadding, paddingBottom: Math.max(insets.bottom, 16) + (isCompact ? 12 : 24) }}
       >
-        <Button onPress={() => setStep('ai')} variant="primary" size="lg" fullWidth>
+        <Button onPress={() => setStep('name')} variant="primary" size="lg" fullWidth>
           Get started
         </Button>
       </MotiView>

@@ -18,6 +18,7 @@ import { CONTENT_BOTTOM_CLEARANCE } from '@/components/ui/FloatingTabBar';
 import { useMnemoStore } from '@/hooks/use-mnemo-store';
 import { useThemeColors } from '@/hooks/use-theme';
 import { useAiProblem, type AiProblem } from '@/lib/ai-mode';
+import { usePreferences } from '@/lib/preferences';
 import { formatCompactDistance, freshness } from '@/utils/time';
 import { CATEGORY_LIST, useCategories } from '@/utils/categories';
 import { useEnter } from '@/utils/motion';
@@ -163,13 +164,13 @@ export function PulseHome() {
       : `${openCount === 1 ? 'One thread' : `${numberWord(openCount)} threads`} open` +
         (dueThisWeek > 0 ? `, ${numberWord(dueThisWeek).toLowerCase()} due this week.` : '.');
 
+  const { name } = usePreferences();
   const greeting = React.useMemo(() => {
     const hour = new Date().getHours();
-    if (hour < 5) return 'Still up?';
-    if (hour < 12) return 'Good morning';
-    if (hour < 18) return 'Good afternoon';
-    return 'Good evening';
-  }, []);
+    if (hour < 5) return name ? `Still up, ${name}?` : 'Still up?';
+    const part = hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening';
+    return name ? `${part}, ${name}` : part;
+  }, [name]);
   const today = React.useMemo(
     () => new Date().toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' }),
     [],
@@ -194,7 +195,11 @@ export function PulseHome() {
           </Text>
           <IconButton icon="settings" label="Open settings" variant="bare" onPress={() => router.push('/modal' as any)} />
         </View>
-        <Text className="font-display leading-tight" style={{ color: colors.fg, fontSize: 38, letterSpacing: -0.6 }}>
+        <Text
+          className="font-display leading-tight"
+          style={{ color: colors.fg, fontSize: 38, letterSpacing: -0.6 }}
+          numberOfLines={2}
+        >
           {greeting}
         </Text>
         {summary ? (

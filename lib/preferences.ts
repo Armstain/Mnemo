@@ -18,6 +18,15 @@ export type SpeechLang = 'en-US' | 'bn-BD';
 export interface Preferences {
   aiMode: AiMode;
   speechLang: SpeechLang;
+  /** What Home greets them by. Empty: no name. */
+  name: string;
+}
+
+/** Long enough for most first names, short enough for the greeting to fit. */
+export const NAME_MAX = 20;
+
+export function cleanName(raw: string): string {
+  return raw.replace(/\s+/g, ' ').trim().slice(0, NAME_MAX).trim();
 }
 
 const KEY = 'mnemo-preferences';
@@ -29,7 +38,7 @@ function phoneLanguage(): SpeechLang {
   }
 }
 
-const DEFAULTS: Preferences = { aiMode: 'unset', speechLang: phoneLanguage() };
+const DEFAULTS: Preferences = { aiMode: 'unset', speechLang: phoneLanguage(), name: '' };
 
 let current: Preferences = DEFAULTS;
 const listeners = new Set<() => void>();
@@ -56,6 +65,7 @@ export async function loadPreferences(hasKey: boolean): Promise<Preferences> {
     const raw = await read();
     const saved = raw ? (JSON.parse(raw) as Partial<Preferences>) : {};
     current = { ...DEFAULTS, ...saved };
+    current.name = cleanName(typeof current.name === 'string' ? current.name : '');
     if (current.aiMode === 'unset' && hasKey) current.aiMode = 'gemini';
   } catch {
     current = { ...DEFAULTS, aiMode: hasKey ? 'gemini' : 'unset' };

@@ -26,7 +26,7 @@ import { useThemeColors } from '@/hooks/use-theme';
 import { saveApiKey, validateApiKey } from '@/lib/api-key';
 import { aiEnabled } from '@/lib/ai-mode';
 import { saveTextNote, saveVoiceNote } from '@/lib/capture';
-import { setPreferences } from '@/lib/preferences';
+import { cleanName, getPreferences, NAME_MAX, setPreferences } from '@/lib/preferences';
 import { NUDGE_TIMES, requestNudgePermission, saveNudgePrefs } from '@/lib/nudges';
 import { useEnter } from '@/utils/motion';
 import { noFocusRing } from '@/utils/web';
@@ -102,6 +102,57 @@ function Headline({ title, body }: { title: string; body?: string }) {
         </Text>
       ) : null}
     </>
+  );
+}
+
+// ─── Step: name ─────────────────────────────────────────────────
+
+export function NameStep({ onDone, onBack }: { onDone: () => void; onBack: () => void }) {
+  const enter = useEnter();
+  const colors = useThemeColors();
+  const [name, setName] = useState(() => getPreferences().name);
+
+  const save = (value: string) => {
+    setPreferences({ name: cleanName(value) });
+    onDone();
+  };
+
+  return (
+    <StepFrame onBack={onBack} onSkip={() => save('')}>
+      <MotiView {...enter.rise(0)}>
+        <Headline title="What should Mnemo call you?" body="Just for the greeting on Home." />
+      </MotiView>
+      <MotiView {...enter.rise(1)} className="mt-6">
+        <View
+          className="flex-row items-center rounded-md px-4 h-14"
+          style={{ backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border }}
+        >
+          <TextInput
+            value={name}
+            onChangeText={setName}
+            maxLength={NAME_MAX}
+            autoFocus
+            autoCapitalize="words"
+            autoComplete="given-name"
+            returnKeyType="done"
+            onSubmitEditing={() => save(name)}
+            placeholder="Your name"
+            placeholderTextColor={colors.fgTertiary}
+            accessibilityLabel="Your name"
+            selectionColor={colors.accent}
+            className="flex-1 font-sans text-heading"
+            style={[{ color: colors.fg }, noFocusRing]}
+          />
+          <Text className="font-sans text-sm ml-2" style={{ color: colors.fgTertiary }}>
+            {NAME_MAX - name.length}
+          </Text>
+        </View>
+      </MotiView>
+      <View className="flex-1" />
+      <Button variant="primary" size="lg" fullWidth disabled={!cleanName(name)} onPress={() => save(name)}>
+        Continue
+      </Button>
+    </StepFrame>
   );
 }
 

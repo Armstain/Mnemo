@@ -592,6 +592,25 @@ export default function ModalScreen() {
           >
             <Eyebrow className="mb-1">About</Eyebrow>
 
+            <Pressable
+              onPress={() => {
+                Haptics.selectionAsync();
+                // Nothing is cleared: onboarding only rewrites the choices it asks about.
+                router.dismissAll();
+                router.replace('/onboarding');
+              }}
+              accessibilityRole="button"
+              className="bg-surface rounded-lg p-5 border border-border/50 flex-row items-center active:opacity-80"
+            >
+              <Icon name="repeat" size={15} color={colors.accent} />
+              <View className="ml-2 flex-1">
+                <Text className="font-sans-semi text-sm text-fg">Go through setup again</Text>
+                <Text className="font-sans text-sm text-fg-tertiary mt-0.5">
+                  Your name, AI or offline, and nudges. Your notes stay as they are.
+                </Text>
+              </View>
+            </Pressable>
+
             <View className="bg-surface rounded-lg p-5 border border-border/50">
               <View className="flex-row items-center mb-2">
                 <Info size={15} color={colors.accent} />
