@@ -520,11 +520,17 @@ export function ActionCluster({ visible = true }: { visible?: boolean }) {
                   opacity: expanded ? 0 : live || holdPhase === 'charging' ? 1 : 0.6,
                   scale: holdPhase === 'charging' && !reduceMotion ? 1.06 : 1,
                 }}
-                transition={
-                  live && !reduceMotion
-                    ? { type: 'timing', duration: 3000, easing: Easing.linear, loop: true, repeatReverse: false }
-                    : { type: 'spring', damping: 16, stiffness: 160 }
-                }
+                // Only rotate loops: a shared looping transition would also
+                // restart scale/opacity each lap, snapping the ring outward.
+                transition={{
+                  type: 'spring',
+                  damping: 16,
+                  stiffness: 160,
+                  rotate:
+                    live && !reduceMotion
+                      ? { type: 'timing', duration: 3000, easing: Easing.linear, loop: true, repeatReverse: false }
+                      : { type: 'spring', damping: 16, stiffness: 160 },
+                }}
               >
                 <OpenRing
                   size={ORBIT_SIZE}
