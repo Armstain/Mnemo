@@ -101,10 +101,11 @@ export async function syncReminderForItem(item: ReminderItem): Promise<void> {
     if (!isActive || !item.dueDate) return;
     if (!item.repeat && item.dueDate <= Date.now()) return;
 
+    // Channel first: Android 13+ shows no permission prompt until one exists.
+    await ensureAndroidChannel();
     const granted = await ensurePermission();
     if (!granted) return;
 
-    await ensureAndroidChannel();
     await ensureReminderCategory();
 
     await Notifications.scheduleNotificationAsync({
