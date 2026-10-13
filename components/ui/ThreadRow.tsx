@@ -1,14 +1,17 @@
 import React from 'react';
-import { Pressable, View } from 'react-native';
+import { PanResponder, Pressable, StyleSheet, View } from 'react-native';
 import { Text } from '@/components/ui/Text';
 import { MotiView } from 'moti';
+import * as Haptics from 'expo-haptics';
+import { Extrapolation, interpolate, useAnimatedStyle, useSharedValue, withSpring, withTiming } from 'react-native-reanimated';
 import { Animated, usePressScale } from '@/hooks/use-press-scale';
+import { Icon } from '@/components/ui/Icon';
 
 import { ThreadRing } from '@/components/ui/ThreadRing';
 import { useThemeColors } from '@/hooks/use-theme';
 import { useCategories, useStatusConfig } from '@/utils/categories';
 import { formatCompactDistance, freshness } from '@/utils/time';
-import { useEnter } from '@/utils/motion';
+import { EASE_OUT, useEnter } from '@/utils/motion';
 import type { MnemoItem } from '@/types/mnemo';
 
 /** One line of preview: the next step, else the note text, else checklist progress. */
@@ -48,6 +51,73 @@ interface ThreadRowProps {
    * scrolled into view don't play the entrance.
    */
   cell?: { first: boolean; animate: boolean };
+  /** Swipe left to delete. Leave unset for rows that can't be deleted. */
+  onSwipeDelete?: () => void;
+}
+
+/** Share of the row's width a swipe must pass before letting go deletes. */
+const SWIPE_ARM = 0.4;
+const SWIPE_OUT_MS = 180;
+const SWIPE_BACK = { damping: 20, stiffness: 260, mass: 0.6 };
+
+/**
+ * Swipe-left-to-delete: the row follows the finger over a red bin, ticks
+ * as it crosses the line (and back), and thuds as it goes.
+ */
+function useSwipeDelete(onDelete?: () => void) {
+  const x = useSharedValue(0);
+  const width = useSharedValue(0);
+  const armed = React.useRef(false);
+  const onDeleteRef = React.useRef(onDelete);
+  onDeleteRef.current = onDelete;
+
+  const responder = React.useMemo(
+    () =>
+      PanResponder.create({
+        // Capture, so a sideways drag is taken from the row's Pressable;
+        // mostly-vertical moves are left to the list's scroll.
+        onMoveShouldSetPanResponderCapture: (_, g) =>
+          !!onDeleteRef.current && g.dx < -10 && Math.abs(g.dx) > Math.abs(g.dy) * 1.5,
+        onPanResponderTerminationRequest: () => false,
+        onPanResponderMove: (_, g) => {
+          x.value = Math.min(0, g.dx);
+          const nowArmed = -g.dx > width.value * SWIPE_ARM;
+          if (nowArmed !== armed.current) {
+            armed.current = nowArmed;
+            if (nowArmed) Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+            else Haptics.selectionAsync();
+          }
+        },
+        onPanResponderRelease: (_, g) => {
+          const flung = g.vx < -1 && -g.dx > width.value * 0.15;
+          const commit = armed.current || flung;
+          armed.current = false;
+          if (!commit) {
+            x.value = withSpring(0, SWIPE_BACK);
+            return;
+          }
+          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
+          x.value = withTiming(-width.value, { duration: SWIPE_OUT_MS, easing: EASE_OUT });
+          setTimeout(() => onDeleteRef.current?.(), SWIPE_OUT_MS);
+        },
+        onPanResponderTerminate: () => {
+          armed.current = false;
+          x.value = withSpring(0, SWIPE_BACK);
+        },
+      }),
+    [x, width],
+  );
+
+  const rowStyle = useAnimatedStyle(() => ({ transform: [{ translateX: x.value }] }));
+  const binStyle = useAnimatedStyle(() => ({ opacity: x.value < 0 ? 1 : 0 }));
+  const iconStyle = useAnimatedStyle(() => {
+    const line = width.value * SWIPE_ARM || 1;
+    return {
+      transform: [{ scale: interpolate(-x.value, [0, line, line + 1], [0.6, 1, 1.25], Extrapolation.CLAMP) }],
+    };
+  });
+
+  return { x, width, responder, rowStyle, binStyle, iconStyle };
 }
 
 /**
@@ -55,7 +125,7 @@ interface ThreadRowProps {
  * threads: its ring (how warm it still is), title, one line of detail and
  * a timestamp. Rows sit inside a ThreadList so every list reads the same.
  */
-function ThreadRowImpl({ item, onPress, detail, trailing, trailingTone, last = false, index = 0, cell }: ThreadRowProps) {
+function ThreadRowImpl({ item, onPress, detail, trailing, trailingTone, last = false, index = 0, cell, onSwipeDelete }: ThreadRowProps) {
   const colors = useThemeColors();
   const enter = useEnter();
   const categories = useCategories();
@@ -66,6 +136,7 @@ function ThreadRowImpl({ item, onPress, detail, trailing, trailingTone, last = f
   const statusPrefix = item.status === 'active' ? '' : `${statusConfig[item.status].label} · `;
   const press = usePressScale(0.985);
   const secondLine = detail ?? `${statusPrefix}${threadPreview(item)}`.replace(/ · $/, '');
+  const swipe = useSwipeDelete(onSwipeDelete);
 
   return (
     <MotiView
@@ -89,6 +160,22 @@ function ThreadRowImpl({ item, onPress, detail, trailing, trailingTone, last = f
           : undefined
       }
     >
+      {onSwipeDelete ? (
+        <Animated.View
+          pointerEvents="none"
+          style={[StyleSheet.absoluteFill, styles.bin, { backgroundColor: colors.error }, swipe.binStyle]}
+        >
+          <Animated.View style={swipe.iconStyle}>
+            <Icon name="trash" size={20} color={colors.errorInk} stroke={2.2} />
+          </Animated.View>
+        </Animated.View>
+      ) : null}
+      <Animated.View
+        {...(onSwipeDelete ? swipe.responder.panHandlers : {})}
+        onLayout={(e) => (swipe.width.value = e.nativeEvent.layout.width)}
+        // Opaque while sliding, so the bin shows only where the row has left.
+        style={[{ backgroundColor: cell ? colors.surface : undefined }, swipe.rowStyle]}
+      >
       <Pressable
         onPress={onPress}
         onPressIn={press.onPressIn}
@@ -119,14 +206,15 @@ function ThreadRowImpl({ item, onPress, detail, trailing, trailingTone, last = f
         </Animated.View>
         {!last && <View style={{ marginLeft: 70, marginRight: 16, height: 1, backgroundColor: colors.border }} />}
       </Pressable>
+      </Animated.View>
     </MotiView>
   );
 }
 
 /**
- * Rows only change when their thread does. `onPress` is left out of the
- * comparison: lists make a new one each render, and it always opens this
- * row's thread.
+ * Rows only change when their thread does. `onPress` and `onSwipeDelete`
+ * are left out of the comparison: lists make new ones each render, and they
+ * always act on this row's thread.
  */
 export const ThreadRow = React.memo(
   ThreadRowImpl,
@@ -140,6 +228,10 @@ export const ThreadRow = React.memo(
     a.cell?.first === b.cell?.first &&
     a.cell?.animate === b.cell?.animate,
 );
+
+const styles = StyleSheet.create({
+  bin: { alignItems: 'flex-end', justifyContent: 'center', paddingRight: 28 },
+});
 
 /** The grouped surface every list of ThreadRows sits in. */
 export function ThreadList({ children }: { children: React.ReactNode }) {

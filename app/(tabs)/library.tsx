@@ -12,6 +12,7 @@ import { SearchBar } from '@/components/SearchBar';
 import { Icon } from '@/components/ui/Icon';
 import { NAV_CLEARANCE } from '@/components/ui/FloatingTabBar';
 import { useMnemoStore } from '@/hooks/use-mnemo-store';
+import { useUndoToast } from '@/hooks/use-undo-toast';
 import { useThemeColors } from '@/hooks/use-theme';
 import { bm25Search } from '@/lib/bm25';
 import { hybridSearch } from '@/lib/search';
@@ -39,7 +40,8 @@ const STATUS_FILTERS: { key: FilterStatus; label: string }[] = [
 
 export default function LibraryScreen() {
   const enter = useEnter();
-  const { items, entries, isLoaded } = useMnemoStore();
+  const { items, entries, isLoaded, deleteItem, undoDelete } = useMnemoStore();
+  const { showUndoToast } = useUndoToast();
   usePreferences(); // AI on or off changes what's offered
   const ai = aiEnabled();
   const [searchQuery, setSearchQuery] = useState('');
@@ -128,9 +130,13 @@ export default function LibraryScreen() {
         // Only the first screenful plays the entrance; rows scrolled in just appear.
         cell={{ first: index === 0, animate: index < 10 }}
         onPress={() => router.push(`/(tabs)/context?id=${item.id}` as any)}
+        onSwipeDelete={() => {
+          deleteItem(item.id);
+          showUndoToast(`"${item.title}" deleted`, () => undoDelete(item.id));
+        }}
       />
     ),
-    [filteredItems.length],
+    [filteredItems.length, deleteItem, undoDelete, showUndoToast],
   );
 
   if (!isLoaded) {
