@@ -20,7 +20,9 @@ export type NudgeTime = 'morning' | 'midday' | 'evening';
 
 export interface NudgePrefs {
   enabled: boolean;
-  time: NudgeTime;
+  time: NudgeTime | 'custom';
+  /** The clock time when `time` is 'custom'. */
+  custom?: { hour: number; minute: number };
   /** The weekly review notification (lib/review-notice.ts), under the same switch. */
   weekly: boolean;
 }
@@ -74,8 +76,9 @@ export async function loadNudgePrefs(): Promise<NudgePrefs> {
       const parsed = JSON.parse(raw);
       return {
         enabled: parsed.enabled !== false,
-        time: parsed.time in NUDGE_TIMES ? parsed.time : DEFAULT_PREFS.time,
         weekly: parsed.weekly !== false,
+        time: parsed.time in NUDGE_TIMES || (parsed.time === 'custom' && parsed.custom) ? parsed.time : DEFAULT_PREFS.time,
+        custom: parsed.custom,
       };
     }
   } catch {
@@ -147,6 +150,27 @@ export async function requestNudgePermission(): Promise<boolean> {
   }
 }
 
+/** Fires one nudge a few seconds from now, so the whole path can be checked. */
+export async function sendTestNudge(): Promise<boolean> {
+  if (!(await requestNudgePermission())) return false;
+  try {
+    await Notifications.scheduleNotificationAsync({
+      // Outside ID_PREFIX, so a replan in the next few seconds can't cancel it.
+      identifier: 'mnemo-test-nudge',
+      content: { title: 'Mnemo', body: 'Nudges work. This is how one will look.' },
+      trigger: { type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL, seconds: 5, channelId: ANDROID_CHANNEL_ID },
+    });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** The hour and minute nudges go out at. */
+export function nudgeClock(prefs: NudgePrefs): { hour: number; minute: number } {
+  return prefs.time === 'custom' && prefs.custom ? prefs.custom : NUDGE_TIMES[prefs.time === 'custom' ? 'morning' : prefs.time];
+}
+
 // ─── Planning ───────────────────────────────────────────────────
 
 function lastTouched(item: NudgeItem): number {
@@ -160,7 +184,7 @@ function lastTouched(item: NudgeItem): number {
  */
 function planSlots(
   items: NudgeItem[],
-  time: NudgeTime,
+  clock: { hour: number; minute: number },
   delivered: Record<string, number>,
   now: number,
 ): NudgeSlot[] {
@@ -180,7 +204,7 @@ function planSlots(
       return byNextStep !== 0 ? byNextStep : lastTouched(b) - lastTouched(a);
     });
 
-  const { hour, minute } = NUDGE_TIMES[time];
+  const { hour, minute } = clock;
   const first = new Date(now);
   first.setHours(hour, minute, 0, 0);
   if (first.getTime() <= now) first.setDate(first.getDate() + 1);
@@ -243,7 +267,7 @@ async function replan(items: NudgeItem[]): Promise<void> {
     await ensureAndroidChannel();
     await ensureReminderCategory();
     const byId = new Map(items.map((item) => [item.id, item]));
-    const slots = planSlots(items, prefs.time, delivered, now);
+    const slots = planSlots(items, nudgeClock(prefs), delivered, now);
     for (const [index, slot] of slots.entries()) {
       const item = byId.get(slot.itemId)!;
       await Notifications.scheduleNotificationAsync({

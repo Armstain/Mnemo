@@ -23,6 +23,7 @@ import Constants from 'expo-constants';
 import * as WebBrowser from 'expo-web-browser';
 import * as Haptics from 'expo-haptics';
 import { useEffect, useState } from 'react';
+import DateTimePicker from '@react-native-community/datetimepicker';
 import { Button, IconButton } from '@/components/ui/Button';
 import { Pill } from '@/components/ui/Pill';
 import { Eyebrow } from '@/components/ui/Eyebrow';
@@ -48,6 +49,7 @@ import {
   requestNudgePermission,
   saveNudgePrefs,
   scheduleNudges,
+  sendTestNudge,
   type NudgePrefs,
   type NudgeTime,
 } from '@/lib/nudges';
@@ -80,6 +82,8 @@ function NudgeSettingsCard() {
   const [blocked, setBlocked] = useState(false);
   const [verified, setVerified] = useState(false);
   const strict = strictPhone();
+  const [pickingTime, setPickingTime] = useState(false);
+  const [testSent, setTestSent] = useState(false);
 
   useEffect(() => {
     loadNudgePrefs().then(setPrefs);
@@ -109,8 +113,21 @@ function NudgeSettingsCard() {
     }
   };
 
+  const handleTest = async () => {
+    const ok = await sendTestNudge();
+    setGranted(ok);
+    setBlocked(!ok);
+    setTestSent(ok);
+  };
+
+  const pickCustom = (date?: Date) => {
+    if (!prefs || !date) return;
+    apply({ ...prefs, time: 'custom', custom: { hour: date.getHours(), minute: date.getMinutes() } });
+  };
+
   if (!prefs) return null;
   const isOn = prefs.enabled && granted;
+  const customAt = prefs.custom ? new Date(0, 0, 1, prefs.custom.hour, prefs.custom.minute) : new Date(0, 0, 1, 9, 0);
 
   return (
     <View className="bg-surface rounded-lg p-5 border border-border/50 gap-4">
@@ -149,6 +166,48 @@ function NudgeSettingsCard() {
               {NUDGE_TIMES[key].label}
             </Pill>
           ))}
+          <Pill
+            tone={colors.accent}
+            size="md"
+            dot={false}
+            outline={prefs.time !== 'custom'}
+            selected={prefs.time === 'custom'}
+            onPress={() => setPickingTime(true)}
+          >
+            {prefs.custom
+              ? `Custom · ${prefs.custom.hour}:${String(prefs.custom.minute).padStart(2, '0')}`
+              : 'Custom…'}
+          </Pill>
+        </View>
+      )}
+
+      {pickingTime &&
+        (Platform.OS === 'ios' ? (
+          <View>
+            <DateTimePicker value={customAt} mode="time" display="spinner" onChange={(_, d) => pickCustom(d)} />
+            <Button size="sm" variant="quiet" fullWidth onPress={() => setPickingTime(false)}>
+              Done
+            </Button>
+          </View>
+        ) : (
+          <DateTimePicker
+            value={customAt}
+            mode="time"
+            onChange={(e, d) => {
+              setPickingTime(false);
+              if (e.type === 'set') pickCustom(d);
+            }}
+          />
+        ))}
+
+      {isOn && (
+        <View className="flex-row items-center justify-between gap-3">
+          <Text className="font-sans text-sm text-fg-tertiary flex-1">
+            {testSent ? 'Sent. It shows up in about 5 seconds, even with the app closed.' : 'Check that nudges reach you.'}
+          </Text>
+          <Button variant="quiet" size="sm" onPress={handleTest}>
+            Send a test
+          </Button>
         </View>
       )}
 
