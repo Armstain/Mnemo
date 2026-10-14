@@ -209,6 +209,12 @@ function isTimeOrYear(tokens: string[], span: NumberSpan): boolean {
   return Number.isInteger(span.value) && span.value >= 1900 && span.value <= 2100 && !unitAt(tokens, span.last + 1);
 }
 
+/** A duration counted from now: "in 20 mins", "after an hour", "২০ মিনিট পর". */
+function fromNow(tokens: string[], span: NumberSpan): boolean {
+  if (/^(in|after|within)$/.test(tokens[span.first - 1] ?? '')) return true;
+  return /^(later|por|pore|baad|bade|পর|পরে|বাদে)$/.test(nfc(tokens[span.last + 2] ?? ''));
+}
+
 function metricFor(kind: UnitKind, clause: string[]): { metric: string; rollup: Rollup } | null {
   switch (kind) {
     case 'money':
@@ -292,6 +298,8 @@ export function readMeasures(text: string, known: KnownMetric[] = []): Measure[]
         if (others.length > 0) unit = { unit: noteCurrency, kind: 'money' };
       }
       if (!unit || span.value <= 0) return;
+      // "in 20 mins", "20 min pore": when, not how long something took.
+      if (unit.kind === 'time' && fromNow(lower, span)) return;
 
       const what = metricFor(unit.kind, lower);
       if (!what) return;
@@ -327,16 +335,22 @@ export function readMeasures(text: string, known: KnownMetric[] = []): Measure[]
 // ─── Next step, where it stopped ────────────────────────────────
 
 const INTENT_EN =
-  /\b(need(?:s)? to|have to|has to|got to|gotta|must|should|remember to|remind(?: me)? to|don'?t forget(?: to)?|do not forget(?: to)?|todo|to-do|next step|next:|i'?ll|i will|we'?ll|we will|going to|plan to|planning to|let'?s|tomorrow|by (?:monday|tuesday|wednesday|thursday|friday|saturday|sunday))\b/i;
-const INTENT_BN = /(তে হবে|লাগবে|মনে করে|ভুল(?:বো|ব|ো|ে যেও|ে যাবো) না|করবো|করব|যাবো|যাব|কিনবো|কিনব|দেবো|দিব|আগামীকাল)/;
+  /\b(need(?:s)? to|have to|has to|got to|gotta|must|should|remember to|remind(?: me)?(?: to)?|don'?t forget(?: to)?|do not forget(?: to)?|todo|to-do|next step|next:|i'?ll|i will|we'?ll|we will|going to|plan to|planning to|let'?s|tomorrow|by (?:monday|tuesday|wednesday|thursday|friday|saturday|sunday))\b/i;
+const INTENT_BN = /(তে হবে|লাগবে|মনে করে|মনে করিয়ে|ভুল(?:বো|ব|ো|ে যেও|ে যাবো) না|করবো|করব|যাবো|যাব|কিনবো|কিনব|দেবো|দিব|আগামীকাল)/;
 const INTENT_LATIN_BN =
-  /\b(\w+te hobe|lagbe|mone kore|bhulbo na|vulbo na|korbo|jabo|kinbo|dibo|debo|nibo|agamikal)\b/i;
+  /\b(\w+te hobe|lagbe|mone kore|mone koriye|bhulbo na|vulbo na|korbo|jabo|kinbo|dibo|debo|nibo|agamikal)\b/i;
 
 const LEAD_INS =
   /^(?:(?:so|ok(?:ay)?|and|also|um+|uh+|then)\s+)*(?:i\s+|we\s+)?(?:really\s+)?(?:need(?:s)? to|have to|has to|got to|gotta|must|should|remember to|remind(?: me)? to|don'?t forget to|do not forget to|todo:?|to-do:?|next step:?|next:|i'?ll|will|am going to|are going to|going to|plan to|planning to|let'?s)\s+/i;
 
+/** "…, remind me" / "remind me please" at the end: the request, not the step. */
+const REMIND_TAIL = /[\s,;.-]*(?:(?:please|pls|plz)\s+)?remind me(?:\s+(?:please|pls|plz))?[.!]?\s*$/i;
+
+/** Curly quotes from phone keyboards read like straight ones ("I’ll" is "I'll"). */
+const straightQuotes = (s: string) => s.replace(/[’‘ʼ`]/g, "'");
+
 function cleanStep(sentence: string): string {
-  const stripped = trimEnd(sentence.replace(LEAD_INS, ''));
+  const stripped = trimEnd(sentence.replace(LEAD_INS, '').replace(REMIND_TAIL, ''));
   return clip(capitalize(stripped), STEP_MAX);
 }
 
@@ -429,9 +443,34 @@ function readTime(words: string[], joined: string): { hour: number; minute: numb
   return undefined;
 }
 
+const MINUTE_MS = 60_000;
+const COUNT: Record<string, number> = { a: 1, an: 1, one: 1, two: 2, three: 3, four: 4, five: 5, ten: 10, fifteen: 15, twenty: 20, thirty: 30, 'half an': 0.5, half: 0.5 };
+const MIN_UNIT = 'min|mins|minute|minutes|মিনিট|minit';
+const HOUR_UNIT = 'h|hr|hrs|hour|hours|ঘণ্টা|ঘন্টা|ghonta|ghonta';
+
+/** "in 20 mins", "after an hour", "in half an hour", "২০ মিনিট পর", "1 ghonta pore": milliseconds from now. */
+function fromNowIn(text: string): number | undefined {
+  const digits = text.replace(/[০-৯]/g, (d) => String('০১২৩৪৫৬৭৮৯'.indexOf(d)));
+  const amount = String.raw`(\d+(?:\.\d+)?|a|an|one|two|three|four|five|ten|fifteen|twenty|thirty|half an|half)`;
+  const ms = (n: string, unit: string) => {
+    const count = COUNT[n] ?? Number(n);
+    if (!Number.isFinite(count) || count <= 0) return undefined;
+    const hours = new RegExp(`^(?:${HOUR_UNIT})$`).test(unit);
+    const out = count * (hours ? 60 : 1) * MINUTE_MS;
+    return out <= 7 * 24 * 60 * MINUTE_MS ? out : undefined;
+  };
+  const en = digits.match(new RegExp(String.raw`(?:^|\s)(?:in|after|within)\s+${amount}\s*(${MIN_UNIT}|${HOUR_UNIT})(?=[\s,.!?;:]|$)`));
+  if (en) return ms(en[1], en[2]);
+  const bn = digits.match(new RegExp(String.raw`(\d+(?:\.\d+)?)\s*(${MIN_UNIT}|${HOUR_UNIT})\s*(?:পর|পরে|বাদে|por|pore|bade|baad|later)(?=[\s,.!?;:]|$)`));
+  if (bn) return ms(bn[1], bn[2]);
+  return undefined;
+}
+
 /** A day (and time) named in a sentence, as a timestamp in the future. */
 export function readWhen(sentence: string, now = Date.now(), monthFirst = false): number | undefined {
-  const text = nfc(sentence.toLowerCase());
+  const text = nfc(straightQuotes(sentence.toLowerCase()));
+  const later = fromNowIn(text);
+  if (later) return Math.round((now + later) / 60_000) * 60_000;
   const words = numberTokens(text);
   const joined = words.join(' ');
   const today = new Date(now);
@@ -549,6 +588,8 @@ const WHEN_PHRASES = [
   /\b(?:the\s+)?day after tomorrow\b|\b(?:today|tonight|tomorrow|tmrw)\b|\bnext week\b|\bthis (?:morning|afternoon|evening)\b/gi,
   /\b(?:at|by|around)?\s*\d{1,2}(?:[:.]\d{2})?\s*(?:am|pm|a\.m\.|p\.m\.)/gi,
   /\b(?:at|by)\s+\d{1,2}:\d{2}\b/gi,
+  /\b(?:in|after|within)\s+(?:\d+(?:\.\d+)?|a|an|one|two|three|four|five|ten|fifteen|twenty|thirty|half an?)\s*(?:mins?|minutes?|h|hrs?|hours?)\b/gi,
+  /(?:^|\s)[০-৯\d]+\s*(?:মিনিট|ঘণ্টা|ঘন্টা|minit|mins?|ghonta)\s*(?:পর|পরে|বাদে|por|pore|bade)(?=\s|$)/gi,
   /(?:^|\s)(?:আগামীকাল|আজকে|আজ|কালকে|কাল|পরশু)(?=\s|$)/g,
   /(?:^|\s)(?:সকাল|সকালে|দুপুর|দুপুরে|বিকাল|বিকেল|বিকালে|বিকেলে|সন্ধ্যা|সন্ধ্যায়|রাত|রাতে)?\s*[০-৯\d]{1,2}\s*(?:টায়|টা|টার)(?=\s|$)/g,
   /\b(?:sokal|bikal|bikel|rat|raat|dupur|sondhay?)?\s*\d{1,2}\s*(?:tay|ta|baje)\b/gi,
@@ -571,7 +612,7 @@ function readTitle(text: string, items: ChecklistItem[]): string {
   // "Lisbon trip: dinner €40, …" is about the Lisbon trip.
   const head = title.match(/^([^:]{2,40}):\s+\S/);
   if (head && head[1].trim().split(/\s+/).length <= 6) title = head[1];
-  title = trimEnd(title.replace(/^#+\s*/, '').replace(TITLE_LEAD, '').replace(LEAD_INS, ''));
+  title = trimEnd(title.replace(/^#+\s*/, '').replace(TITLE_LEAD, '').replace(LEAD_INS, '').replace(REMIND_TAIL, ''));
   // A title is no place for a link or a hashtag.
   title = title.replace(/\b(?:https?:\/\/|www\.)\S+/gi, '').replace(/(?:^|\s)#\S+/g, '').trim();
   title = trimEnd(withoutWhen(title).replace(/\s+(?:and|or|at|on|by)$/i, ''));
@@ -592,7 +633,7 @@ export function understand(
   input: string,
   options: { known?: KnownMetric[]; now?: number; monthFirst?: boolean } = {},
 ): Reading {
-  const raw = input.trim();
+  const raw = straightQuotes(input.trim());
   const list = readList(raw);
   const text = list.text;
   const { step, sentence } = readNextStep(text || raw);

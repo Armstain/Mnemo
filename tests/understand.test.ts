@@ -115,3 +115,32 @@ describe('a time with no day', () => {
     expect(r.due).toBe(at('2026-10-14T18:00:00'));
   });
 });
+
+describe('a time counted from now', () => {
+  const at = (s: string) => new Date(s).getTime();
+  const seven = at('2026-10-14T19:00:00');
+  it('"in 20 mins … remind me": a reminder at 7:20, not 20 minutes of exercise', () => {
+    const r = understand('I’ll go to the gym in 20 mins remind me', { now: seven });
+    expect(r.due).toBe(at('2026-10-14T19:20:00'));
+    expect(r.measures).toEqual([]);
+    expect(r.nextStep).toBe('Go to the gym');
+    expect(r.title).toBe('Go to the gym');
+  });
+  it('hours, half an hour, words', () => {
+    expect(readWhen('call amma in an hour', seven)).toBe(at('2026-10-14T20:00:00'));
+    expect(readWhen('need to leave in half an hour', seven)).toBe(at('2026-10-14T19:30:00'));
+    expect(readWhen('take the pill in 2 hours', seven)).toBe(at('2026-10-14T21:00:00'));
+  });
+  it('Bangla and Banglish', () => {
+    expect(readWhen('২০ মিনিট পরে ওষুধ খেতে হবে', seven)).toBe(at('2026-10-14T19:20:00'));
+    expect(readWhen('1 ghonta pore call dite hobe', seven)).toBe(at('2026-10-14T20:00:00'));
+  });
+  it('a duration that is a reading stays one', () => {
+    const r = understand('Went to the gym for 45 min', { now: seven });
+    expect(r.measures.map((m) => [m.metric, m.value, m.unit])).toEqual([['exercise', 45, 'min']]);
+    expect(r.due).toBeUndefined();
+  });
+  it('curly apostrophes read like straight ones', () => {
+    expect(understand('I’ll send the quote tomorrow', { now: seven }).nextStep).toBe('Send the quote');
+  });
+});

@@ -100,6 +100,20 @@ function knownMetrics(store: CaptureStore, threadId?: string): KnownMetric[] {
  * offline that's all it gets; with AI on it's what shows until Gemini's
  * version arrives, and what stays if Gemini never answers.
  */
+// A capture that set a reminder says so (components/FilingNotifier.tsx shows it).
+export interface ReminderSetEvent {
+  threadId: string;
+  at: number;
+  /** What the thread's reminder was before, for Undo. */
+  previous?: number;
+}
+const reminderListeners = new Set<(event: ReminderSetEvent) => void>();
+export function onReminderSet(listener: (event: ReminderSetEvent) => void): () => void {
+  reminderListeners.add(listener);
+  return () => reminderListeners.delete(listener);
+}
+const reminderSet = (event: ReminderSetEvent) => reminderListeners.forEach((l) => l(event));
+
 function saveNote(source: Entry['source'], params: NoteInput): { threadId: string; entry: Entry } {
   const { category, threadId, store } = params;
   const words = params.text.trim();
@@ -140,6 +154,7 @@ function saveNote(source: Entry['source'], params: NoteInput): { threadId: strin
       if (due && (params.dueDate || !thread.dueDate || thread.dueDate < Date.now())) updates.dueDate = due;
       if (reading.tags.some((t) => !thread.tags.includes(t))) updates.tags = [...new Set([...thread.tags, ...reading.tags])].slice(0, 8);
       if (Object.keys(updates).length > 0) store.updateItem(threadId, updates);
+      if (updates.dueDate) reminderSet({ threadId, at: updates.dueDate, previous: thread.dueDate });
     }
   } else {
     const fallback =
@@ -158,6 +173,7 @@ function saveNote(source: Entry['source'], params: NoteInput): { threadId: strin
       entryInput,
     );
     saved = { threadId: created.thread.id, entry: created.entry };
+    if (due) reminderSet({ threadId: saved.threadId, at: due });
     if (!ai) suggestByKeywords(saved, words, store);
   }
   if (ai) resolvePendingEntry(saved.entry, store);
