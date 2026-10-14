@@ -46,7 +46,7 @@ describe('reading a note on the phone', () => {
 
   it('next step, due time, title without the time', () => {
     const r = read('Need to call the plumber tomorrow at 5pm about the kitchen leak');
-    expect(r.nextStep).toBe('Call the plumber tomorrow at 5pm about the kitchen leak');
+    expect(r.nextStep).toBe('Call the plumber about the kitchen leak');
     expect(at(r.due)).toBe('Tue Oct 13 2026 17:00');
     expect(r.title).toBe('Call the plumber about the kitchen leak');
   });
@@ -54,7 +54,7 @@ describe('reading a note on the phone', () => {
   it('Bangla and Banglish steps and times', () => {
     expect(at(read('কাল বিকাল ৫টায় ডাক্তারের কাছে যেতে হবে').due)).toBe('Tue Oct 13 2026 17:00');
     expect(at(read('kal sokal 10 tay bank e jete hobe').due)).toBe('Tue Oct 13 2026 10:00');
-    expect(read('আজকে অফিসে মিটিং ছিল, কাল প্রেজেন্টেশন দিতে হবে').nextStep).toBe('কাল প্রেজেন্টেশন দিতে হবে');
+    expect(read('আজকে অফিসে মিটিং ছিল, কাল প্রেজেন্টেশন দিতে হবে').nextStep).toBe('প্রেজেন্টেশন দিতে হবে');
   });
 
   it('lists, typed or said', () => {
@@ -76,7 +76,7 @@ describe('reading a note on the phone', () => {
     expect(r.title).toBe('example.com');
     const book = read('Read 30 pages of Sapiens, stopped at chapter 4. Finish it by friday');
     expect(book.leftOff).toBe('Read 30 pages of Sapiens, stopped at chapter 4');
-    expect(book.nextStep).toBe('Finish it by friday');
+    expect(book.nextStep).toBe('Finish it');
     expect(at(book.due)).toBe('Fri Oct 16 2026 09:00');
     expect(read('Meeting with client about the invoice').category).toBe('work');
   });
@@ -89,5 +89,29 @@ describe('reading a note on the phone', () => {
     expect(at(readWhen('pay rent on 3/11', now))).toBe('Tue Nov 03 2026 09:00');
     expect(at(readWhen('pay rent on 3/11', now, true))).toBe('Thu Mar 11 2027 09:00');
     expect(readWhen('call today', new Date('2026-10-12T20:00:00').getTime())).toBeUndefined();
+  });
+});
+
+describe('a time with no day', () => {
+  const at = (s: string) => new Date(s).getTime();
+  const noon = at('2026-10-14T13:09:00');
+  it('"at 6 pm" is today at six while it is still ahead', () => {
+    expect(readWhen('remind to charge my watch and ear buds at 6 pm', noon)).toBe(at('2026-10-14T18:00:00'));
+  });
+  it('and tomorrow once it has passed', () => {
+    expect(readWhen('call amma at 9 am', noon)).toBe(at('2026-10-15T09:00:00'));
+  });
+  it('Bangla and Banglish times too', () => {
+    expect(readWhen('বিকাল ৫টায় ঔষধ খেতে হবে', noon)).toBe(at('2026-10-14T17:00:00'));
+    expect(readWhen('rat 9 tay call dite hobe', noon)).toBe(at('2026-10-14T21:00:00'));
+  });
+  it('an amount is not a time', () => {
+    expect(readWhen('lunch 450 taka, tea 120 taka', noon)).toBeUndefined();
+  });
+  it('"remind me to" is the next step, and the title drops it', () => {
+    const r = understand('remind me to charge my watch and ear buds at 6 pm', { now: noon });
+    expect(r.title).toBe('Charge my watch and ear buds');
+    expect(r.nextStep).toBe('Charge my watch and ear buds');
+    expect(r.due).toBe(at('2026-10-14T18:00:00'));
   });
 });

@@ -77,7 +77,9 @@ export default function TabLayout() {
           headerShown: false,
           tabBarStyle: { display: 'none' },
           // Every screen sits on the one solid bg tone — no glass/glow wash.
-          sceneStyle: { backgroundColor: 'transparent' },
+          // Solid, not transparent: on the web the tab left behind stays
+          // mounted, and showed through the one on top.
+          sceneStyle: { backgroundColor: colors.bg },
           // Tabs are peers, not a hierarchy — a slide implies a depth that
           // isn't there, and the user pays for it dozens of times a session.
           // The spatial cue this used to carry still exists, and it's the
