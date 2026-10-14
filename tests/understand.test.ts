@@ -91,3 +91,27 @@ describe('reading a note on the phone', () => {
     expect(readWhen('call today', new Date('2026-10-12T20:00:00').getTime())).toBeUndefined();
   });
 });
+
+describe('a time with no day', () => {
+  const at = (s: string) => new Date(s).getTime();
+  const noon = at('2026-10-14T13:09:00');
+  it('"at 6 pm" is today at six while it is still ahead', () => {
+    expect(readWhen('remind to charge my watch and ear buds at 6 pm', noon)).toBe(at('2026-10-14T18:00:00'));
+  });
+  it('and tomorrow once it has passed', () => {
+    expect(readWhen('call amma at 9 am', noon)).toBe(at('2026-10-15T09:00:00'));
+  });
+  it('Bangla and Banglish times too', () => {
+    expect(readWhen('বিকাল ৫টায় ঔষধ খেতে হবে', noon)).toBe(at('2026-10-14T17:00:00'));
+    expect(readWhen('rat 9 tay call dite hobe', noon)).toBe(at('2026-10-14T21:00:00'));
+  });
+  it('an amount is not a time', () => {
+    expect(readWhen('lunch 450 taka, tea 120 taka', noon)).toBeUndefined();
+  });
+  it('"remind me to" is the next step, and the title drops it', () => {
+    const r = understand('remind me to charge my watch and ear buds at 6 pm', { now: noon });
+    expect(r.title).toBe('Charge my watch and ear buds');
+    expect(r.nextStep).toBe('Charge my watch and ear buds at 6 pm');
+    expect(r.due).toBe(at('2026-10-14T18:00:00'));
+  });
+});

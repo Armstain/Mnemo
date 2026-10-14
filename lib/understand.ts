@@ -327,13 +327,13 @@ export function readMeasures(text: string, known: KnownMetric[] = []): Measure[]
 // ─── Next step, where it stopped ────────────────────────────────
 
 const INTENT_EN =
-  /\b(need(?:s)? to|have to|has to|got to|gotta|must|should|remember to|don'?t forget(?: to)?|do not forget(?: to)?|todo|to-do|next step|next:|i'?ll|i will|we'?ll|we will|going to|plan to|planning to|let'?s|tomorrow|by (?:monday|tuesday|wednesday|thursday|friday|saturday|sunday))\b/i;
+  /\b(need(?:s)? to|have to|has to|got to|gotta|must|should|remember to|remind(?: me)? to|don'?t forget(?: to)?|do not forget(?: to)?|todo|to-do|next step|next:|i'?ll|i will|we'?ll|we will|going to|plan to|planning to|let'?s|tomorrow|by (?:monday|tuesday|wednesday|thursday|friday|saturday|sunday))\b/i;
 const INTENT_BN = /(তে হবে|লাগবে|মনে করে|ভুল(?:বো|ব|ো|ে যেও|ে যাবো) না|করবো|করব|যাবো|যাব|কিনবো|কিনব|দেবো|দিব|আগামীকাল)/;
 const INTENT_LATIN_BN =
   /\b(\w+te hobe|lagbe|mone kore|bhulbo na|vulbo na|korbo|jabo|kinbo|dibo|debo|nibo|agamikal)\b/i;
 
 const LEAD_INS =
-  /^(?:(?:so|ok(?:ay)?|and|also|um+|uh+|then)\s+)*(?:i\s+|we\s+)?(?:really\s+)?(?:need(?:s)? to|have to|has to|got to|gotta|must|should|remember to|don'?t forget to|do not forget to|todo:?|to-do:?|next step:?|next:|i'?ll|will|am going to|are going to|going to|plan to|planning to|let'?s)\s+/i;
+  /^(?:(?:so|ok(?:ay)?|and|also|um+|uh+|then)\s+)*(?:i\s+|we\s+)?(?:really\s+)?(?:need(?:s)? to|have to|has to|got to|gotta|must|should|remember to|remind(?: me)? to|don'?t forget to|do not forget to|todo:?|to-do:?|next step:?|next:|i'?ll|will|am going to|are going to|going to|plan to|planning to|let'?s)\s+/i;
 
 function cleanStep(sentence: string): string {
   const stripped = trimEnd(sentence.replace(LEAD_INS, ''));
@@ -493,8 +493,13 @@ export function readWhen(sentence: string, now = Date.now(), monthFirst = false)
     }
   }
 
-  if (!day) return undefined;
   const time = readTime(words, joined);
+  if (!day && time) {
+    // "at 6 pm" with no day: the next 6 pm, today if it's still ahead.
+    const at = atTime(today, time.hour, time.minute);
+    return at > now ? at : atTime(new Date(today.getTime() + DAY_MS), time.hour, time.minute);
+  }
+  if (!day) return undefined;
   const at = time ? atTime(day, time.hour, time.minute) : atTime(day, 9, 0);
   if (at > now) return at;
   // Today with no time named, and the morning's gone: the evening.
