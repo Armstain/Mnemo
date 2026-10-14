@@ -1,6 +1,7 @@
 import { numberTokens, scanNumbers, metricKey, type NumberSpan } from '@/lib/measures';
 import type { Category, ChecklistItem, Measure, Rollup } from '@/types/mnemo';
 import { capitalize, hostOf, nfc } from '@/utils/text';
+import { isPlan, MONTH_WORDS, readWhenFull, withoutWhen, type Repeat } from '@/lib/when-read';
 
 // Reading a note on the phone, with no AI: a title, lists, links, the
 // numbers worth adding up, the next step and when it's due, a category
@@ -18,8 +19,10 @@ export interface Reading {
   measures: Measure[];
   nextStep?: string;
   leftOff?: string;
-  /** When the next step is due, if a day was named ("tomorrow", "শুক্রবার"). */
+  /** When the next step is due, if a time or day was named ("tomorrow", "at 7", "শুক্রবার"). */
   due?: number;
+  /** "every day at 8", "every Friday", "প্রতিদিন". */
+  repeat?: Repeat;
   category?: Category;
   tags: string[];
 }
@@ -46,10 +49,13 @@ function clip(text: string, max: number): string {
 const trimEnd = (s: string) => s.replace(/[\s.,;:!?।]+$/, '').trim();
 
 /** Sentences, split on . ! ? । and new lines (not inside 1.5 or a URL). */
+// A full stop after these isn't the end of a sentence ("Tk. 1,200", "Dr. Rahman").
+const ABBREVIATIONS = /(?:^|\s)(?:tk|rs|dr|mr|mrs|ms|st|no|vs|approx|etc|e\.g|i\.e|jan|feb|mar|apr|jun|jul|aug|sep|sept|oct|nov|dec)$/i;
+
 export function sentences(text: string): string[] {
   return text
     .replace(/([!?।])\s*/g, '$1\n')
-    .replace(/([.])\s+/g, '$1\n')
+    .replace(/([.])\s+/g, (m, dot, offset: number, all: string) => (ABBREVIATIONS.test(all.slice(Math.max(0, offset - 8), offset)) ? m : `${dot}\n`))
     .split(/\n+/)
     .map((s) => s.trim())
     .filter(Boolean);
@@ -188,7 +194,8 @@ const BANGLA_FILLER = new Set(
     .map(nfc),
 );
 
-function isFiller(word: string): boolean {
+function isFiller(raw: string): boolean {
+  const word = raw.replace(/^\.+|\.+$/g, '');
   return FILLER.has(word) || BANGLA_FILLER.has(word) || /^\d/.test(word) || word.length < 2 || !!UNITS.get(word);
 }
 
@@ -204,6 +211,11 @@ function labelFrom(lower: string[], original: string[]): string | undefined {
 
 function isTimeOrYear(tokens: string[], span: NumberSpan): boolean {
   const next = tokens[span.last + 1] ?? '';
+  const prev = tokens[span.first - 1] ?? '';
+  // A date: "25 october", "oct 30", "20 tarikh"
+  if (MONTH_WORDS.has(nfc(next)) || MONTH_WORDS.has(nfc(prev)) || /^(তারিখে|তারিখ|tarikh|tarikhe)$/.test(nfc(next))) return true;
+  // "at 7", "by 5" with nothing after that makes it an amount
+  if (/^(at|by|@|around|before)$/.test(prev) && span.value <= 24 && !unitAt(tokens, span.last + 1)) return true;
   if (/^(am|pm|a\.m\.|p\.m\.|baje|বাজে|টায়|টার|tay|o'clock|th|st|nd|rd)$/.test(next)) return true;
   if (/^টা(য়|র)?$/.test(nfc(next))) return true;
   return Number.isInteger(span.value) && span.value >= 1900 && span.value <= 2100 && !unitAt(tokens, span.last + 1);
@@ -267,7 +279,10 @@ function clauses(text: string): string[] {
     .filter(Boolean);
 }
 
-export function readMeasures(text: string, known: KnownMetric[] = []): Measure[] {
+/** Words that make a bare amount money: "spent 1500", "salary 45000", "rent dilam 8000". */
+const MONEY_WORDS = /^(spent|spend|paid|cost|costs|price|salary|rent|bill|fare|fee|fees|earned|khoroch|khorch|beton|bhara|dam|খরচ|বেতন|ভাড়া|দাম|বিল)$/;
+
+export function readMeasures(text: string, known: KnownMetric[] = [], currency?: string): Measure[] {
   const all = clauses(text).map((c) => {
     const lower = numberTokens(c);
     const original = numberTokens(c, true);
@@ -278,7 +293,8 @@ export function readMeasures(text: string, known: KnownMetric[] = []): Measure[]
   const currencies = all.flatMap(({ lower }) =>
     lower.map((_, i) => unitAt(lower, i)).filter((u) => u?.kind === 'money').map((u) => u!.unit),
   );
-  const noteCurrency = currencies[0];
+  // No currency said: the phone's own, but only for amounts money words point at.
+  const noteCurrency = currencies[0] ?? (currency && all.some(({ lower }) => has(lower, MONEY_WORDS)) ? currency : undefined);
 
   const out: Measure[] = [];
   for (const { lower, original, spans } of all) {
@@ -292,7 +308,8 @@ export function readMeasures(text: string, known: KnownMetric[] = []): Measure[]
       let unit = after ?? (before && /^[৳$€£₹]$/.test(lower[span.first - 1]) ? before : undefined);
       const figure = original[span.first] ?? '';
       const looksLikeAnId = /^0\d{3,}/.test(figure) || /^\d{7,}$/.test(figure);
-      if (!unit && noteCurrency && spans.length === 1 && span.value > 0 && !looksLikeAnId) {
+      const guessed = !currencies[0];
+      if (!unit && noteCurrency && spans.length === 1 && span.value > 0 && !looksLikeAnId && (!guessed || span.value >= 10)) {
         // A lone bare number beside a thing, in a note about money.
         const others = lower.filter((w, i) => (i < span.first || i > span.last) && !isFiller(w));
         if (others.length > 0) unit = { unit: noteCurrency, kind: 'money' };
@@ -309,7 +326,8 @@ export function readMeasures(text: string, known: KnownMetric[] = []): Measure[]
       const [start, end] = namesFirst ? [from, span.first] : [span.last + 1, nextStart];
       const label =
         labelFrom(lower.slice(start, end), original.slice(start, end)) ??
-        labelFrom(lower.slice(from, nextStart), original.slice(from, nextStart));
+        labelFrom(lower.slice(from, nextStart), original.slice(from, nextStart)) ??
+        (spans.length === 1 || n === spans.length - 1 ? labelFrom(lower, original) : undefined);
       const near = lower.slice(start, end);
 
       // Reuse what the thread already calls this: "expense" stays "expense".
@@ -341,7 +359,7 @@ const INTENT_LATIN_BN =
   /\b(\w+te hobe|lagbe|mone kore|mone koriye|bhulbo na|vulbo na|korbo|jabo|kinbo|dibo|debo|nibo|agamikal)\b/i;
 
 const LEAD_INS =
-  /^(?:(?:so|ok(?:ay)?|and|also|um+|uh+|then)\s+)*(?:i\s+|we\s+)?(?:really\s+)?(?:need(?:s)? to|have to|has to|got to|gotta|must|should|remember to|remind(?: me)? to|don'?t forget to|do not forget to|todo:?|to-do:?|next step:?|next:|i'?ll|will|am going to|are going to|going to|plan to|planning to|let'?s)\s+/i;
+  /^(?:[-*•]\s+)?(?:(?:so|ok(?:ay)?|and|also|um+|uh+|then|please|pls|plz|kindly|(?:can|could|would|will) you)[,:]?\s+)*(?:remember:|reminder:|todo:|to-do:|note:|task:)?\s*(?:i\s+|we\s+)?(?:really\s+)?(?:need(?:s)? to|have to|has to|got to|gotta|must|should|remember to|remind(?: me)? to|don'?t forget to|do not forget to|todo:?|to-do:?|next step:?|next:|i'?ll|will|am going to|are going to|going to|plan to|planning to|let'?s)\s+/i;
 
 /** "…, remind me" / "remind me please" at the end: the request, not the step. */
 const REMIND_TAIL = /[\s,;.-]*(?:(?:please|pls|plz)\s+)?remind me(?:\s+(?:please|pls|plz))?[.!]?\s*$/i;
@@ -349,8 +367,11 @@ const REMIND_TAIL = /[\s,;.-]*(?:(?:please|pls|plz)\s+)?remind me(?:\s+(?:please
 /** Curly quotes from phone keyboards read like straight ones ("I’ll" is "I'll"). */
 const straightQuotes = (s: string) => s.replace(/[’‘ʼ`]/g, "'");
 
+/** "- ", "Remember: ", "I have a ": not part of what to do. */
+const STEP_LEAD = /^(?:[-*•]\s+)?(?:(?:remember|reminder|todo|to-do|note|task)\s*:\s*)?(?:(?:i|we)\s+(?:have|'ve got|got)\s+(?:a|an|the|my|our)\s+)?/i;
+
 function cleanStep(sentence: string): string {
-  const stripped = trimEnd(sentence.replace(LEAD_INS, '').replace(REMIND_TAIL, ''));
+  const stripped = trimEnd(sentence.replace(STEP_LEAD, '').replace(LEAD_INS, '').replace(REMIND_TAIL, ''));
   return clip(capitalize(stripped), STEP_MAX);
 }
 
@@ -379,174 +400,11 @@ function readLeftOff(text: string, nextSentence?: string): string | undefined {
 }
 
 // ─── When ───────────────────────────────────────────────────────
-
-const WEEKDAYS: string[][] = [
-  ['sunday', 'রবিবার', 'রোববার', 'robibar', 'robbar', 'rabibar'],
-  ['monday', 'সোমবার', 'shombar', 'sombar', 'somobar'],
-  ['tuesday', 'মঙ্গলবার', 'mongolbar', 'mangalbar'],
-  ['wednesday', 'বুধবার', 'budhbar', 'budbar', 'budhobar'],
-  ['thursday', 'বৃহস্পতিবার', 'brihospotibar', 'brihaspatibar', 'bishudbar', 'bishyudbar'],
-  ['friday', 'শুক্রবার', 'shukrobar', 'sukrobar', 'jummabar'],
-  ['saturday', 'শনিবার', 'shonibar', 'sonibar', 'shanibar'],
-].map((names) => names.map(nfc));
-
-const MONTHS: string[][] = [
-  ['jan', 'january', 'জানুয়ারি', 'জানুয়ারী'],
-  ['feb', 'february', 'ফেব্রুয়ারি', 'ফেব্রুয়ারী'],
-  ['mar', 'march', 'মার্চ'],
-  ['apr', 'april', 'এপ্রিল'],
-  ['may', 'মে'],
-  ['jun', 'june', 'জুন'],
-  ['jul', 'july', 'জুলাই'],
-  ['aug', 'august', 'আগস্ট', 'আগষ্ট'],
-  ['sep', 'sept', 'september', 'সেপ্টেম্বর'],
-  ['oct', 'october', 'অক্টোবর'],
-  ['nov', 'november', 'নভেম্বর'],
-  ['dec', 'december', 'ডিসেম্বর'],
-].map((names) => names.map(nfc));
-
-const DAY_MS = 24 * 60 * 60 * 1000;
-
-function atTime(day: Date, hour: number, minute: number): number {
-  const d = new Date(day);
-  d.setHours(hour, minute, 0, 0);
-  return d.getTime();
-}
-
-function readTime(words: string[], joined: string): { hour: number; minute: number } | undefined {
-  const ampm = joined.match(/\b(\d{1,2})(?:[:.](\d{2}))?\s*(am|pm|a\.m\.|p\.m\.)/i);
-  if (ampm) {
-    let hour = Number(ampm[1]) % 12;
-    if (/^p/i.test(ampm[3])) hour += 12;
-    return { hour, minute: Number(ampm[2] ?? 0) };
-  }
-  const clock = joined.match(/\b([01]?\d|2[0-3]):([0-5]\d)\b/);
-  if (clock) return { hour: Number(clock[1]), minute: Number(clock[2]) };
-  // "বিকাল ৫টায়", "sokal 10 tay", "rat 9 ta"
-  const bn = joined.match(
-    /(সকাল|সকালে|দুপুর|দুপুরে|বিকাল|বিকেল|বিকালে|বিকেলে|সন্ধ্যা|সন্ধ্যায়|রাত|রাতে|sokal|sokale|dupur|dupure|bikal|bikel|bikale|bikele|sondha|sondhay|rat|rate|raat|raate)\s*(\d{1,2})(?:[:.](\d{2}))?\s*(?:টা|টায়|টার|ta|tay|tar|baje|বাজে)?/i,
-  );
-  if (bn) {
-    let hour = Number(bn[2]) % 12;
-    const part = bn[1].toLowerCase();
-    if (/^(দুপুর|dupur)/.test(part) && hour < 6) hour += 12;
-    if (/^(বিকাল|বিকেল|সন্ধ্যা|রাত|bikal|bikel|sondha|rat|raat)/.test(part)) hour += 12;
-    return { hour, minute: Number(bn[3] ?? 0) };
-  }
-  const bare = joined.match(/\b(\d{1,2})\s*(?:টায়|টা|tay|baje|বাজে|o'clock)/i);
-  if (bare) {
-    const h = Number(bare[1]);
-    // Said without morning/evening: business hours are the safer guess.
-    return { hour: h >= 1 && h <= 7 ? h + 12 : h % 24, minute: 0 };
-  }
-  void words;
-  return undefined;
-}
-
-const MINUTE_MS = 60_000;
-const COUNT: Record<string, number> = { a: 1, an: 1, one: 1, two: 2, three: 3, four: 4, five: 5, ten: 10, fifteen: 15, twenty: 20, thirty: 30, 'half an': 0.5, half: 0.5 };
-const MIN_UNIT = 'min|mins|minute|minutes|মিনিট|minit';
-const HOUR_UNIT = 'h|hr|hrs|hour|hours|ঘণ্টা|ঘন্টা|ghonta|ghonta';
-
-/** "in 20 mins", "after an hour", "in half an hour", "২০ মিনিট পর", "1 ghonta pore": milliseconds from now. */
-function fromNowIn(text: string): number | undefined {
-  const digits = text.replace(/[০-৯]/g, (d) => String('০১২৩৪৫৬৭৮৯'.indexOf(d)));
-  const amount = String.raw`(\d+(?:\.\d+)?|a|an|one|two|three|four|five|ten|fifteen|twenty|thirty|half an|half)`;
-  const ms = (n: string, unit: string) => {
-    const count = COUNT[n] ?? Number(n);
-    if (!Number.isFinite(count) || count <= 0) return undefined;
-    const hours = new RegExp(`^(?:${HOUR_UNIT})$`).test(unit);
-    const out = count * (hours ? 60 : 1) * MINUTE_MS;
-    return out <= 7 * 24 * 60 * MINUTE_MS ? out : undefined;
-  };
-  const en = digits.match(new RegExp(String.raw`(?:^|\s)(?:in|after|within)\s+${amount}\s*(${MIN_UNIT}|${HOUR_UNIT})(?=[\s,.!?;:]|$)`));
-  if (en) return ms(en[1], en[2]);
-  const bn = digits.match(new RegExp(String.raw`(\d+(?:\.\d+)?)\s*(${MIN_UNIT}|${HOUR_UNIT})\s*(?:পর|পরে|বাদে|por|pore|bade|baad|later)(?=[\s,.!?;:]|$)`));
-  if (bn) return ms(bn[1], bn[2]);
-  return undefined;
-}
+// lib/when-read.ts reads times, days, repeats and whether it's a plan.
 
 /** A day (and time) named in a sentence, as a timestamp in the future. */
 export function readWhen(sentence: string, now = Date.now(), monthFirst = false): number | undefined {
-  const text = nfc(straightQuotes(sentence.toLowerCase()));
-  const later = fromNowIn(text);
-  if (later) return Math.round((now + later) / 60_000) * 60_000;
-  const words = numberTokens(text);
-  const joined = words.join(' ');
-  const today = new Date(now);
-  today.setHours(0, 0, 0, 0);
-  let day: Date | undefined;
-
-  const hasWord = (...options: string[]) => options.some((o) => words.includes(nfc(o)));
-  if (/day after tomorrow/.test(text) || hasWord('পরশু', 'porshu', 'poroshu', 'porsu')) {
-    day = new Date(today.getTime() + 2 * DAY_MS);
-  } else if (hasWord('tomorrow', 'tmrw', 'tmr', 'আগামীকাল', 'কাল', 'কালকে', 'kal', 'kalke', 'agamikal')) {
-    day = new Date(today.getTime() + DAY_MS);
-  } else if (hasWord('today', 'tonight', 'আজ', 'আজকে', 'আজই', 'aj', 'ajke', 'aaj', 'ajkei')) {
-    day = today;
-  } else if (/\bnext week\b|আগামী সপ্তাহ|agami (?:shoptah|saptah|soptah)/.test(text)) {
-    day = new Date(today.getTime() + 7 * DAY_MS);
-  }
-
-  if (!day) {
-    const inDays = text.match(/\bin (\d+|a|one|two|three) (day|days|week|weeks)\b/) ?? null;
-    const bnDays = joined.match(/(\d+) (?:দিন|din) (?:পর|por|pore|পরে)/);
-    if (inDays) {
-      const n = { a: 1, one: 1, two: 2, three: 3 }[inDays[1] as 'a'] ?? Number(inDays[1]);
-      day = new Date(today.getTime() + n * (inDays[2].startsWith('week') ? 7 : 1) * DAY_MS);
-    } else if (bnDays) {
-      day = new Date(today.getTime() + Number(bnDays[1]) * DAY_MS);
-    }
-  }
-
-  if (!day) {
-    const weekday = WEEKDAYS.findIndex((names) => names.some((n) => words.includes(n) || words.includes(`${n}e`)));
-    if (weekday >= 0) {
-      const ahead = (weekday - today.getDay() + 7) % 7 || 7;
-      day = new Date(today.getTime() + ahead * DAY_MS);
-    }
-  }
-
-  if (!day) {
-    // "15 Oct", "Oct 15th", "১৫ অক্টোবর", "15/10"
-    for (let i = 0; i < words.length && !day; i++) {
-      const month = MONTHS.findIndex((names) => names.includes(words[i]));
-      if (month < 0) continue;
-      const near = [words[i - 1], words[i + 1]].map((w) => Number(w)).find((n) => n >= 1 && n <= 31);
-      if (near) day = new Date(today.getFullYear(), month, near);
-    }
-    const slash = !day && text.match(/\b(\d{1,2})[/.-](\d{1,2})(?:[/.-](\d{2,4}))?\b/);
-    if (slash && !day) {
-      let [a, b] = [Number(slash[1]), Number(slash[2])];
-      if (monthFirst && a <= 12) [a, b] = [b, a];
-      if (a > 12 && b <= 12) {
-        // Only one reading makes sense.
-      } else if (b > 12 && a <= 12) [a, b] = [b, a];
-      if (b >= 1 && b <= 12 && a >= 1 && a <= 31) {
-        const year = slash[3] ? Number(slash[3].length === 2 ? `20${slash[3]}` : slash[3]) : today.getFullYear();
-        day = new Date(year, b - 1, a);
-      }
-    }
-    if (day && day.getTime() < today.getTime() && !/\b\d{4}\b/.test(text)) {
-      day = new Date(day.getFullYear() + 1, day.getMonth(), day.getDate());
-    }
-  }
-
-  const time = readTime(words, joined);
-  if (!day && time) {
-    // "at 6 pm" with no day: the next 6 pm, today if it's still ahead.
-    const at = atTime(today, time.hour, time.minute);
-    return at > now ? at : atTime(new Date(today.getTime() + DAY_MS), time.hour, time.minute);
-  }
-  if (!day) return undefined;
-  const at = time ? atTime(day, time.hour, time.minute) : atTime(day, 9, 0);
-  if (at > now) return at;
-  // Today with no time named, and the morning's gone: the evening.
-  if (!time && day.getTime() === today.getTime()) {
-    const evening = atTime(day, 18, 0);
-    return evening > now ? evening : undefined;
-  }
-  return undefined;
+  return readWhenFull(sentence, now, monthFirst)?.at;
 }
 
 // ─── Category, tags, title ──────────────────────────────────────
@@ -580,42 +438,25 @@ function readTags(text: string): string[] {
 }
 
 const TITLE_LEAD =
-  /^(?:(?:so|ok(?:ay)?|um+|uh+|hmm+|well|basically|alright|note|আচ্ছা|তো|শোনো|accha|acha|to)[,:]?\s+)+/i;
+  /^(?:[-*•]\s+)?(?:(?:so|ok(?:ay)?|um+|uh+|hmm+|well|basically|alright|note|remember|reminder|todo|to-do|task|please|pls|plz|(?:can|could|would|will) you|আচ্ছা|তো|শোনো|accha|acha|to)[,:]?\s+)+/i;
 
-// "tomorrow at 5pm" belongs in the reminder, not the name of the thread.
-const WHEN_PHRASES = [
-  /\b(?:on|by|this|next)?\s*(?:monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b/gi,
-  /\b(?:the\s+)?day after tomorrow\b|\b(?:today|tonight|tomorrow|tmrw)\b|\bnext week\b|\bthis (?:morning|afternoon|evening)\b/gi,
-  /\b(?:at|by|around)?\s*\d{1,2}(?:[:.]\d{2})?\s*(?:am|pm|a\.m\.|p\.m\.)/gi,
-  /\b(?:at|by)\s+\d{1,2}:\d{2}\b/gi,
-  /\b(?:in|after|within)\s+(?:\d+(?:\.\d+)?|a|an|one|two|three|four|five|ten|fifteen|twenty|thirty|half an?)\s*(?:mins?|minutes?|h|hrs?|hours?)\b/gi,
-  /(?:^|\s)[০-৯\d]+\s*(?:মিনিট|ঘণ্টা|ঘন্টা|minit|mins?|ghonta)\s*(?:পর|পরে|বাদে|por|pore|bade)(?=\s|$)/gi,
-  /(?:^|\s)(?:আগামীকাল|আজকে|আজ|কালকে|কাল|পরশু)(?=\s|$)/g,
-  /(?:^|\s)(?:সকাল|সকালে|দুপুর|দুপুরে|বিকাল|বিকেল|বিকালে|বিকেলে|সন্ধ্যা|সন্ধ্যায়|রাত|রাতে)?\s*[০-৯\d]{1,2}\s*(?:টায়|টা|টার)(?=\s|$)/g,
-  /\b(?:sokal|bikal|bikel|rat|raat|dupur|sondhay?)?\s*\d{1,2}\s*(?:tay|ta|baje)\b/gi,
-  /\b(?:agamikal|kalke|kal|ajke|aj|porshu)\b/gi,
-];
-
-function withoutWhen(text: string): string {
-  const stripped = WHEN_PHRASES.reduce((t, re) => t.replace(re, ' '), text)
-    .replace(/\s+([,;:])/g, '$1')
-    .replace(/\s{2,}/g, ' ')
-    .trim();
-  // Never strip a title down to nothing.
-  return stripped.split(/\s+/).length >= 2 ? stripped : text;
-}
-
-function readTitle(text: string, items: ChecklistItem[]): string {
+function readTitle(text: string, items: ChecklistItem[], hasWhen: boolean): string {
   const firstLine = text.split('\n').map((l) => l.trim()).find(Boolean) ?? '';
   const multiLine = text.trim().includes('\n');
   let title = multiLine && firstLine.length <= 60 ? firstLine : sentences(text)[0] ?? '';
   // "Lisbon trip: dinner €40, …" is about the Lisbon trip.
   const head = title.match(/^([^:]{2,40}):\s+\S/);
-  if (head && head[1].trim().split(/\s+/).length <= 6) title = head[1];
-  title = trimEnd(title.replace(/^#+\s*/, '').replace(TITLE_LEAD, '').replace(LEAD_INS, '').replace(REMIND_TAIL, ''));
+  // "Lisbon trip: …" names the thread; "Remember: …" / "Todo: …" don't.
+  if (head && head[1].trim().split(/\s+/).length <= 6 && !/^(?:[-*•]\s+)?(?:remember|reminder|todo|to-do|note|task|nb|ps)$/i.test(head[1].trim())) title = head[1];
+  // "tomorrow at 5pm" belongs in the reminder, not the name of the thread;
+  // with no reminder read, the words stay ("met Rumi at 3pm").
+  if (hasWhen) title = withoutWhen(title);
+  title = trimEnd(title.replace(/^#+\s*/, '').replace(STEP_LEAD, '').replace(TITLE_LEAD, '').replace(LEAD_INS, '').replace(REMIND_TAIL, ''));
   // A title is no place for a link or a hashtag.
   title = title.replace(/\b(?:https?:\/\/|www\.)\S+/gi, '').replace(/(?:^|\s)#\S+/g, '').trim();
-  title = trimEnd(withoutWhen(title).replace(/\s+(?:and|or|at|on|by)$/i, ''));
+  title = trimEnd(title.replace(/\s+(?:and|or|at|on|by)$/i, ''));
+  // "Remind me tomorrow": nothing left to name it by.
+  if (/^(?:remind me|reminder|মনে করিয়ে দিও|mone koriye dio|(?:can|could|would|will) you|please|pls|plz)$/i.test(title)) title = '';
   const link = readLinks(text)[0];
   if (link && title.split(/\s+/).length < 2) return hostOf(link);
   if (!title) return items[0] ? clip(items[0].text, TITLE_MAX) : '';
@@ -631,24 +472,45 @@ function readTitle(text: string, items: ChecklistItem[]): string {
  */
 export function understand(
   input: string,
-  options: { known?: KnownMetric[]; now?: number; monthFirst?: boolean } = {},
+  options: { known?: KnownMetric[]; now?: number; monthFirst?: boolean; currency?: string } = {},
 ): Reading {
   const raw = straightQuotes(input.trim());
   const list = readList(raw);
   const text = list.text;
   const { step, sentence } = readNextStep(text || raw);
   const words = numberTokens(raw);
-  const due = sentence ? readWhen(sentence, options.now, options.monthFirst) : undefined;
+  // The step's sentence first; otherwise any sentence that's a plan with a
+  // time ("call amma at 7:30pm", "gym at 6am"), never a past one ("met Rumi at 3pm").
+  let when = sentence && isPlan(sentence, true) ? readWhenFull(sentence, options.now, options.monthFirst) : undefined;
+  let planStep: string | undefined;
+  if (!when) {
+    for (const s of sentences(text || raw)) {
+      if (!isPlan(s, false)) continue;
+      when = readWhenFull(s, options.now, options.monthFirst);
+      if (when) {
+        planStep = cleanStep(s);
+        break;
+      }
+    }
+  }
+  const due = when?.at;
+  // The time lives in the reminder; the step says what to do.
+  const bare = (t?: string) => {
+    if (!t) return undefined;
+    const out = trimEnd(withoutWhen(t).replace(STEP_LEAD, '').replace(LEAD_INS, '').replace(REMIND_TAIL, '').replace(/\s+(?:at|on|by)$/i, ''));
+    return /^(?:remind me|reminder|মনে করিয়ে দিও|mone koriye dio|(?:can|could|would|will) you|please|pls|plz|kindly)?$/i.test(out) ? undefined : capitalize(out);
+  };
   return {
     text,
-    title: readTitle(text || raw, list.items),
+    title: readTitle(text || raw, list.items, due !== undefined) || (due ? 'Reminder' : ''),
     checklist: list.items,
     links: readLinks(raw),
-    measures: readMeasures(text || raw, options.known),
+    measures: readMeasures(text || raw, options.known, options.currency),
     // The time lives in the reminder; the step says what to do.
-    nextStep: step && due ? trimEnd(withoutWhen(step).replace(/\s+(?:at|on|by)$/i, '')) : step,
+    nextStep: due ? bare(step ?? planStep) : step,
     leftOff: readLeftOff(text, sentence),
     due,
+    repeat: due ? when?.repeat : undefined,
     category: readCategory(words),
     tags: readTags(raw),
   };

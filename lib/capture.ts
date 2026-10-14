@@ -120,7 +120,7 @@ function saveNote(source: Entry['source'], params: NoteInput): { threadId: strin
   const images = params.images ?? [];
   // Gemini can read a photo too (a receipt, a whiteboard), so one alone is worth sending.
   const ai = aiEnabled() && (words.length > 0 || images.length > 0);
-  const reading = understand(words, { known: knownMetrics(store, threadId), monthFirst: monthFirst() });
+  const reading = understand(words, { known: knownMetrics(store, threadId), monthFirst: monthFirst(), currency: localCurrency() });
 
   // With AI on, the text stays exactly as said: Gemini rewrites it, and an
   // edit made meanwhile is noticed against it. Offline, list lines become a
@@ -151,7 +151,10 @@ function saveNote(source: Entry['source'], params: NoteInput): { threadId: strin
     if (thread) {
       const updates: Partial<MnemoItem> = {};
       // A day named in the note sets the reminder, unless one's already coming.
-      if (due && (params.dueDate || !thread.dueDate || thread.dueDate < Date.now())) updates.dueDate = due;
+      if (due && (params.dueDate || !thread.dueDate || thread.dueDate < Date.now())) {
+        updates.dueDate = due;
+        updates.repeat = params.dueDate ? thread.repeat : reading.repeat;
+      }
       if (reading.tags.some((t) => !thread.tags.includes(t))) updates.tags = [...new Set([...thread.tags, ...reading.tags])].slice(0, 8);
       if (Object.keys(updates).length > 0) store.updateItem(threadId, updates);
       if (updates.dueDate) reminderSet({ threadId, at: updates.dueDate, previous: thread.dueDate });
@@ -167,6 +170,7 @@ function saveNote(source: Entry['source'], params: NoteInput): { threadId: strin
         tags: reading.tags,
         status: 'active',
         dueDate: due,
+        repeat: params.dueDate ? undefined : reading.repeat,
         // A placeholder title the AI replaces, when AI is on.
         pending: ai,
       },
@@ -232,6 +236,19 @@ function suggestByKeywords(saved: { threadId: string; entry: Entry }, text: stri
 }
 
 /** 3/4 is March 4 on phones set to US English, 3 April elsewhere. */
+/** The phone's currency, for amounts said without one ("salary 45000"). */
+const REGION_CURRENCY: Record<string, string> = { BD: 'BDT', IN: 'INR', US: 'USD', GB: 'GBP', IE: 'EUR', DE: 'EUR', FR: 'EUR', ES: 'EUR', IT: 'EUR', NL: 'EUR', PT: 'EUR', BE: 'EUR', AT: 'EUR', FI: 'EUR', GR: 'EUR' };
+function localCurrency(): string | undefined {
+  try {
+    const { locale, timeZone } = Intl.DateTimeFormat().resolvedOptions();
+    if (timeZone === 'Asia/Dhaka') return 'BDT';
+    const region = locale.split('-').find((p) => /^[A-Z]{2}$/.test(p));
+    return region ? REGION_CURRENCY[region] : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 function monthFirst(): boolean {
   try {
     return /^en-US$/i.test(Intl.DateTimeFormat().resolvedOptions().locale);
@@ -265,7 +282,7 @@ export function saveSharedNote(params: NoteInput) {
  */
 export function finishOnDevice(entry: Entry, store: CaptureStore): void {
   const words = (entry.pendingRawText ?? textOf(entry)).trim();
-  const reading = understand(words, { known: knownMetrics(store, entry.threadId), monthFirst: monthFirst() });
+  const reading = understand(words, { known: knownMetrics(store, entry.threadId), monthFirst: monthFirst(), currency: localCurrency() });
   const hasMeasures = entry.blocks.some((b) => b.kind === 'measures');
   const links = entry.blocks.flatMap((b) => (b.kind === 'link' ? [b.url] : []));
   const newLinks = reading.links.filter((l) => !links.includes(l));

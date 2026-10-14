@@ -123,7 +123,7 @@ offset(0.5, 'sare', 'saare', 'shaare', 'sarhe');
 offset(-0.25, 'poune', 'pone');
 offset(0.25, 'shoa', 'sowa', 'soa');
 ['sho', 'shoo', 'shoto', 'hundred'].forEach((w) => WORDS.set(w, { kind: 'hundred' }));
-scale(1000, 'hajar', 'hazar', 'hajaar', 'hazaar');
+scale(1000, 'hajar', 'hazar', 'hajaar', 'hazaar', 'k');
 scale(100_000, 'lakh', 'lac', 'lak', 'lakhs');
 scale(10_000_000, 'koti', 'crore', 'cr');
 

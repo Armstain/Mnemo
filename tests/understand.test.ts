@@ -88,7 +88,11 @@ describe('reading a note on the phone', () => {
   it('dates: day/month order follows the phone', () => {
     expect(at(readWhen('pay rent on 3/11', now))).toBe('Tue Nov 03 2026 09:00');
     expect(at(readWhen('pay rent on 3/11', now, true))).toBe('Thu Mar 11 2027 09:00');
-    expect(readWhen('call today', new Date('2026-10-12T20:00:00').getTime())).toBeUndefined();
+  });
+
+  it('"today" late in the day is the next hour, not a time already gone', () => {
+    expect(at(readWhen('call today', new Date('2026-10-12T20:00:00').getTime()))).toBe('Mon Oct 12 2026 21:00');
+    expect(readWhen('call today', new Date('2026-10-12T23:30:00').getTime())).toBeUndefined();
   });
 });
 
