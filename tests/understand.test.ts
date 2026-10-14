@@ -46,7 +46,7 @@ describe('reading a note on the phone', () => {
 
   it('next step, due time, title without the time', () => {
     const r = read('Need to call the plumber tomorrow at 5pm about the kitchen leak');
-    expect(r.nextStep).toBe('Call the plumber tomorrow at 5pm about the kitchen leak');
+    expect(r.nextStep).toBe('Call the plumber about the kitchen leak');
     expect(at(r.due)).toBe('Tue Oct 13 2026 17:00');
     expect(r.title).toBe('Call the plumber about the kitchen leak');
   });
@@ -54,7 +54,7 @@ describe('reading a note on the phone', () => {
   it('Bangla and Banglish steps and times', () => {
     expect(at(read('কাল বিকাল ৫টায় ডাক্তারের কাছে যেতে হবে').due)).toBe('Tue Oct 13 2026 17:00');
     expect(at(read('kal sokal 10 tay bank e jete hobe').due)).toBe('Tue Oct 13 2026 10:00');
-    expect(read('আজকে অফিসে মিটিং ছিল, কাল প্রেজেন্টেশন দিতে হবে').nextStep).toBe('কাল প্রেজেন্টেশন দিতে হবে');
+    expect(read('আজকে অফিসে মিটিং ছিল, কাল প্রেজেন্টেশন দিতে হবে').nextStep).toBe('প্রেজেন্টেশন দিতে হবে');
   });
 
   it('lists, typed or said', () => {
@@ -76,7 +76,7 @@ describe('reading a note on the phone', () => {
     expect(r.title).toBe('example.com');
     const book = read('Read 30 pages of Sapiens, stopped at chapter 4. Finish it by friday');
     expect(book.leftOff).toBe('Read 30 pages of Sapiens, stopped at chapter 4');
-    expect(book.nextStep).toBe('Finish it by friday');
+    expect(book.nextStep).toBe('Finish it');
     expect(at(book.due)).toBe('Fri Oct 16 2026 09:00');
     expect(read('Meeting with client about the invoice').category).toBe('work');
   });
@@ -111,7 +111,7 @@ describe('a time with no day', () => {
   it('"remind me to" is the next step, and the title drops it', () => {
     const r = understand('remind me to charge my watch and ear buds at 6 pm', { now: noon });
     expect(r.title).toBe('Charge my watch and ear buds');
-    expect(r.nextStep).toBe('Charge my watch and ear buds at 6 pm');
+    expect(r.nextStep).toBe('Charge my watch and ear buds');
     expect(r.due).toBe(at('2026-10-14T18:00:00'));
   });
 });

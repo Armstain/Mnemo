@@ -12,7 +12,7 @@ import { Icon } from '@/components/ui/Icon';
 import { Eyebrow } from '@/components/ui/Eyebrow';
 import { ThreadList, ThreadRow } from '@/components/ui/ThreadRow';
 import { OpenRing, ThreadRing } from '@/components/ui/ThreadRing';
-import { formatReminder, resumeOrder } from '@/lib/when';
+import { formatReminder, nextOccurrence, resumeOrder } from '@/lib/when';
 import { shortLine, weekReview } from '@/lib/review';
 import { CONTENT_BOTTOM_CLEARANCE } from '@/components/ui/FloatingTabBar';
 import { useMnemoStore } from '@/hooks/use-mnemo-store';
@@ -44,6 +44,9 @@ function ResumeCard({ item }: { item: MnemoItem }) {
   const CategoryIcon = category.icon;
   const checklist = item.type === 'checklist' ? item.checklistItems ?? [] : [];
   const done = checklist.filter((c) => c.checked).length;
+  // The reminder, if one is set: the next time round for a repeating one.
+  const dueAt = item.dueDate ? nextOccurrence(item.dueDate, item.repeat) : undefined;
+  const missed = dueAt !== undefined && !item.repeat && dueAt < Date.now();
 
   return (
     <Pressable
@@ -83,6 +86,20 @@ function ResumeCard({ item }: { item: MnemoItem }) {
         <Text className="font-display leading-tight mb-5" style={{ color: colors.onHero, fontSize: 30 }} numberOfLines={3}>
           {item.title}
         </Text>
+
+        {dueAt !== undefined ? (
+          <View
+            className="flex-row items-center self-start rounded-full px-3 h-8 -mt-2 mb-5"
+            style={{ backgroundColor: colors.heroSoft }}
+            accessibilityLabel={`${missed ? 'Missed reminder' : 'Reminder'}: ${formatReminder(dueAt)}`}
+          >
+            <Icon name={item.repeat ? 'repeat' : 'clock'} size={14} color={missed ? colors.onHero : colors.heroAccent} stroke={2} />
+            <Text className="font-sans-semi text-sm ml-1.5" style={{ color: missed ? colors.onHero : colors.heroAccent }}>
+              {missed ? 'Missed · ' : ''}
+              {formatReminder(dueAt)}
+            </Text>
+          </View>
+        ) : null}
 
         {item.whereLeftOff ? (
           <Text className="font-quote text-body leading-relaxed mb-5" style={{ color: colors.onHeroMuted }} numberOfLines={3}>

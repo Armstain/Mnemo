@@ -597,15 +597,17 @@ export function understand(
   const text = list.text;
   const { step, sentence } = readNextStep(text || raw);
   const words = numberTokens(raw);
+  const due = sentence ? readWhen(sentence, options.now, options.monthFirst) : undefined;
   return {
     text,
     title: readTitle(text || raw, list.items),
     checklist: list.items,
     links: readLinks(raw),
     measures: readMeasures(text || raw, options.known),
-    nextStep: step,
+    // The time lives in the reminder; the step says what to do.
+    nextStep: step && due ? trimEnd(withoutWhen(step).replace(/\s+(?:at|on|by)$/i, '')) : step,
     leftOff: readLeftOff(text, sentence),
-    due: sentence ? readWhen(sentence, options.now, options.monthFirst) : undefined,
+    due,
     category: readCategory(words),
     tags: readTags(raw),
   };
