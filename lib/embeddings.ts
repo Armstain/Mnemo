@@ -1,4 +1,5 @@
-import { ai } from '@/lib/gemini';
+import { ai, modelCatalog, refreshModels } from '@/lib/gemini';
+import { isMissingModel, pickEmbeddingModel } from '@/lib/model-pick';
 import type { MnemoItem } from '@/types/mnemo';
 
 // gemini-embedding-2 (verified against this key's live /v1beta/models
@@ -6,7 +7,27 @@ import type { MnemoItem } from '@/types/mnemo';
 // Matryoshka truncation: confirmed pre-normalized (L2 = 1.0000), so plain
 // dot product is exact cosine similarity, and 768 floats is 3KB/note
 // instead of 12KB at the model's default 3072.
+/** The model the app prefers; `embeddingModel()` is what's actually used. */
 export const EMBEDDING_MODEL = 'gemini-embedding-2';
+
+/** This key's embedding model: the preferred one if it's there, else the newest. */
+export async function embeddingModel(): Promise<string> {
+  const list = await modelCatalog();
+  return (list && pickEmbeddingModel(list, EMBEDDING_MODEL)) || EMBEDDING_MODEL;
+}
+
+async function embed(contents: string | string[], taskType: EmbeddingTaskType) {
+  try {
+    return await ai.models.embedContent({
+      model: await embeddingModel(),
+      contents,
+      config: { taskType, outputDimensionality: EMBEDDING_DIMS },
+    });
+  } catch (e) {
+    if (isMissingModel(e)) refreshModels();
+    throw e;
+  }
+}
 export const EMBEDDING_DIMS = 768;
 
 export type EmbeddingTaskType = 'RETRIEVAL_DOCUMENT' | 'RETRIEVAL_QUERY';
@@ -50,11 +71,7 @@ export { dot } from '@/lib/vector-math';
  * identically.
  */
 export async function embedText(text: string, taskType: EmbeddingTaskType): Promise<Float32Array> {
-  const res = await ai.models.embedContent({
-    model: EMBEDDING_MODEL,
-    contents: text,
-    config: { taskType, outputDimensionality: EMBEDDING_DIMS },
-  });
+  const res = await embed(text, taskType);
   const values = res.embeddings?.[0]?.values;
   if (!values) throw new Error('Gemini returned no embedding');
   return Float32Array.from(values);
@@ -66,11 +83,7 @@ export async function embedText(text: string, taskType: EmbeddingTaskType): Prom
  */
 export async function embedBatch(texts: string[]): Promise<Float32Array[]> {
   if (texts.length === 0) return [];
-  const res = await ai.models.embedContent({
-    model: EMBEDDING_MODEL,
-    contents: texts,
-    config: { taskType: 'RETRIEVAL_DOCUMENT', outputDimensionality: EMBEDDING_DIMS },
-  });
+  const res = await embed(texts, 'RETRIEVAL_DOCUMENT');
   const embeddings = res.embeddings ?? [];
   return embeddings.map((e) => Float32Array.from(e.values ?? []));
 }

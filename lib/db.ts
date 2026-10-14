@@ -441,8 +441,8 @@ interface EmbeddingRow {
 
 // Decoded vectors, read from SQLite once and kept in step with every write:
 // search, related threads and filing compare against all of them, often.
-let vectorCache: Map<string, Float32Array> | null = null;
-let vectorLoad: Promise<Map<string, Float32Array>> | null = null;
+let vectorCache: Map<string, { model: string; vector: Float32Array }> | null = null;
+let vectorLoad: Promise<Map<string, { model: string; vector: Float32Array }>> | null = null;
 
 function decodeVector(blob: Uint8Array): Float32Array {
   // A copy: Float32Array needs a 4-byte-aligned buffer, which a BLOB may not be.
@@ -450,24 +450,32 @@ function decodeVector(blob: Uint8Array): Float32Array {
   return new Float32Array(copy.buffer, copy.byteOffset, copy.byteLength / 4);
 }
 
-/** Every stored vector, by item id. */
-export async function getVectors(): Promise<Map<string, Float32Array>> {
-  if (vectorCache) return vectorCache;
-  if (!vectorLoad) {
-    vectorLoad = getAllEmbeddings()
-      .then((rows) => {
-        vectorCache = new Map(rows.map((r) => [r.itemId, decodeVector(r.vector)]));
-        return vectorCache;
-      })
-      .finally(() => {
-        vectorLoad = null;
-      });
+/**
+ * Every stored vector made by `model`, by item id. Vectors from another
+ * model aren't comparable, so they're left out (and re-embedded by the
+ * backfill sweep).
+ */
+export async function getVectors(model: string): Promise<Map<string, Float32Array>> {
+  if (!vectorCache) {
+    if (!vectorLoad) {
+      vectorLoad = getAllEmbeddings()
+        .then((rows) => {
+          vectorCache = new Map(rows.map((r) => [r.itemId, { model: r.model, vector: decodeVector(r.vector) }]));
+          return vectorCache;
+        })
+        .finally(() => {
+          vectorLoad = null;
+        });
+    }
+    await vectorLoad;
   }
-  return vectorLoad;
+  const out = new Map<string, Float32Array>();
+  for (const [id, v] of vectorCache ?? []) if (v.model === model) out.set(id, v.vector);
+  return out;
 }
 
 export async function upsertEmbedding(record: EmbeddingRecord): Promise<void> {
-  vectorCache?.set(record.itemId, decodeVector(record.vector));
+  vectorCache?.set(record.itemId, { model: record.model, vector: decodeVector(record.vector) });
   const db = await getDb();
   await db.runAsync(
     `INSERT INTO embeddings (itemId, vector, model, dims, updatedAt)
@@ -489,10 +497,10 @@ export async function getAllEmbeddings(): Promise<EmbeddingRow[]> {
   return db.getAllAsync<EmbeddingRow>('SELECT * FROM embeddings');
 }
 
-/** IDs that already have a vector — used to find what the backfill sweep still needs to embed. */
-export async function getEmbeddedItemIds(): Promise<Set<string>> {
+/** IDs that already have a vector from `model` — the backfill sweep embeds the rest. */
+export async function getEmbeddedItemIds(model: string): Promise<Set<string>> {
   const db = await getDb();
-  const rows = await db.getAllAsync<{ itemId: string }>('SELECT itemId FROM embeddings');
+  const rows = await db.getAllAsync<{ itemId: string }>('SELECT itemId FROM embeddings WHERE model = $model', { $model: model });
   return new Set(rows.map((r) => r.itemId));
 }
 

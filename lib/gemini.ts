@@ -1,5 +1,6 @@
 import { GoogleGenAI, Modality, Type, type GenerateContentParameters } from '@google/genai';
-import { getActiveApiKey } from './api-key';
+import { getActiveApiKey, onApiKeyChanged } from './api-key';
+import { isMissingModel, pickTextModels, pickTtsModel, type ModelInfo } from './model-pick';
 import { aiEnabled } from './ai-mode';
 
 /** Thrown instead of calling Google when the person chose offline. */
@@ -28,22 +29,61 @@ export const ai = new Proxy({} as GoogleGenAI, {
   },
 });
 
-// Latest Gemini 3 series models (August 2026).
-// gemini-3.6-flash is the primary model for agentic and text processing,
-// with gemini-3.5-flash and gemini-3.1-flash as reliable fallbacks.
-const TEXT_MODELS = ['gemini-3.6-flash', 'gemini-3.5-flash', 'gemini-3.1-flash'];
-const TTS_MODEL = 'gemini-3.1-flash-tts-preview';
+// ─── Which models ───────────────────────────────────────────────
+// Asked of Google once per launch (and again after a key change or a
+// model that's gone), then chosen in lib/model-pick.ts. Names written into
+// the app go stale: Google renames and retires models, and one that 404s
+// left every note "Processing". These are only used if the list can't be
+// fetched.
+const FALLBACK_TEXT = ['gemini-flash-latest', 'gemini-2.5-flash'];
+const FALLBACK_TTS = 'gemini-2.5-flash-preview-tts';
+
+let catalog: Promise<ModelInfo[] | null> | null = null;
+
+/** Every model this key can use, or null when the list couldn't be fetched. */
+export function modelCatalog(): Promise<ModelInfo[] | null> {
+  if (!catalog) {
+    catalog = (async () => {
+      const pager = await getAIClient().models.list({ config: { pageSize: 200 } });
+      const out: ModelInfo[] = [];
+      for await (const m of pager) {
+        out.push({ name: (m.name ?? '').replace(/^models\//, ''), actions: m.supportedActions ?? [] });
+      }
+      return out;
+    })().catch(() => {
+      catalog = null; // Offline or a bad key: ask again next time.
+      return null;
+    });
+  }
+  return catalog;
+}
+
+/** Forget the list: the next call fetches it again. */
+export function refreshModels(): void {
+  catalog = null;
+}
+onApiKeyChanged(refreshModels);
+
+async function textModels(): Promise<string[]> {
+  const list = await modelCatalog();
+  const picked = list ? pickTextModels(list) : [];
+  return picked.length > 0 ? picked : FALLBACK_TEXT;
+}
 
 async function generateText(params: Omit<GenerateContentParameters, 'model'>) {
-  let lastError: unknown;
   const client = getAIClient();
-  for (const model of TEXT_MODELS) {
+  let lastError: unknown;
+  for (const model of await textModels()) {
     try {
       return await client.models.generateContent({ model, ...params });
     } catch (e) {
       lastError = e;
+      // Only a missing model is worth trying another for. A bad key, a
+      // used-up quota or no signal would fail the same way on each.
+      if (!isMissingModel(e)) throw e;
     }
   }
+  refreshModels();
   throw lastError;
 }
 
@@ -393,8 +433,9 @@ export async function processVoiceDump(
 export async function generateSpeech(text: string) {
   try {
     const client = getAIClient();
+    const list = await modelCatalog();
     const response = await client.models.generateContent({
-      model: TTS_MODEL,
+      model: (list && pickTtsModel(list)) || FALLBACK_TTS,
       contents: [{ parts: [{ text }] }],
       config: {
         responseModalities: [Modality.AUDIO],

@@ -5,7 +5,7 @@ import { finishOnDevice, resolvePendingEntry } from '@/lib/capture';
 import { usePreferences } from '@/lib/preferences';
 import { onApiKeyChanged } from '@/lib/api-key';
 import { aiEnabled, appReady } from '@/lib/ai-mode';
-import { embedBatch, embeddableText, toBlob, EMBEDDING_MODEL, EMBEDDING_DIMS } from '@/lib/embeddings';
+import { embedBatch, embeddableText, embeddingModel, toBlob, EMBEDDING_DIMS } from '@/lib/embeddings';
 import { getEmbeddedItemIds, upsertEmbedding } from '@/lib/db';
 import type { MnemoItem } from '@/types/mnemo';
 
@@ -17,7 +17,8 @@ const BACKFILL_BATCH_SIZE = 20;
 
 async function backfillEmbeddings(items: MnemoItem[]): Promise<void> {
   try {
-    const embeddedIds = await getEmbeddedItemIds();
+    const model = await embeddingModel();
+    const embeddedIds = await getEmbeddedItemIds(model);
     // Only structured (non-pending) items have stable enough content to
     // embed — a pending item's text is about to be rewritten once its own
     // structuring finishes, which will embed it then.
@@ -34,7 +35,7 @@ async function backfillEmbeddings(items: MnemoItem[]): Promise<void> {
             return upsertEmbedding({
               itemId: item.id,
               vector: toBlob(vector),
-              model: EMBEDDING_MODEL,
+              model,
               dims: EMBEDDING_DIMS,
             });
           }),

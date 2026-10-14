@@ -12,7 +12,7 @@ import {
   embedText,
   embeddableText,
   toBlob,
-  EMBEDDING_MODEL,
+  embeddingModel,
   EMBEDDING_DIMS,
 } from '@/lib/embeddings';
 import { getVectors, upsertEmbedding } from '@/lib/db';
@@ -61,7 +61,7 @@ async function embedAndStore(item: {
     await upsertEmbedding({
       itemId: item.id,
       vector: toBlob(vector),
-      model: EMBEDDING_MODEL,
+      model: await embeddingModel(),
       dims: EMBEDDING_DIMS,
     });
   } catch {
@@ -456,7 +456,7 @@ async function structure(entry: PendingEntry, store: CaptureStore): Promise<void
       try {
         const vector = await embedText(processed.notes, 'RETRIEVAL_DOCUMENT');
         const ids = new Set(candidates.map((c) => c.id));
-        const all = await getVectors();
+        const all = await getVectors(await embeddingModel());
         similarity = similarityTo(vector, new Map([...ids].flatMap((id) => (all.has(id) ? [[id, all.get(id)!] as const] : []))));
       } catch {
         // Offline or not embedded yet: the model's answer stands alone.

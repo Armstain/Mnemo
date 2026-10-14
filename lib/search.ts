@@ -1,4 +1,4 @@
-import { embedText, dot } from '@/lib/embeddings';
+import { embedText, embeddingModel, dot } from '@/lib/embeddings';
 import { getVectors } from '@/lib/db';
 import { bm25Scored, tokenize } from '@/lib/bm25';
 import { telling } from '@/lib/filing';
@@ -37,7 +37,7 @@ const QUERY_MIN_SIMILARITY = 0.65;
  * that case, same as the rest of the AI layer's contract.
  */
 async function vectorRank(query: string, items: MnemoItem[]): Promise<MnemoItem[]> {
-  const vectors = await getVectors();
+  const vectors = await getVectors(await embeddingModel());
   if (vectors.size === 0) return [];
 
   const queryVector = await embedText(query, 'RETRIEVAL_QUERY');
@@ -122,7 +122,7 @@ export async function relatedThreads(
   try {
     const self = items.find((i) => i.id === itemId);
     if (!self) return [];
-    const vectors = await getVectors();
+    const vectors = await getVectors(await embeddingModel());
     const selfVector = vectors.get(itemId);
     if (!selfVector) return relatedByWords(self, items, limit);
 
