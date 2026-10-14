@@ -4,7 +4,11 @@ import * as Haptics from 'expo-haptics';
 
 import { useMnemoStore } from '@/hooks/use-mnemo-store';
 import { useUndoToast } from '@/hooks/use-undo-toast';
+import { Platform } from 'react-native';
+import { onReminderSet } from '@/lib/capture';
 import { onFiling } from '@/lib/filing';
+import { hasNudgePermission, requestNudgePermission } from '@/lib/nudges';
+import { formatReminder } from '@/lib/when';
 
 const FILED_TOAST_MS = 6000;
 
@@ -35,7 +39,30 @@ export function FilingNotifier() {
       if (!s.snapshot().entries.some((e) => e.threadId === threadId)) s.removeThreadNow(threadId);
     };
 
-    return onFiling((event) => {
+    // A note that set a reminder says when, so there's no guessing; and if
+    // notifications are off, that it can't arrive yet.
+    const stopReminders = onReminderSet(async (event) => {
+      const s = storeRef.current;
+      const allowed = Platform.OS === 'web' || (await hasNudgePermission());
+      const when = formatReminder(event.at);
+      if (!allowed) {
+        showToast({
+          message: `Reminder set for ${when}, but notifications are off`,
+          actionLabel: 'Allow',
+          durationMs: FILED_TOAST_MS,
+          onAction: () => requestNudgePermission(),
+        });
+        return;
+      }
+      showToast({
+        message: `Reminder set · ${when}`,
+        actionLabel: 'Undo',
+        durationMs: FILED_TOAST_MS,
+        onAction: () => s.updateItem(event.threadId, { dueDate: event.previous }),
+      });
+    });
+
+    const stopFiling = onFiling((event) => {
       const s = storeRef.current;
       if (event.type === 'attached') {
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
@@ -75,6 +102,10 @@ export function FilingNotifier() {
         });
       }
     });
+    return () => {
+      stopReminders();
+      stopFiling();
+    };
   }, [showToast]);
 
   return null;
