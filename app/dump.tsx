@@ -9,7 +9,8 @@ import { Easing } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useCaptureTarget } from '@/hooks/use-capture-target';
-import { useSpeechCapture } from '@/hooks/use-speech-capture';
+import { SPEECH_LANG_NAME, useSpeechCapture } from '@/hooks/use-speech-capture';
+import { SpeechLangSwitch } from '@/components/ui/SpeechLangSwitch';
 import { useMnemoStore } from '@/hooks/use-mnemo-store';
 import { useThemeColors } from '@/hooks/use-theme';
 import { saveVoiceNote } from '@/lib/capture';
@@ -198,11 +199,22 @@ export default function DumpScreen() {
               <MotiView {...enter.rise(2)} className="mt-10 items-center">
                 <Text className="font-display text-title text-fg text-center">Talk it through</Text>
                 <Text className="font-sans text-body text-fg-secondary text-center mt-2 leading-relaxed px-6">
-                  In Bangla, English or both. Your words appear as you speak; only the text is kept, never
-                  the audio.
+                  Your words appear as you speak; only the text is kept, never the audio. English words in
+                  Bangla come through too.
                 </Text>
               </MotiView>
             )}
+
+            {/* The language it listens in; switching mid-note keeps what's been heard. */}
+            <View className="mt-6 items-center">
+              <SpeechLangSwitch value={speech.language} onSwitch={speech.switchLanguage} />
+              {listening && speech.problem === 'language' && (
+                <Text className="font-sans text-sm text-center mt-3 px-6" style={{ color: colors.error }}>
+                  This phone can&apos;t listen in {SPEECH_LANG_NAME[speech.language]} yet. Add it in the Google
+                  app (Settings → Voice → Languages), or switch.
+                </Text>
+              )}
+            </View>
 
             {listening && (
               <View className="flex-row items-center gap-1.5 h-12 mt-6">
