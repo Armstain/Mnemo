@@ -9,8 +9,8 @@ import { Easing } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useCaptureTarget } from '@/hooks/use-capture-target';
-import { SPEECH_LANG_NAME, useSpeechCapture } from '@/hooks/use-speech-capture';
-import { SpeechLangSwitch } from '@/components/ui/SpeechLangSwitch';
+import { useSpeechCapture } from '@/hooks/use-speech-capture';
+import { deleteAudio } from '@/lib/voice-audio';
 import { useMnemoStore } from '@/hooks/use-mnemo-store';
 import { useThemeColors } from '@/hooks/use-theme';
 import { saveVoiceNote } from '@/lib/capture';
@@ -30,9 +30,9 @@ const SAMPLE_MS = 80;
 type Phase = 'ready' | 'listening' | 'review';
 
 /**
- * The Record screen. The phone transcribes as you talk (nothing is
- * recorded to a file); when you stop, the words are yours to fix before
- * saving, since there's no audio to go back to.
+ * The Record screen. The phone transcribes as you talk; when you stop, the
+ * words are yours to fix before saving. With Gemini on, an unfixed note's
+ * sound goes to Gemini to be written out properly, then is deleted.
  */
 export default function DumpScreen() {
   const enter = useEnter();
@@ -49,6 +49,9 @@ export default function DumpScreen() {
   const [draft, setDraft] = useState('');
   const levelNow = useRef(0);
   const speech = useSpeechCapture({ onLevel: (v) => (levelNow.current = v) });
+  // The sound held for Gemini (see lib/voice-audio), and the words it goes with.
+  const sound = useRef<string[]>([]);
+  const heard = useRef<string | null>('');
 
   // A rolling waveform from the microphone level, only while listening.
   const [levels, setLevels] = useState<number[]>(() => Array(WAVEFORM_BARS).fill(0));
@@ -86,9 +89,20 @@ export default function DumpScreen() {
   }, [autostart, key]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function finishListening() {
-    const words = await speech.stop();
+    const { words, audio } = await speech.stop();
     // "Record more" appends to what's already there.
     const next = [draft.trim(), words.trim()].filter(Boolean).join(' ');
+    // Words fixed by hand before "Record more" no longer match the sound.
+    if (words.trim() && heard.current === draft.trim()) {
+      sound.current.push(...audio);
+      heard.current = next;
+    } else {
+      deleteAudio([...audio, ...(words.trim() ? sound.current : [])]);
+      if (words.trim()) {
+        sound.current = [];
+        heard.current = null;
+      }
+    }
     setDraft(next);
     setPhase(next ? 'review' : 'ready');
     if (!next) {
@@ -100,13 +114,19 @@ export default function DumpScreen() {
   function save() {
     const text = draft.trim();
     if (!text) return;
-    const saved = saveVoiceNote({ text, category, threadId: targetThread?.id, filing: target.filing, store });
+    // Words fixed by hand are the note; otherwise Gemini writes out the sound.
+    const audio = text === heard.current ? sound.current : [];
+    if (audio.length === 0) deleteAudio(sound.current);
+    sound.current = [];
+    const saved = saveVoiceNote({ text, audio, category, threadId: targetThread?.id, filing: target.filing, store });
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     router.replace(`/(tabs)/context?id=${saved.threadId}` as any);
   }
 
   function close() {
     speech.cancel();
+    deleteAudio(sound.current);
+    sound.current = [];
     router.back();
   }
 
@@ -199,22 +219,11 @@ export default function DumpScreen() {
               <MotiView {...enter.rise(2)} className="mt-10 items-center">
                 <Text className="font-display text-title text-fg text-center">Talk it through</Text>
                 <Text className="font-sans text-body text-fg-secondary text-center mt-2 leading-relaxed px-6">
-                  Your words appear as you speak; only the text is kept, never the audio. English words in
-                  Bangla come through too.
+                  In Bangla, English or both. Your words appear as you speak; only the text is kept, never
+                  the audio.
                 </Text>
               </MotiView>
             )}
-
-            {/* The language it listens in; switching mid-note keeps what's been heard. */}
-            <View className="mt-6 items-center">
-              <SpeechLangSwitch value={speech.language} onSwitch={speech.switchLanguage} />
-              {listening && speech.problem === 'language' && (
-                <Text className="font-sans text-sm text-center mt-3 px-6" style={{ color: colors.error }}>
-                  This phone can&apos;t listen in {SPEECH_LANG_NAME[speech.language]} yet. Add it in the Google
-                  app (Settings → Voice → Languages), or switch.
-                </Text>
-              )}
-            </View>
 
             {listening && (
               <View className="flex-row items-center gap-1.5 h-12 mt-6">

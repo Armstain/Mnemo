@@ -13,7 +13,6 @@ import { TextInput } from '@/components/ui/TextInput';
 import { Text } from '@/components/ui/Text';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams } from 'expo-router';
-import { File } from 'expo-file-system';
 import * as Haptics from 'expo-haptics';
 import { AnimatePresence, MotiView } from 'moti';
 import { formatDistanceToNow } from 'date-fns';
@@ -264,13 +263,8 @@ export default function ThreadScreen() {
   const handleRetryProcessing = async () => {
     setIsGenerating(true);
     try {
-      for (const entry of pendingEntries) {
-        if (entry.pendingAudioUri && !new File(entry.pendingAudioUri).exists) {
-          store.updateEntry(entry.id, { pending: false, pendingAudioUri: undefined });
-          continue;
-        }
-        await structurePendingEntry(entry, store);
-      }
+      // A voice note whose sound is gone is written out from its words instead.
+      for (const entry of pendingEntries) await structurePendingEntry(entry, store);
     } catch (e) {
       const problem = classifyAiError(e);
       Alert.alert(

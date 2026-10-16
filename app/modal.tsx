@@ -436,12 +436,12 @@ const PRIVACY_FACTS = [
   {
     title: 'With Gemini on',
     body:
-      'Sent to Google with your key: the text of each new note and any photo on it; the titles and a line from your recently active threads, so it can file the note; your question and the notes that best match it, when you ask; note text for meaning search and digests. On a free key, Google may use what you send to improve its products, and people may review it. Offline, none of this happens.',
+      'Sent to Google with your key: the text of each new note, the recording of a voice note, and any photo on it; the titles and a line from your recently active threads, so it can file the note; your question and the notes that best match it, when you ask; note text for meaning search and digests. On a free key, Google may use what you send to improve its products, and people may review it. Offline, none of this happens.',
   },
   {
     title: 'Voice',
     body:
-      "Your phone's speech service turns what you say into text. On many phones that is Google's, which may process it online. Mnemo never keeps the audio.",
+      "Your phone's speech service shows your words as you talk. On many phones that is Google's, which may process it online. With Gemini on, the recording also goes to Gemini, which writes it out properly; then it's deleted from the phone. Mnemo never keeps the audio.",
   },
   {
     title: 'Links',

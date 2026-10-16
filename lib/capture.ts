@@ -23,6 +23,9 @@ import { summarizeMeasures, trackedMetrics, verifyMeasures } from '@/lib/measure
 import { understand, type KnownMetric } from '@/lib/understand';
 import { imageBase64, imagesOf } from '@/lib/images';
 import { fetchLinkPreview, type LinkPreview } from '@/lib/link-preview';
+import { languageOf } from '@/lib/language';
+import { getPreferences, setPreferences } from '@/lib/preferences';
+import { deleteAudio, existingAudio, joinAudio, splitAudio } from '@/lib/voice-audio';
 import {
   ATTACH_CONFIDENCE,
   decideFiling,
@@ -85,6 +88,8 @@ interface NoteInput {
   links?: string[];
   /** A name for a new thread, when there's a better one than the text's (a shared page's title). */
   title?: string;
+  /** A voice note's sound, held for Gemini to write out (lib/voice-audio). */
+  audio?: string[];
   store: CaptureStore;
 }
 
@@ -120,6 +125,8 @@ function saveNote(source: Entry['source'], params: NoteInput): { threadId: strin
   const images = params.images ?? [];
   // Gemini can read a photo too (a receipt, a whiteboard), so one alone is worth sending.
   const ai = aiEnabled() && (words.length > 0 || images.length > 0);
+  const audio = ai ? params.audio ?? [] : [];
+  if (!ai) deleteAudio(params.audio);
   const reading = understand(words, { known: knownMetrics(store, threadId), monthFirst: monthFirst(), currency: localCurrency() });
 
   // With AI on, the text stays exactly as said: Gemini rewrites it, and an
@@ -141,6 +148,7 @@ function saveNote(source: Entry['source'], params: NoteInput): { threadId: strin
     nextStep: params.nextStep?.trim() || (ai ? undefined : reading.nextStep),
     pending: ai,
     pendingRawText: ai ? words : undefined,
+    pendingAudioUri: joinAudio(audio),
   };
   const due = params.dueDate ?? reading.due;
 
@@ -281,6 +289,7 @@ export function saveSharedNote(params: NoteInput) {
  * switched to offline): it gets the phone's reading instead.
  */
 export function finishOnDevice(entry: Entry, store: CaptureStore): void {
+  deleteAudio(entry.pendingAudioUri);
   const words = (entry.pendingRawText ?? textOf(entry)).trim();
   const reading = understand(words, { known: knownMetrics(store, entry.threadId), monthFirst: monthFirst(), currency: localCurrency() });
   const hasMeasures = entry.blocks.some((b) => b.kind === 'measures');
@@ -296,6 +305,7 @@ export function finishOnDevice(entry: Entry, store: CaptureStore): void {
     nextStep: entry.nextStep || reading.nextStep,
     pending: false,
     pendingRawText: undefined,
+    pendingAudioUri: undefined,
   });
   const thread = store.getThread(entry.threadId);
   if (thread?.pending) {
@@ -313,6 +323,14 @@ export function deleteAllRecordings(): void {
     new Directory(Paths.document, 'recordings').delete();
   } catch {
     // Never existed, or already gone — nothing to do.
+  }
+  // Voice notes' sound still waiting for Gemini (in the cache, see lib/voice-audio).
+  try {
+    for (const f of new Directory(Paths.cache).list()) {
+      if (f instanceof File && /^recording_.*\.wav$/.test(f.name)) f.delete();
+    }
+  } catch {
+    // Nothing there.
   }
 }
 
@@ -370,7 +388,8 @@ function textOf(e: Pick<Entry, 'blocks'>): string {
 async function structure(entry: PendingEntry, store: CaptureStore): Promise<void> {
   const snap = store.snapshot();
   const live = snap.entries.find((e) => e.id === entry.id);
-  if (!live) return; // Deleted while it waited.
+  // Deleted while it waited: so is its sound.
+  if (!live) return deleteAudio(entry.pendingAudioUri);
   // Its thread was deleted (or is in its undo window): don't bring it back.
   if (!store.getThread(live.threadId)) return;
   const filedBy = live.filing.by;
@@ -397,19 +416,32 @@ async function structure(entry: PendingEntry, store: CaptureStore): Promise<void
   let transcript = entry.transcript;
   const photos = imagesOf([live]);
 
-  if (entry.pendingAudioUri) {
-    // Only from versions that kept recordings. Transcribe it once, then the
-    // file goes: audio is never kept now.
-    const audioFile = new File(entry.pendingAudioUri);
-    if (!audioFile.exists) {
-      store.updateEntry(entry.id, { pending: false, pendingAudioUri: undefined });
-      return;
-    }
+  // The sound, if it's still there (the phone may have cleared its cache).
+  const sound = existingAudio(splitAudio(entry.pendingAudioUri));
+  let fromSound = false;
+  if (sound.length > 0) {
+    // Gemini writes out what was said (Bangla, English or both), then the
+    // sound goes: it's never kept with the note.
     try {
-      processed = await processAudioDump(await audioFile.base64(), 'audio/m4a', ctx);
-    } finally {
-      try { audioFile.delete(); } catch { /* already gone */ }
+      processed = await processAudioDump(
+        await Promise.all(sound.map(async (f) => ({ data: await f.base64(), mimeType: f.name.endsWith('.wav') ? 'audio/wav' : 'audio/m4a' }))),
+        ctx,
+      );
+      fromSound = true;
+      deleteAudio(entry.pendingAudioUri);
+    } catch (e) {
+      // Offline, a bad key or no quota: try again later, sound and all.
+      if (e instanceof AiOffError || classifyAiError(e) !== 'other' || !entry.pendingRawText) throw e;
+      // Gemini wouldn't take the sound (too long, a broken file): the words
+      // the phone heard will do.
+      deleteAudio(entry.pendingAudioUri);
+      store.updateEntry(entry.id, { pendingAudioUri: undefined });
+      processed = await processVoiceDump(entry.pendingRawText, ctx);
     }
+  } else if (entry.pendingAudioUri && !entry.pendingRawText) {
+    // Only from versions that kept recordings, and the file is gone.
+    store.updateEntry(entry.id, { pending: false, pendingAudioUri: undefined });
+    return;
   } else if (entry.pendingRawText || photos.length > 0) {
     transcript = transcript ?? (entry.pendingRawText || undefined);
     const images = (await Promise.all(photos.slice(0, MAX_PHOTOS_TO_AI).map(imageBase64))).filter(
@@ -420,12 +452,16 @@ async function structure(entry: PendingEntry, store: CaptureStore): Promise<void
     store.updateEntry(entry.id, { pending: false });
     return;
   }
-  // What Gemini read off a photo is not something the person said.
-  transcript = transcript ?? (photos.length > 0 ? undefined : processed.transcript);
+  // What Gemini read off a photo is not something the person said; what it
+  // heard in the sound is, and beats the phone's live words.
+  transcript = fromSound ? processed.transcript || transcript : transcript ?? (photos.length > 0 ? undefined : processed.transcript);
+  // The language this was really in: where the phone starts listening next time.
+  const spoken = fromSound && processed.transcript ? languageOf(processed.transcript) : null;
+  if (spoken && spoken !== getPreferences().speechLang) setPreferences({ speechLang: spoken });
 
   // The AI call takes a while. Whatever happened meanwhile wins over it:
   const now = store.snapshot().entries.find((e) => e.id === entry.id);
-  if (!now || !store.getThread(now.threadId)) return; // deleted meanwhile
+  if (!now || !store.getThread(now.threadId)) return deleteAudio(entry.pendingAudioUri); // deleted meanwhile
   // …and if the person edited the note while it waited, their words stay
   // (numbers and links are still picked out, from what they wrote).
   const sentText = (entry.pendingRawText ?? '').trim();
@@ -437,7 +473,7 @@ async function structure(entry: PendingEntry, store: CaptureStore): Promise<void
     processed.measures,
     editedMeanwhile
       ? textOf(now)
-      : [entry.pendingRawText, photos.length > 0 ? processed.transcript : undefined].filter(Boolean).join('\n') ||
+      : [entry.pendingRawText, photos.length > 0 || fromSound ? processed.transcript : undefined].filter(Boolean).join('\n') ||
           processed.transcript ||
           processed.notes,
   );
@@ -477,6 +513,19 @@ async function structure(entry: PendingEntry, store: CaptureStore): Promise<void
   const tags = processed.tags ?? [];
   const aiCategory = asCategory(processed.suggestedCategory);
 
+  // The phone looked for a reminder in its live words; when it misheard
+  // them, what Gemini heard is better ("remind me at 7" said in Bangla).
+  const heard =
+    fromSound && !editedMeanwhile && processed.transcript
+      ? understand(processed.transcript, { now: now.createdAt, monthFirst: monthFirst(), currency: localCurrency() })
+      : undefined;
+  const remindFromSound = (threadId: string) => {
+    const t = store.getThread(threadId);
+    if (!heard?.due || !t || heard.due < Date.now() || (t.dueDate && t.dueDate > Date.now())) return;
+    store.updateItem(threadId, { dueDate: heard.due, repeat: heard.repeat });
+    reminderSet({ threadId, at: heard.due, previous: t.dueDate });
+  };
+
   // ─── Where it belongs ──────────────────────────────────────
   let decision: FilingDecision = { action: 'stay' };
   if (matching && processed.thread) {
@@ -509,6 +558,7 @@ async function structure(entry: PendingEntry, store: CaptureStore): Promise<void
     if (tags.length > 0) {
       store.updateItem(target.id, { tags: [...new Set([...target.tags, ...tags])].slice(0, 8) });
     }
+    remindFromSound(target.id);
     emitFiling({
       type: 'attached',
       entryId: entry.id,
@@ -531,6 +581,7 @@ async function structure(entry: PendingEntry, store: CaptureStore): Promise<void
     });
     if (!created) return;
     if (processed.summary) store.updateItem(created.id, { aiSummary: processed.summary });
+    remindFromSound(created.id);
     emitFiling({
       type: 'released',
       entryId: entry.id,
@@ -559,6 +610,7 @@ async function structure(entry: PendingEntry, store: CaptureStore): Promise<void
   } else if (tags.length > 0) {
     store.updateItem(thread.id, { tags: [...new Set([...thread.tags, ...tags])].slice(0, 8) });
   }
+  remindFromSound(thread.id);
 
   if (decision.action === 'suggest') {
     const target = store.getThread(decision.threadId);

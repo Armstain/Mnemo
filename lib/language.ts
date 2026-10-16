@@ -10,3 +10,15 @@ export function languageOf(text: string): SpeechLang | null {
   if (bn + en < 4) return null;
   return bn >= en ? 'bn-BD' : 'en-US';
 }
+
+/**
+ * The language Android's detector says it hears, as one Mnemo listens in.
+ * It often names Hindi (or Assamese, Odia, Urdu…) for Bangla speech, so any
+ * South Asian guess counts as Bangla; anything unknown is no answer.
+ */
+export function heardLanguage(detected: string | null | undefined): SpeechLang | null {
+  const code = detected?.toLowerCase().split(/[-_]/)[0];
+  if (code === 'en') return 'en-US';
+  if (code && ['bn', 'hi', 'as', 'or', 'ur', 'ne', 'mr', 'pa', 'gu', 'sa'].includes(code)) return 'bn-BD';
+  return null;
+}

@@ -456,16 +456,19 @@ export async function generateSpeech(text: string) {
   }
 }
 
+/**
+ * Writes out a voice note from its sound and structures it. `audio` is one
+ * recording, or several in order when the phone's recognizer restarted.
+ */
 export async function processAudioDump(
-  base64Audio: string,
-  mimeType: string,
+  audio: { data: string; mimeType: string }[],
   ctx?: CaptureContext,
 ): Promise<ProcessedCapture> {
   const prompt = `
     You are an expert productivity assistant. The user just recorded a voice thought about something in their life — it could be work, errands, shopping, study, health, ideas, or personal matters.
     
     TRANSCRIPTION & ANALYSIS TASK:
-    1. Transcribe the audio precisely.
+    1. Transcribe the audio precisely${audio.length > 1 ? ` (${audio.length} clips in order, one recording)` : ''}. People here speak Bangla, English, or both in one sentence: write Bangla words in Bangla script and English words in English, as said. Never write Bangla as Hindi or in Devanagari.
     2. Detect the language of the speaker.
     3. Generate a structured analysis in the SAME language as the speaker.
     ${LANGUAGE_RULES}
@@ -494,10 +497,7 @@ export async function processAudioDump(
   const response = await generateText({
     contents: [
       {
-        parts: [
-          { text: prompt },
-          { inlineData: { mimeType, data: base64Audio } }
-        ]
+        parts: [{ text: prompt }, ...audio.map((a) => ({ inlineData: { mimeType: a.mimeType, data: a.data } }))],
       }
     ],
     config: {
