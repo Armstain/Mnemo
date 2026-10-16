@@ -27,7 +27,7 @@ import { useThemeColors } from '@/hooks/use-theme';
 import { useMnemoStore } from '@/hooks/use-mnemo-store';
 import { Icon, type IconName } from '@/components/ui/Icon';
 import { useReduceMotion } from '@/hooks/use-accessibility-motion';
-import { useSpeechCapture } from '@/hooks/use-speech-capture';
+import { SPEECH_LANG_NAME, useSpeechCapture } from '@/hooks/use-speech-capture';
 import { saveVoiceNote } from '@/lib/capture';
 import { aiEnabled } from '@/lib/ai-mode';
 import { DUR_BASE, DUR_FAST, EASE_IN_OUT, EASE_OUT, EXIT_QUICK, REDUCED, SPRING_NAV } from '@/utils/motion';
@@ -479,6 +479,8 @@ export function ActionCluster({ visible = true }: { visible?: boolean }) {
               <RecordingCard
                 key="card"
                 transcript={speech.text}
+                language={SPEECH_LANG_NAME[speech.language]}
+                languageMissing={speech.problem === 'language'}
                 levelNow={levelNow}
                 startedAt={recordingSince.current}
                 level={level}
@@ -884,6 +886,8 @@ const WAVE_SAMPLE_MS = 80;
 /** Live timer and waveform while recording, then the result after release. */
 function RecordingCard({
   transcript,
+  language,
+  languageMissing,
   levelNow,
   startedAt,
   level,
@@ -893,6 +897,9 @@ function RecordingCard({
   reduceMotion,
 }: {
   transcript: string;
+  /** The language it's listening in, by name (switched on the Record screen). */
+  language: string;
+  languageMissing: boolean;
   /** Latest microphone level (0..1), written by the speech hook. */
   levelNow: React.MutableRefObject<number>;
   startedAt: number;
@@ -963,7 +970,7 @@ function RecordingCard({
                 style={[styles.recDot, { backgroundColor: colors.error }]}
               />
               <Text className="font-sans-semi text-body" style={{ color: tint }}>
-                {cancelling ? 'Release to discard' : 'Recording'}
+                {cancelling ? 'Release to discard' : `Recording · ${language}`}
               </Text>
             </View>
             <Text
@@ -999,7 +1006,9 @@ function RecordingCard({
             numberOfLines={3}
             ellipsizeMode="head"
           >
-            {transcript || 'Listening…'}
+            {languageMissing && !transcript
+              ? `This phone can't listen in ${language} yet. Switch language on the Record screen.`
+              : transcript || 'Listening…'}
           </Text>
 
           <Text className="font-sans text-sm" style={{ color: cancelling ? colors.error : colors.fgTertiary }}>

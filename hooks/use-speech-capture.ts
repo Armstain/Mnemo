@@ -2,7 +2,6 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { ExpoSpeechRecognitionModule, useSpeechRecognitionEvent } from 'expo-speech-recognition';
 
 import { getPreferences, setPreferences, type SpeechLang } from '@/lib/preferences';
-import { languageOf } from '@/lib/language';
 
 // Voice notes are transcribed by the phone's own speech recognition while
 // the person talks. No audio is ever written to disk or sent anywhere;
@@ -20,10 +19,11 @@ let nextId = 1;
 // stop() before giving up and using what we have.
 const STOP_TIMEOUT_MS = 2500;
 
-// Bangla and English, recognized together. There's no setting for this:
-// Android switches between them mid-sentence, and whichever language a
-// note comes out in is the first guess next time.
-const LANGUAGES: SpeechLang[] = ['bn-BD', 'en-US'];
+// After this many restarts in a row with nothing heard, stop trying: the
+// recognizer is failing, not pausing.
+const MAX_RESTARTS = 4;
+
+export const SPEECH_LANG_NAME: Record<SpeechLang, string> = { 'bn-BD': 'বাংলা', 'en-US': 'English' };
 
 function normaliseLevel(db: number): number {
   // volumechange reports roughly -2 (silence) to 10 (loud).
@@ -47,37 +47,53 @@ export function useSpeechCapture(options: { onLevel?: (level: number) => void } 
   const finalText = useRef('');
   const interim = useRef('');
   const wanted = useRef(false); // still holding / still recording
-  const lang = useRef<SpeechLang>('en-US');
+  const lang = useRef<SpeechLang>(getPreferences().speechLang);
+  const [language, setLanguage] = useState<SpeechLang>(() => getPreferences().speechLang);
+  const [problem, setProblem] = useState<'language' | null>(null);
+  const restarts = useRef(0);
+  // The recognizer can't do this language: waiting for a switch or Done.
+  const stalled = useRef(false);
   const stopWaiter = useRef<((text: string) => void) | null>(null);
   const onLevel = useRef(options.onLevel);
   onLevel.current = options.onLevel;
 
   const mine = () => owner === id;
   const full = () => [finalText.current, interim.current].filter(Boolean).join(' ').trim();
+  // Words still showing as "interim" when a session ends were said: keep
+  // them, or a restart (after a pause, or a language switch) drops them.
+  const keepInterim = () => {
+    finalText.current = full();
+    interim.current = '';
+  };
 
   const begin = useCallback(() => {
+    const english = lang.current === 'en-US';
     ExpoSpeechRecognitionModule.start({
+      // One language per note, the one shown on screen. Android's language
+      // detection and mid-sentence switching guessed Hindi for Bangla speech
+      // and dropped words while it switched; Google's Bangla model already
+      // writes the English words people mix in.
       lang: lang.current,
-      // Let Android hear both languages and switch between them as you
-      // speak (newer Google recognizers; older ones keep to `lang`).
-      androidIntentOptions: {
-        EXTRA_ENABLE_LANGUAGE_DETECTION: true,
-        EXTRA_LANGUAGE_DETECTION_ALLOWED_LANGUAGES: LANGUAGES,
-        EXTRA_ENABLE_LANGUAGE_SWITCH: 'balanced',
-        EXTRA_LANGUAGE_SWITCH_ALLOWED_LANGUAGES: LANGUAGES,
-      },
       interimResults: true,
       continuous: true,
-      addsPunctuation: true,
-      // Prefer the on-device model where one is installed; otherwise the
-      // phone's recognizer decides (it may use its own online service).
+      // Android's punctuation (formatting) exists for English only; asking
+      // for it in Bangla can end the session as "language not supported".
+      addsPunctuation: english,
       requiresOnDeviceRecognition: false,
+      androidIntentOptions: {
+        // expo-speech-recognition asks for offline-only recognition whenever
+        // it streams the microphone (continuous, Android 13+). Offline Bangla
+        // is often not installed and offline models miss more words, so let
+        // the phone use its best recognizer.
+        EXTRA_PREFER_OFFLINE: false,
+      },
     });
   }, []);
 
   useSpeechRecognitionEvent('result', (event) => {
     if (!mine()) return;
     const said = event.results[0]?.transcript?.trim() ?? '';
+    if (said) restarts.current = 0;
     if (event.isFinal) {
       if (said) finalText.current = [finalText.current, said].filter(Boolean).join(' ');
       interim.current = '';
@@ -87,29 +103,32 @@ export function useSpeechCapture(options: { onLevel?: (level: number) => void } 
     setText(full());
   });
 
-  // The recognizer telling us which language it's hearing: start there next time.
-  useSpeechRecognitionEvent('languagedetection', (event) => {
-    if (!mine()) return;
-    const heard = LANGUAGES.find((l) => event.detectedLanguage?.toLowerCase().startsWith(l.slice(0, 2)));
-    if (heard && event.confidence >= 0.6) lang.current = heard;
-  });
-
   useSpeechRecognitionEvent('volumechange', (event) => {
     if (mine()) onLevel.current?.(normaliseLevel(event.value));
   });
 
   useSpeechRecognitionEvent('error', (event) => {
     if (!mine()) return;
-    // A pause with nothing said ends the session on some phones; keep going
-    // while the person is still holding.
-    if (event.error === 'no-speech' && wanted.current && !stopWaiter.current) return;
+    // The phone has no recognizer for this language (or it isn't
+    // downloaded): restarting won't help. Say so; the other language may work.
+    if (event.error === 'language-not-supported') {
+      stalled.current = true;
+      setProblem('language');
+    }
+    // Otherwise a pause with nothing said ends the session on some phones;
+    // the 'end' that follows starts listening again.
   });
 
   useSpeechRecognitionEvent('end', () => {
     if (!mine()) return;
-    if (wanted.current && !stopWaiter.current) {
-      // Older Android stops after a silence even in continuous mode: pick up
-      // again so a pause doesn't end the note.
+    keepInterim();
+    // Still recording, but nothing to listen with until the language changes.
+    if (stalled.current && wanted.current && !stopWaiter.current) return;
+    if (wanted.current && !stopWaiter.current && restarts.current < MAX_RESTARTS) {
+      // Older Android stops after a silence even in continuous mode, and a
+      // language switch ends the session on purpose: pick up again so the
+      // note goes on.
+      restarts.current += 1;
       try {
         begin();
         return;
@@ -117,13 +136,7 @@ export function useSpeechCapture(options: { onLevel?: (level: number) => void } 
         // Fall through and finish with what we have.
       }
     }
-    // Words still showing as "interim" count: they were said.
     const words = full();
-    // Remember the language this note came out in, as the first guess next time.
-    const learned = languageOf(words) ?? lang.current;
-    if (learned !== getPreferences().speechLang) setPreferences({ speechLang: learned });
-    finalText.current = words;
-    interim.current = '';
     setListening(false);
     owner = owner === id ? 0 : owner;
     const resolve = stopWaiter.current;
@@ -140,7 +153,11 @@ export function useSpeechCapture(options: { onLevel?: (level: number) => void } 
       finalText.current = '';
       interim.current = '';
       wanted.current = true;
+      restarts.current = 0;
+      stalled.current = false;
       lang.current = getPreferences().speechLang;
+      setLanguage(lang.current);
+      setProblem(null);
       setText('');
       setListening(true);
       begin();
@@ -156,6 +173,14 @@ export function useSpeechCapture(options: { onLevel?: (level: number) => void } 
   const stop = useCallback((): Promise<string> => {
     wanted.current = false;
     if (!mine()) return Promise.resolve(full());
+    if (stalled.current) {
+      // No session is running to hand back last words.
+      stalled.current = false;
+      const words = full();
+      setListening(false);
+      owner = 0;
+      return Promise.resolve(words);
+    }
     return new Promise<string>((resolve) => {
       let done = false;
       const finish = (words: string) => {
@@ -178,6 +203,38 @@ export function useSpeechCapture(options: { onLevel?: (level: number) => void } 
       }
     });
   }, [id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  /**
+   * Listen in the other language from now on (and next time). Mid-note, the
+   * words so far are kept and listening carries on in the new language.
+   */
+  const switchLanguage = useCallback(() => {
+    const next: SpeechLang = lang.current === 'bn-BD' ? 'en-US' : 'bn-BD';
+    lang.current = next;
+    setLanguage(next);
+    setProblem(null);
+    setPreferences({ speechLang: next });
+    if (!mine() || !wanted.current || stopWaiter.current) return;
+    keepInterim();
+    setText(full());
+    restarts.current = 0;
+    if (stalled.current) {
+      // That session already ended: start one in the new language.
+      stalled.current = false;
+      try {
+        begin();
+      } catch {
+        // Done still finishes with what was heard.
+      }
+      return;
+    }
+    try {
+      // Ends this session; 'end' starts the next one in the new language.
+      ExpoSpeechRecognitionModule.abort();
+    } catch {
+      begin();
+    }
+  }, [begin]); // eslint-disable-line react-hooks/exhaustive-deps
 
   /** Stops and throws away whatever was heard. */
   const cancel = useCallback(() => {
@@ -211,5 +268,5 @@ export function useSpeechCapture(options: { onLevel?: (level: number) => void } 
     }
   }, [id]);
 
-  return { listening, text, start, stop, cancel };
+  return { listening, text, language, problem, start, stop, cancel, switchLanguage };
 }
