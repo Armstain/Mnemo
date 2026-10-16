@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react';
 import { AppState } from 'react-native';
 import { useMnemoStore } from '@/hooks/use-mnemo-store';
 import { finishOnDevice, resolvePendingEntry } from '@/lib/capture';
+import { deleteUnusedAudio } from '@/lib/voice-audio';
 import { usePreferences } from '@/lib/preferences';
 import { onApiKeyChanged } from '@/lib/api-key';
 import { aiEnabled, appReady } from '@/lib/ai-mode';
@@ -79,8 +80,11 @@ export function PendingProcessor() {
       const pending = entries.filter((e) => e.pending);
       if (!aiEnabled()) {
         // Nothing will come from Gemini: finish them as the phone reads them.
-        for (const entry of pending) finishOnDevice(entry, current);
-        for (const item of items.filter((i) => i.pending && !pending.some((e) => e.threadId === i.id))) {
+        // A recording with no words yet waits (the phone can't write one out):
+        // turning Gemini back on writes it out.
+        const waiting = pending.filter((e) => e.pendingAudioUri && !e.pendingRawText);
+        for (const entry of pending) if (!waiting.includes(entry)) finishOnDevice(entry, current);
+        for (const item of items.filter((i) => i.pending && !waiting.some((e) => e.threadId === i.id))) {
           current.updateItem(item.id, { pending: false });
         }
         return;
@@ -92,7 +96,11 @@ export function PendingProcessor() {
       }
     };
 
-    appReady.then(sweep);
+    appReady.then(() => {
+      // Recordings of notes deleted before they were written out.
+      deleteUnusedAudio(storeRef.current.snapshot().entries.filter((e) => e.pending).map((e) => e.pendingAudioUri));
+      sweep();
+    });
     const timer = setInterval(() => {
       if (storeRef.current.snapshot().entries.some((e) => e.pending)) sweep();
     }, SWEEP_EVERY_MS);

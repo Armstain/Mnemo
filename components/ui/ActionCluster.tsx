@@ -28,7 +28,6 @@ import { useMnemoStore } from '@/hooks/use-mnemo-store';
 import { Icon, type IconName } from '@/components/ui/Icon';
 import { useReduceMotion } from '@/hooks/use-accessibility-motion';
 import { useSpeechCapture } from '@/hooks/use-speech-capture';
-import { deleteAudio } from '@/lib/voice-audio';
 import { saveVoiceNote } from '@/lib/capture';
 import { aiEnabled } from '@/lib/ai-mode';
 import { DUR_BASE, DUR_FAST, EASE_IN_OUT, EASE_OUT, EXIT_QUICK, REDUCED, SPRING_NAV } from '@/utils/motion';
@@ -258,9 +257,8 @@ export function ActionCluster({ visible = true }: { visible?: boolean }) {
     const focusNow = currentThread ? undefined : focusThread && getFocusThreadId() === focusThread.id ? focusThread : undefined;
     const saveTo = currentThread ?? focusNow;
     speech.stop().then(({ words, audio }) => {
-      if (!words.trim()) {
-        // Nothing was heard: there's nothing to save.
-        deleteAudio(audio);
+      if (!words.trim() && audio.length === 0) {
+        // Nothing was heard (or the hold was a slip): there's nothing to save.
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
         showTail({ kind: 'tooShort' });
         return;
@@ -482,6 +480,7 @@ export function ActionCluster({ visible = true }: { visible?: boolean }) {
               <RecordingCard
                 key="card"
                 transcript={speech.text}
+                writtenLater={speech.recording}
                 levelNow={levelNow}
                 startedAt={recordingSince.current}
                 level={level}
@@ -887,6 +886,7 @@ const WAVE_SAMPLE_MS = 80;
 /** Live timer and waveform while recording, then the result after release. */
 function RecordingCard({
   transcript,
+  writtenLater,
   levelNow,
   startedAt,
   level,
@@ -896,6 +896,8 @@ function RecordingCard({
   reduceMotion,
 }: {
   transcript: string;
+  /** Recording for Gemini to write out, so no words show while talking. */
+  writtenLater: boolean;
   /** Latest microphone level (0..1), written by the speech hook. */
   levelNow: React.MutableRefObject<number>;
   startedAt: number;
@@ -1002,7 +1004,7 @@ function RecordingCard({
             numberOfLines={3}
             ellipsizeMode="head"
           >
-            {transcript || 'Listening…'}
+            {transcript || (writtenLater ? 'Listening… Bangla, English or both' : 'Listening…')}
           </Text>
 
           <Text className="font-sans text-sm" style={{ color: cancelling ? colors.error : colors.fgTertiary }}>

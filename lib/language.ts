@@ -22,3 +22,11 @@ export function heardLanguage(detected: string | null | undefined): SpeechLang |
   if (code && ['bn', 'hi', 'as', 'or', 'ur', 'ne', 'mr', 'pa', 'gu', 'sa'].includes(code)) return 'bn-BD';
   return null;
 }
+
+const DEVANAGARI = /[\u0900-\u097F]/g;
+
+/** Written in Devanagari (Hindi script) more than Bangla: a misheard Bangla note. */
+export function looksLikeHindi(text: string): boolean {
+  const deva = text.match(DEVANAGARI)?.length ?? 0;
+  return deva > 3 && deva > (text.match(BENGALI)?.length ?? 0);
+}

@@ -22,7 +22,6 @@ import { Icon, type IconName } from '@/components/ui/Icon';
 import { RecordButton } from '@/components/ui/RecordButton';
 import { useMnemoStore } from '@/hooks/use-mnemo-store';
 import { useSpeechCapture } from '@/hooks/use-speech-capture';
-import { deleteAudio } from '@/lib/voice-audio';
 import { useThemeColors } from '@/hooks/use-theme';
 import { saveApiKey, validateApiKey } from '@/lib/api-key';
 import { aiEnabled } from '@/lib/ai-mode';
@@ -257,7 +256,7 @@ export function AiChoiceStep({
         </MotiView>
       </View>
       <Text className="font-sans text-sm text-center" style={{ color: colors.fgTertiary }}>
-        Voice becomes text on your phone, or with Gemini if you add a key. Mnemo never keeps the audio.
+        With a key, Gemini writes voice notes out; offline, your phone does. Mnemo never keeps the audio.
       </Text>
     </StepFrame>
   );
@@ -422,8 +421,7 @@ export function FirstCaptureStep({
       return;
     }
     const { words, audio } = await speech.stop();
-    if (!words.trim()) {
-      deleteAudio(audio);
+    if (!words.trim() && audio.length === 0) {
       setHint("Didn't catch that. Tap and try again, or type it.");
       return;
     }

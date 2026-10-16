@@ -81,9 +81,9 @@ export function AiModeCard({ children }: { children?: React.ReactNode }) {
           <Text className="font-sans-semi text-sm text-fg ml-2">Voice notes</Text>
         </View>
         <Text className="font-sans text-sm text-fg-secondary leading-relaxed">
-          Speak in Bangla, English or a mix. Your phone's speech service shows the words as you talk
-          (on many phones that's Google's, which may work online). With Gemini on, Gemini writes the
-          recording out properly, then it's deleted. Mnemo never keeps the audio.
+          Speak in Bangla, English or a mix. With Gemini on, the note is recorded and Gemini writes it
+          out, then the recording is deleted. Offline, your phone's speech service writes it out as you
+          talk (on many phones that's Google's, which may work online). Mnemo never keeps the audio.
         </Text>
       </View>
     </View>

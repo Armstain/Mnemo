@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { heardLanguage, languageOf } from '@/lib/language';
+import { heardLanguage, languageOf, looksLikeHindi } from '@/lib/language';
 
 describe('which language a voice note is in', () => {
   it("takes Android's detector's word, but only for Bangla or English", () => {
@@ -22,5 +22,12 @@ describe('which language a voice note is in', () => {
     expect(languageOf('call the plumber tomorrow')).toBe('en-US');
     expect(languageOf('মিটিং at 5')).toBe('bn-BD');
     expect(languageOf('ok')).toBeNull();
+  });
+
+  it('Bangla written out as Hindi is caught, so it can be asked for again as Bangla', () => {
+    expect(looksLikeHindi('कल सुबह डॉक्टर के पास जाना है')).toBe(true);
+    expect(looksLikeHindi('কাল সকালে ডাক্তারের কাছে যেতে হবে')).toBe(false);
+    expect(looksLikeHindi('call the plumber tomorrow')).toBe(false);
+    expect(looksLikeHindi('মিটিং আছে, ok')).toBe(false);
   });
 });
