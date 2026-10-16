@@ -3,9 +3,11 @@ import { Platform } from 'react-native';
 import { GoogleGenAI } from '@google/genai';
 
 const GEMINI_KEY_STORAGE = 'mnemo_user_gemini_api_key';
+const GROQ_KEY_STORAGE = 'mnemo_user_groq_api_key';
 
 // In-memory cache for fast synchronous access
 let cachedGeminiApiKey: string | null = null;
+let cachedGroqApiKey: string | null = null;
 
 /** Load stored API keys on app initialization. */
 export async function loadStoredApiKeys(): Promise<void> {
@@ -13,9 +15,11 @@ export async function loadStoredApiKeys(): Promise<void> {
     if (Platform.OS === 'web') {
       if (typeof localStorage !== 'undefined') {
         cachedGeminiApiKey = localStorage.getItem(GEMINI_KEY_STORAGE);
+        cachedGroqApiKey = localStorage.getItem(GROQ_KEY_STORAGE);
       }
     } else {
       cachedGeminiApiKey = await SecureStore.getItemAsync(GEMINI_KEY_STORAGE);
+      cachedGroqApiKey = await SecureStore.getItemAsync(GROQ_KEY_STORAGE);
     }
   } catch (e) {
     console.error('Failed to load stored API keys:', e);
@@ -104,5 +108,52 @@ export async function validateApiKey(keyToTest?: string): Promise<{ valid: boole
   } catch (err) {
     const problem = classifyAiError(err);
     return { valid: false, error: KEY_PROBLEM_TEXT[problem], problem };
+  }
+}
+
+// ─── Groq API Key (backup voice transcription) ───────────────────
+
+/**
+ * The person's own Groq key, or ''. Optional: when Gemini can't write a
+ * voice note out (down, out of quota), Groq's Whisper does.
+ */
+export function getActiveGroqApiKey(): string {
+  return cachedGroqApiKey?.trim() ?? '';
+}
+
+export function getGroqApiKeySource(): 'custom' | 'none' {
+  return getActiveGroqApiKey() ? 'custom' : 'none';
+}
+
+export async function saveGroqApiKey(key: string): Promise<void> {
+  const trimmed = key.trim();
+  cachedGroqApiKey = trimmed || null;
+  try {
+    if (Platform.OS === 'web') {
+      if (typeof localStorage === 'undefined') return;
+      if (trimmed) localStorage.setItem(GROQ_KEY_STORAGE, trimmed);
+      else localStorage.removeItem(GROQ_KEY_STORAGE);
+    } else if (trimmed) {
+      await SecureStore.setItemAsync(GROQ_KEY_STORAGE, trimmed);
+    } else {
+      await SecureStore.deleteItemAsync(GROQ_KEY_STORAGE);
+    }
+  } catch (e) {
+    console.error('Failed to save Groq API key:', e);
+    throw e;
+  }
+}
+
+/** Checks a Groq key by listing its models (free, uses no transcription quota). */
+export async function validateGroqApiKey(keyToTest?: string): Promise<{ valid: boolean; error?: string }> {
+  const key = keyToTest !== undefined ? keyToTest.trim() : getActiveGroqApiKey();
+  if (!key) return { valid: false, error: 'Paste your Groq key first.' };
+  try {
+    const res = await fetch('https://api.groq.com/openai/v1/models', { headers: { Authorization: `Bearer ${key}` } });
+    if (res.ok) return { valid: true };
+    if (res.status === 401) return { valid: false, error: "Groq didn't accept this key. Check you copied all of it." };
+    return { valid: false, error: `Groq returned an error (${res.status}).` };
+  } catch {
+    return { valid: false, error: "Couldn't reach Groq. Check your connection." };
   }
 }

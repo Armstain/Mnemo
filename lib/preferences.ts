@@ -9,9 +9,9 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 /** 'gemini': use the person's own key. 'offline': everything stays on the phone. 'unset': not chosen yet. */
 export type AiMode = 'gemini' | 'offline' | 'unset';
 /**
- * The language voice notes are heard in. Starts from the phone's own
- * language; switched with one tap while recording (see SpeechLangSwitch)
- * and kept for next time.
+ * The language the phone starts listening in. Not a setting: it's the one
+ * the last voice note was in (see use-speech-capture), starting from the
+ * phone's own language.
  */
 export type SpeechLang = 'en-US' | 'bn-BD';
 

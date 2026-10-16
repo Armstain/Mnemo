@@ -256,7 +256,7 @@ export function AiChoiceStep({
         </MotiView>
       </View>
       <Text className="font-sans text-sm text-center" style={{ color: colors.fgTertiary }}>
-        Your phone's speech service turns voice into text. Mnemo never keeps the audio.
+        With a key, Gemini writes voice notes out; offline, your phone does. Mnemo never keeps the audio.
       </Text>
     </StepFrame>
   );
@@ -420,12 +420,12 @@ export function FirstCaptureStep({
       setMode('type');
       return;
     }
-    const words = await speech.stop();
-    if (!words.trim()) {
+    const { words, audio } = await speech.stop();
+    if (!words.trim() && audio.length === 0) {
       setHint("Didn't catch that. Tap and try again, or type it.");
       return;
     }
-    const saved = saveVoiceNote({ text: words, category: 'general', store });
+    const saved = saveVoiceNote({ text: words, audio, category: 'general', store });
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     onCaptured(saved.threadId);
   };

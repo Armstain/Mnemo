@@ -57,9 +57,11 @@ import { reviewTimeLabel, scheduleWeeklyReview } from '@/lib/review-notice';
 import { loadSetup, strictPhone } from '@/lib/reliability';
 import {
   getActiveApiKey,
-  getApiKeySource,
+  getActiveGroqApiKey,
   saveApiKey,
+  saveGroqApiKey,
   validateApiKey,
+  validateGroqApiKey,
   loadStoredApiKeys,
 } from '@/lib/api-key';
 
@@ -263,7 +265,43 @@ function NudgeSettingsCard() {
   );
 }
 
-function ApiKeyConfigCard() {
+interface KeyProvider {
+  name: string;
+  placeholder: string;
+  /** Under the title: what it's for. */
+  note?: string;
+  get: () => string;
+  save: (key: string) => Promise<void>;
+  validate: (key: string) => Promise<{ valid: boolean; error?: string }>;
+  working: string;
+  consoleUrl: string;
+  consoleName: string;
+}
+
+const GEMINI: KeyProvider = {
+  name: 'Gemini API key',
+  placeholder: 'AIzaSy...',
+  get: getActiveApiKey,
+  save: saveApiKey,
+  validate: validateApiKey,
+  working: 'Connection successful! Gemini API is working.',
+  consoleUrl: 'https://aistudio.google.com/app/apikey',
+  consoleName: 'Google AI Studio',
+};
+
+const GROQ: KeyProvider = {
+  name: 'Groq API key (optional)',
+  placeholder: 'gsk_...',
+  note: "A backup for voice notes: when Gemini can't write one out (down, or today's free limit is used up), Groq's Whisper does. The recording goes to Groq only then.",
+  get: getActiveGroqApiKey,
+  save: saveGroqApiKey,
+  validate: validateGroqApiKey,
+  working: 'Groq is working. It writes out voice notes when Gemini can’t.',
+  consoleUrl: 'https://console.groq.com/keys',
+  consoleName: 'console.groq.com',
+};
+
+function ApiKeyConfigCard({ provider = GEMINI }: { provider?: KeyProvider }) {
   const colors = useThemeColors();
   const [inputKey, setInputKey] = useState('');
   const [showKey, setShowKey] = useState(false);
@@ -275,17 +313,17 @@ function ApiKeyConfigCard() {
   useEffect(() => {
     (async () => {
       await loadStoredApiKeys();
-      setInputKey(getActiveApiKey());
-      setSource(getApiKeySource());
+      setInputKey(provider.get());
+      setSource(provider.get() ? 'custom' : 'none');
     })();
-  }, []);
+  }, [provider]);
 
   const handleSave = async () => {
     setIsSaving(true);
     setTestResult(null);
     try {
-      await saveApiKey(inputKey);
-      const newSource = getApiKeySource();
+      await provider.save(inputKey);
+      const newSource = provider.get() ? 'custom' : 'none';
       setSource(newSource);
       if (inputKey.trim()) {
         setTestResult({ success: true, message: 'Key saved securely!' });
@@ -302,10 +340,10 @@ function ApiKeyConfigCard() {
   const handleTest = async () => {
     setIsTesting(true);
     setTestResult(null);
-    const result = await validateApiKey(inputKey);
+    const result = await provider.validate(inputKey);
     setIsTesting(false);
     if (result.valid) {
-      setTestResult({ success: true, message: 'Connection successful! Gemini API is working.' });
+      setTestResult({ success: true, message: provider.working });
     } else {
       setTestResult({ success: false, message: result.error || 'Validation failed.' });
     }
@@ -313,14 +351,14 @@ function ApiKeyConfigCard() {
 
   const handleClear = async () => {
     setInputKey('');
-    await saveApiKey('');
-    setSource(getApiKeySource());
-    setInputKey(getActiveApiKey());
+    await provider.save('');
+    setSource('none');
+    setInputKey(provider.get());
     setTestResult({ success: true, message: 'Custom key reset.' });
   };
 
   const openGoogleAIStudio = () => {
-    WebBrowser.openBrowserAsync('https://aistudio.google.com/app/apikey');
+    WebBrowser.openBrowserAsync(provider.consoleUrl);
   };
 
   return (
@@ -329,13 +367,16 @@ function ApiKeyConfigCard() {
       <View className="flex-row items-center justify-between">
         <View className="flex-row items-center">
           <Key size={16} color={colors.accent} strokeWidth={2} />
-          <Text className="font-sans-semi text-sm text-fg ml-2">Gemini API key</Text>
+          <Text className="font-sans-semi text-sm text-fg ml-2">{provider.name}</Text>
         </View>
 
-        <Pill tone={source === 'none' ? colors.error : colors.accent} size="sm">
+        <Pill tone={source === 'none' ? (provider === GEMINI ? colors.error : colors.fgTertiary) : colors.accent} size="sm">
           {source === 'custom' ? 'Your key' : 'Not set'}
         </Pill>
       </View>
+      {provider.note ? (
+        <Text className="font-sans text-sm text-fg-secondary leading-relaxed -mt-1">{provider.note}</Text>
+      ) : null}
 
       {/* Input Field */}
       <View className="gap-1.5">
@@ -346,7 +387,7 @@ function ApiKeyConfigCard() {
               setInputKey(text);
               if (testResult) setTestResult(null);
             }}
-            placeholder="AIzaSy..."
+            placeholder={provider.placeholder}
             placeholderTextColor={colors.fgTertiary}
             secureTextEntry={!showKey}
             autoCapitalize="none"
@@ -423,7 +464,7 @@ function ApiKeyConfigCard() {
           Need a key? It's free.
         </Text>
         <View className="flex-row items-center">
-          <Text className="font-sans-medium text-sm text-accent mr-1">Google AI Studio</Text>
+          <Text className="font-sans-medium text-sm text-accent mr-1">{provider.consoleName}</Text>
           <Icon name="arrowUpRight" size={12} color={colors.accent} />
         </View>
       </Pressable>
@@ -436,12 +477,12 @@ const PRIVACY_FACTS = [
   {
     title: 'With Gemini on',
     body:
-      'Sent to Google with your key: the text of each new note and any photo on it; the titles and a line from your recently active threads, so it can file the note; your question and the notes that best match it, when you ask; note text for meaning search and digests. On a free key, Google may use what you send to improve its products, and people may review it. Offline, none of this happens.',
+      'Sent to Google with your key: the text of each new note, the recording of a voice note, and any photo on it; the titles and a line from your recently active threads, so it can file the note; your question and the notes that best match it, when you ask; note text for meaning search and digests. On a free key, Google may use what you send to improve its products, and people may review it. Offline, none of this happens.',
   },
   {
     title: 'Voice',
     body:
-      "Your phone's speech service turns what you say into text. On many phones that is Google's, which may process it online. Mnemo never keeps the audio.",
+      "With Gemini on, a voice note is recorded and sent to Gemini to be written out (to Groq instead, if you added a Groq key and Gemini can't), then the recording is deleted from the phone. Offline, nothing is recorded: your phone's speech service turns what you say into text as you talk (on many phones that is Google's, which may process it online). Mnemo never keeps the audio.",
   },
   {
     title: 'Links',
@@ -568,6 +609,7 @@ export default function ModalScreen() {
 
             <AiModeCard>
               <ApiKeyConfigCard />
+              <ApiKeyConfigCard provider={GROQ} />
             </AiModeCard>
           </MotiView>
 

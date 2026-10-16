@@ -9,8 +9,7 @@ import { Easing } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useCaptureTarget } from '@/hooks/use-capture-target';
-import { SPEECH_LANG_NAME, useSpeechCapture } from '@/hooks/use-speech-capture';
-import { SpeechLangSwitch } from '@/components/ui/SpeechLangSwitch';
+import { useSpeechCapture } from '@/hooks/use-speech-capture';
 import { useMnemoStore } from '@/hooks/use-mnemo-store';
 import { useThemeColors } from '@/hooks/use-theme';
 import { saveVoiceNote } from '@/lib/capture';
@@ -30,9 +29,9 @@ const SAMPLE_MS = 80;
 type Phase = 'ready' | 'listening' | 'review';
 
 /**
- * The Record screen. The phone transcribes as you talk (nothing is
- * recorded to a file); when you stop, the words are yours to fix before
- * saving, since there's no audio to go back to.
+ * The Record screen. With Gemini on, it records, and Gemini writes the note
+ * out on its thread (the recording is then deleted). Offline, the phone
+ * transcribes as you talk, and the words are yours to fix before saving.
  */
 export default function DumpScreen() {
   const enter = useEnter();
@@ -86,7 +85,15 @@ export default function DumpScreen() {
   }, [autostart, key]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function finishListening() {
-    const words = await speech.stop();
+    const { words, audio } = await speech.stop();
+    // Recorded for Gemini: nothing to read over yet, so it's saved now and
+    // written out on the thread.
+    if (audio.length > 0) {
+      const saved = saveVoiceNote({ text: '', audio, category, threadId: targetThread?.id, filing: target.filing, store });
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      router.replace(`/(tabs)/context?id=${saved.threadId}` as any);
+      return;
+    }
     // "Record more" appends to what's already there.
     const next = [draft.trim(), words.trim()].filter(Boolean).join(' ');
     setDraft(next);
@@ -192,29 +199,17 @@ export default function DumpScreen() {
                   className="font-display text-center"
                   style={{ color: speech.text ? colors.fg : colors.fgTertiary, fontSize: 22, lineHeight: 32 }}
                 >
-                  {speech.text || 'Listening…'}
+                  {speech.text || (speech.recording ? 'Listening… Gemini writes it out when you tap Done.' : 'Listening…')}
                 </Text>
               </ScrollView>
             ) : (
               <MotiView {...enter.rise(2)} className="mt-10 items-center">
                 <Text className="font-display text-title text-fg text-center">Talk it through</Text>
                 <Text className="font-sans text-body text-fg-secondary text-center mt-2 leading-relaxed px-6">
-                  Your words appear as you speak; only the text is kept, never the audio. English words in
-                  Bangla come through too.
+                  In Bangla, English or both. Only the words are kept, never the audio.
                 </Text>
               </MotiView>
             )}
-
-            {/* The language it listens in; switching mid-note keeps what's been heard. */}
-            <View className="mt-6 items-center">
-              <SpeechLangSwitch value={speech.language} onSwitch={speech.switchLanguage} />
-              {listening && speech.problem === 'language' && (
-                <Text className="font-sans text-sm text-center mt-3 px-6" style={{ color: colors.error }}>
-                  This phone can&apos;t listen in {SPEECH_LANG_NAME[speech.language]} yet. Add it in the Google
-                  app (Settings → Voice → Languages), or switch.
-                </Text>
-              )}
-            </View>
 
             {listening && (
               <View className="flex-row items-center gap-1.5 h-12 mt-6">
