@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   View,
   KeyboardAvoidingView,
@@ -6,6 +6,7 @@ import {
   ActivityIndicator,
   Pressable,
   useWindowDimensions,
+  AppState,
 } from 'react-native';
 import { TextInput } from '@/components/ui/TextInput';
 import { Text } from '@/components/ui/Text';
@@ -235,9 +236,9 @@ export function AiChoiceStep({
             title="Smart, with your free Gemini key"
             recommended
             points={[
+              'No account, no server, no bill — the key lives only on this phone',
               'Tidies your notes, finds next steps and numbers',
-              'Files each note into the right thread for you',
-              'Takes a minute: a free key from Google',
+              'Free from Google, about a minute to set up',
             ]}
             onPress={onGemini}
           />
@@ -264,19 +265,34 @@ export function AiChoiceStep({
 
 // ─── Step: Gemini key ───────────────────────────────────────────
 
+/** Loose check: real Gemini keys start with AIza and are ~39 chars. */
+function looksLikeGeminiKey(text: string): boolean {
+  const t = text.trim();
+  return t.startsWith('AIza') && t.length >= 30 && /^[A-Za-z0-9_\-]+$/.test(t);
+}
+
 export function KeyStep({ onDone, onOffline, onBack }: { onDone: () => void; onOffline: () => void; onBack: () => void }) {
   const enter = useEnter();
   const colors = useThemeColors();
   const compact = useCompact();
-  const [key, setKey] = useState('');
+  const [key, setKeyState] = useState('');
   const [checking, setChecking] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // A key copied in AI Studio, spotted when the person comes back to the app.
+  const [spottedKey, setSpottedKey] = useState<string | null>(null);
+  const keyRef = useRef('');
+  const lastSeenClipboard = useRef<string | null>(null);
+
+  const setKeyText = (t: string) => {
+    keyRef.current = t;
+    setKeyState(t);
+  };
 
   const paste = async () => {
     try {
       const text = (await Clipboard.getStringAsync()).trim();
       if (text) {
-        setKey(text);
+        setKeyText(text);
         setError(null);
         Haptics.selectionAsync();
       } else {
@@ -303,6 +319,41 @@ export function KeyStep({ onDone, onOffline, onBack }: { onDone: () => void; onO
     onDone();
   };
 
+  // When they return from AI Studio, look for a freshly copied key so they
+  // don't have to paste it themselves. Never overwrites what they typed.
+  useEffect(() => {
+    let cancelled = false;
+    const lookForKey = async () => {
+      try {
+        const text = (await Clipboard.getStringAsync()).trim();
+        if (cancelled || text === lastSeenClipboard.current) return;
+        lastSeenClipboard.current = text;
+        if (text && looksLikeGeminiKey(text) && !keyRef.current.trim()) {
+          setSpottedKey(text);
+          Haptics.selectionAsync();
+        }
+      } catch {
+        // Clipboard unreadable — the manual paste path still works.
+      }
+    };
+    void lookForKey();
+    const sub = AppState.addEventListener('change', (state) => {
+      if (state === 'active') void lookForKey();
+    });
+    return () => {
+      cancelled = true;
+      sub.remove();
+    };
+  }, []);
+
+  const useSpottedKey = () => {
+    if (!spottedKey) return;
+    setKeyText(spottedKey);
+    setSpottedKey(null);
+    setError(null);
+    Haptics.selectionAsync();
+  };
+
   const stepRow = (n: number, text: string, action?: React.ReactNode) => (
     <View className="flex-row items-center" style={{ minHeight: compact ? 40 : 46 }}>
       <View className="w-7 h-7 rounded-full items-center justify-center mr-3" style={{ backgroundColor: colors.accentSoft }}>
@@ -320,7 +371,10 @@ export function KeyStep({ onDone, onOffline, onBack }: { onDone: () => void; onO
   return (
     <StepFrame onBack={onBack}>
       <MotiView {...enter.rise(0)}>
-        <Headline title="Get your free key" body="Mnemo uses your own Gemini key, so there's no account and no bill." />
+        <Headline
+          title="Your key keeps Mnemo yours"
+          body="Mnemo has no account and no server, so the smarts run on a key you own. It's free from Google, takes about a minute, and the key never leaves this phone."
+        />
       </MotiView>
 
       <MotiView {...enter.rise(1)} className="mt-5 gap-1">
@@ -331,11 +385,35 @@ export function KeyStep({ onDone, onOffline, onBack }: { onDone: () => void; onO
             Open
           </Button>,
         )}
-        {stepRow(2, 'Tap "Create API key", then copy it')}
-        {stepRow(3, 'Paste it here')}
+        {stepRow(2, 'Create a key (any project name works), then copy it')}
+        {stepRow(3, 'Come back here — Mnemo spots it in your clipboard')}
       </MotiView>
 
       <MotiView {...enter.rise(2)} className="mt-3">
+        {spottedKey && !key.trim() ? (
+          <View
+            className="flex-row items-center rounded-md p-3 mb-2"
+            style={{ backgroundColor: colors.accentSoft, borderWidth: 1, borderColor: colors.accent }}
+            accessibilityLabel="A Gemini key was found in your clipboard"
+          >
+            <View className="flex-1 mr-2">
+              <Text className="font-sans-semi text-sm" style={{ color: colors.fg }}>
+                Key found in your clipboard
+              </Text>
+              <Text className="font-sans text-xs mt-0.5" style={{ color: colors.fgSecondary }}>
+                {spottedKey.slice(0, 10)}…{spottedKey.slice(-4)}
+              </Text>
+            </View>
+            <View className="flex-row items-center" style={{ gap: 4 }}>
+              <Button variant="primary" size="sm" onPress={useSpottedKey}>
+                Use it
+              </Button>
+              <Button variant="quiet" size="sm" onPress={() => setSpottedKey(null)}>
+                Dismiss
+              </Button>
+            </View>
+          </View>
+        ) : null}
         <View
           className="flex-row items-center rounded-md pl-4 pr-1.5 h-12"
           style={{ backgroundColor: colors.surface, borderWidth: 1, borderColor: error ? colors.error : colors.border }}
@@ -343,7 +421,7 @@ export function KeyStep({ onDone, onOffline, onBack }: { onDone: () => void; onO
           <TextInput
             value={key}
             onChangeText={(t) => {
-              setKey(t);
+              setKeyText(t);
               setError(null);
             }}
             placeholder="AIza…"
