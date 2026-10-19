@@ -35,7 +35,7 @@ export const ai = new Proxy({} as GoogleGenAI, {
 // the app go stale: Google renames and retires models, and one that 404s
 // left every note "Processing". These are only used if the list can't be
 // fetched.
-const FALLBACK_TEXT = ['gemini-flash-latest', 'gemini-2.5-flash'];
+const FALLBACK_TEXT = ['gemini-flash-latest'];
 const FALLBACK_TTS = 'gemini-2.5-flash-preview-tts';
 
 let catalog: Promise<ModelInfo[] | null> | null = null;
@@ -521,4 +521,38 @@ export async function processAudioDump(
   const text = response.text;
   if (!text) throw new Error('Failed to process audio dump');
   return JSON.parse(text);
+}
+
+/**
+ * Write a short spoken briefing to read aloud when the user resumes an item.
+ * Returns plain prose (no markdown) in the same language as the note.
+ */
+export async function generateRebriefScript(input: {
+  title: string;
+  timeAway: string;
+  whereLeftOff?: string;
+  nextSteps?: string[];
+}) {
+  const prompt = `
+You are the voice of Mnemo, a personal continuity app. The user is about to resume something they stepped away from. Write a short spoken briefing that gets them back into it.
+
+Task: "${input.title}"
+Time away: ${input.timeAway}
+${input.whereLeftOff ? `Where they left off: ${input.whereLeftOff}` : ''}
+${input.nextSteps?.length ? `Next steps:\n${input.nextSteps.map((s) => `- ${s}`).join('\n')}` : ''}
+
+Rules:
+- Speak directly to the user — warm, brisk, like a trusted chief of staff.
+- 40 to 70 words. Plain sentences only: it will be read aloud, so no markdown, lists, headings, or emojis.
+- End with the single most important next action.
+- Write in the same language as the task notes above.
+`;
+
+  const response = await generateText({
+    contents: prompt,
+  });
+
+  const text = response.text?.trim();
+  if (!text) throw new Error('Failed to generate re-brief script');
+  return text;
 }
