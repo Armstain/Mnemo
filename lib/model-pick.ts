@@ -70,3 +70,12 @@ export function isMissingModel(e: unknown): boolean {
   const text = e instanceof Error ? e.message : String(e);
   return /\b404\b|NOT_FOUND|is not found|not supported for (generateContent|embedContent)/i.test(text);
 }
+
+/**
+ * Google answering "high demand" (503) for one model: another model, or the
+ * same one a moment later, usually still works.
+ */
+export function isOverloaded(e: unknown): boolean {
+  const text = e instanceof Error ? e.message : String(e);
+  return /\b503\b|UNAVAILABLE|high demand|overloaded/i.test(text);
+}

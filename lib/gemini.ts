@@ -1,6 +1,6 @@
 import { GoogleGenAI, Modality, Type, type GenerateContentParameters } from '@google/genai';
 import { getActiveApiKey, onApiKeyChanged } from './api-key';
-import { isMissingModel, pickTextModels, pickTtsModel, type ModelInfo } from './model-pick';
+import { isMissingModel, isOverloaded, pickTextModels, pickTtsModel, type ModelInfo } from './model-pick';
 import { aiEnabled } from './ai-mode';
 
 /** Thrown instead of calling Google when the person chose offline. */
@@ -70,20 +70,32 @@ async function textModels(): Promise<string[]> {
   return picked.length > 0 ? picked : FALLBACK_TEXT;
 }
 
+const OVERLOAD_PAUSE_MS = 1500;
+
 async function generateText(params: Omit<GenerateContentParameters, 'model'>) {
   const client = getAIClient();
   let lastError: unknown;
-  for (const model of await textModels()) {
-    try {
-      return await client.models.generateContent({ model, ...params });
-    } catch (e) {
-      lastError = e;
-      // Only a missing model is worth trying another for. A bad key, a
-      // used-up quota or no signal would fail the same way on each.
-      if (!isMissingModel(e)) throw e;
+  let sawMissing = false;
+  // Two passes: when every model says "high demand" (it comes in spikes),
+  // one short pause and a second go beats failing the note.
+  for (let pass = 0; pass < 2; pass++) {
+    let overloaded = false;
+    for (const model of await textModels()) {
+      try {
+        return await client.models.generateContent({ model, ...params });
+      } catch (e) {
+        lastError = e;
+        // A missing model or a busy one is worth trying another for. A bad
+        // key, a used-up quota or no signal would fail the same way on each.
+        if (isMissingModel(e)) sawMissing = true;
+        else if (isOverloaded(e)) overloaded = true;
+        else throw e;
+      }
     }
+    if (!overloaded) break;
+    if (pass === 0) await new Promise((resolve) => setTimeout(resolve, OVERLOAD_PAUSE_MS));
   }
-  refreshModels();
+  if (sawMissing) refreshModels();
   throw lastError;
 }
 
@@ -509,38 +521,4 @@ export async function processAudioDump(
   const text = response.text;
   if (!text) throw new Error('Failed to process audio dump');
   return JSON.parse(text);
-}
-
-/**
- * Write a short spoken briefing to read aloud when the user resumes an item.
- * Returns plain prose (no markdown) in the same language as the note.
- */
-export async function generateRebriefScript(input: {
-  title: string;
-  timeAway: string;
-  whereLeftOff?: string;
-  nextSteps?: string[];
-}) {
-  const prompt = `
-You are the voice of Mnemo, a personal continuity app. The user is about to resume something they stepped away from. Write a short spoken briefing that gets them back into it.
-
-Task: "${input.title}"
-Time away: ${input.timeAway}
-${input.whereLeftOff ? `Where they left off: ${input.whereLeftOff}` : ''}
-${input.nextSteps?.length ? `Next steps:\n${input.nextSteps.map((s) => `- ${s}`).join('\n')}` : ''}
-
-Rules:
-- Speak directly to the user — warm, brisk, like a trusted chief of staff.
-- 40 to 70 words. Plain sentences only: it will be read aloud, so no markdown, lists, headings, or emojis.
-- End with the single most important next action.
-- Write in the same language as the task notes above.
-`;
-
-  const response = await generateText({
-    contents: prompt,
-  });
-
-  const text = response.text?.trim();
-  if (!text) throw new Error('Failed to generate re-brief script');
-  return text;
 }

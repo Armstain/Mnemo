@@ -5,7 +5,7 @@ import { File, Paths } from 'expo-file-system';
 import { formatDistanceToNow } from 'date-fns';
 import { bn } from 'date-fns/locale/bn';
 
-import { generateRebriefScript, generateSpeech } from '@/lib/gemini';
+import { generateSpeech } from '@/lib/gemini';
 import { base64ToBytes, pcmToWav } from '@/lib/pcm';
 import { languageOf } from '@/lib/language';
 import type { MnemoItem } from '@/types/mnemo';
@@ -14,16 +14,34 @@ function isBangla(item: MnemoItem): boolean {
   return languageOf(`${item.title} ${item.content}`.slice(0, 400)) === 'bn-BD';
 }
 
+// Longest to wait on Gemini's voice before the phone's own speaks instead.
+const VOICE_WAIT_MS = 7000;
+
+function withTimeout<T>(work: Promise<T>, ms: number): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error('Timed out')), ms);
+    work.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (error) => {
+        clearTimeout(timer);
+        reject(error);
+      },
+    );
+  });
+}
+
 export type RebriefState = 'idle' | 'preparing' | 'playing';
 
 /**
  * Spoken "re-brief": a short audio briefing that talks the user back
  * into an item they stepped away from.
  *
- * Preferred path: Gemini writes the script and voices it (nice voice,
- * matches the note's language). Every stage degrades gracefully —
- * offline it falls back to a locally composed script read by the
- * device's built-in TTS, so the feature always works.
+ * The script is composed on the phone, in the note's language. Gemini
+ * voices it when it answers in time (nice voice); otherwise, or offline,
+ * the device's built-in TTS reads it, so the feature always works.
  */
 export function useRebrief() {
   const [state, setState] = useState<RebriefState>('idle');
@@ -54,30 +72,12 @@ export function useRebrief() {
       const requestId = ++requestRef.current;
       setState('preparing');
 
-      const timeAway = formatDistanceToNow(item.lastResumedAt ?? item.updatedAt);
-      const whereLeftOff = item.whereLeftOff || item.aiSummary?.leftOff;
-      const nextSteps =
-        item.aiSummary?.nextSteps?.length
-          ? item.aiSummary.nextSteps
-          : item.nextStep
-            ? [item.nextStep]
-            : undefined;
-
-      let script = composeLocalScript(item, timeAway);
-      try {
-        script = await generateRebriefScript({
-          title: item.title,
-          timeAway,
-          whereLeftOff,
-          nextSteps,
-        });
-      } catch {
-        // Offline or AI unavailable — the local script covers it.
-      }
-      if (requestRef.current !== requestId) return;
+      // Written from the thread's own fields, so there is no wait on a
+      // model before the voice can start, and one fewer thing to fail.
+      const script = composeLocalScript(item, formatDistanceToNow(item.lastResumedAt ?? item.updatedAt));
 
       try {
-        const pcmBase64 = await generateSpeech(script);
+        const pcmBase64 = await withTimeout(generateSpeech(script), VOICE_WAIT_MS);
         if (requestRef.current !== requestId) return;
 
         const wav = pcmToWav(base64ToBytes(pcmBase64));
