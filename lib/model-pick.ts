@@ -25,16 +25,18 @@ const small = (n: string) => /(lite|8b)/.test(n);
 function byQuality(a: string, b: string): number {
   return (
     Number(small(a)) - Number(small(b)) ||
-    Number(unstable(a)) - Number(unstable(b)) ||
     version(b) - version(a) ||
-    a.localeCompare(b)
+    Number(unstable(a)) - Number(unstable(b)) ||
+    b.localeCompare(a)
   );
 }
 
 /**
  * Text models, best first: a "flash" model (fast and cheap enough for one
- * call per note), stable before preview, newest first, "lite" last. Falls
- * back to any general Gemini model when the key lists no flash.
+ * call per note), newest first (a preview of a newer generation beats an
+ * older stable one; at the same version stable goes first), "lite" last.
+ * The older ones behind it are what a busy or retired newest falls back
+ * to. Falls back to any general Gemini model when the key lists no flash.
  */
 export function pickTextModels(models: ModelInfo[], limit = 3): string[] {
   const general = models

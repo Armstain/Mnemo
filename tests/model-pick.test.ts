@@ -17,8 +17,15 @@ const list = [
 ];
 
 describe('choosing models from what the key can use', () => {
-  it('text: stable flash first, newer preview next, lite last; no tts/image/live', () => {
-    expect(pickTextModels(list)).toEqual(['gemini-2.5-flash', 'gemini-3-flash-preview', 'gemini-2.5-flash-lite']);
+  it('text: newest flash first even as a preview, older ones behind it, lite last; no tts/image/live', () => {
+    expect(pickTextModels(list)).toEqual(['gemini-3-flash-preview', 'gemini-2.5-flash', 'gemini-2.5-flash-lite']);
+  });
+  it('text: a newer stable generation beats everything older', () => {
+    const newer = [...list, m('gemini-3.5-flash'), m('gemini-3.5-flash-lite')];
+    expect(pickTextModels(newer)).toEqual(['gemini-3.5-flash', 'gemini-3-flash-preview', 'gemini-2.5-flash']);
+  });
+  it('text: at the same version, stable goes before preview', () => {
+    expect(pickTextModels([m('gemini-3-flash-preview'), m('gemini-3-flash')])).toEqual(['gemini-3-flash', 'gemini-3-flash-preview']);
   });
   it('an alias that always points at the newest wins', () => {
     expect(pickTextModels([...list, m('gemini-flash-latest')])[0]).toBe('gemini-flash-latest');
