@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { isMissingModel, pickEmbeddingModel, pickTextModels, pickTtsModel, type ModelInfo } from '@/lib/model-pick';
+import { isMissingModel, isOverloaded, pickEmbeddingModel, pickTextModels, pickTtsModel, type ModelInfo } from '@/lib/model-pick';
 
 const m = (name: string, ...actions: string[]): ModelInfo => ({ name, actions: actions.length ? actions : ['generateContent'] });
 const list = [
@@ -17,8 +17,15 @@ const list = [
 ];
 
 describe('choosing models from what the key can use', () => {
-  it('text: stable flash first, newer preview next, lite last; no tts/image/live', () => {
-    expect(pickTextModels(list)).toEqual(['gemini-2.5-flash', 'gemini-3-flash-preview', 'gemini-2.5-flash-lite']);
+  it('text: newest flash first even as a preview, older ones behind it, lite last; no tts/image/live', () => {
+    expect(pickTextModels(list)).toEqual(['gemini-3-flash-preview', 'gemini-2.5-flash', 'gemini-2.5-flash-lite']);
+  });
+  it('text: a newer stable generation beats everything older', () => {
+    const newer = [...list, m('gemini-3.5-flash'), m('gemini-3.5-flash-lite')];
+    expect(pickTextModels(newer)).toEqual(['gemini-3.5-flash', 'gemini-3-flash-preview', 'gemini-2.5-flash']);
+  });
+  it('text: at the same version, stable goes before preview', () => {
+    expect(pickTextModels([m('gemini-3-flash-preview'), m('gemini-3-flash')])).toEqual(['gemini-3-flash', 'gemini-3-flash-preview']);
   });
   it('an alias that always points at the newest wins', () => {
     expect(pickTextModels([...list, m('gemini-flash-latest')])[0]).toBe('gemini-flash-latest');
@@ -40,5 +47,10 @@ describe('choosing models from what the key can use', () => {
     expect(isMissingModel(new Error('{"error":{"code":404,"message":"models/gemini-3.1-flash is not found for API version v1beta","status":"NOT_FOUND"}}'))).toBe(true);
     expect(isMissingModel(new Error('{"error":{"code":429,"status":"RESOURCE_EXHAUSTED"}}'))).toBe(false);
     expect(isMissingModel(new Error('API key not valid'))).toBe(false);
+  });
+  it('a busy model is worth another try, a spent quota is not', () => {
+    expect(isOverloaded(new Error('{"error":{"code":503,"message":"This model is currently experiencing high demand.","status":"UNAVAILABLE"}}'))).toBe(true);
+    expect(isOverloaded(new Error('{"error":{"code":429,"status":"RESOURCE_EXHAUSTED"}}'))).toBe(false);
+    expect(isOverloaded(new Error('API key not valid'))).toBe(false);
   });
 });

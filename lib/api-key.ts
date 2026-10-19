@@ -75,7 +75,7 @@ export function getApiKeySource(): 'custom' | 'none' {
   return getActiveApiKey() ? 'custom' : 'none';
 }
 
-export type KeyProblem = 'invalid' | 'quota' | 'offline' | 'other';
+export type KeyProblem = 'invalid' | 'quota' | 'offline' | 'busy' | 'other';
 
 /** Sorts a Gemini error into something the person can act on. */
 export function classifyAiError(err: unknown): KeyProblem {
@@ -83,6 +83,7 @@ export function classifyAiError(err: unknown): KeyProblem {
   if (/API_KEY_INVALID|API key not valid|PERMISSION_DENIED|\b(401|403)\b/i.test(msg)) return 'invalid';
   if (/RESOURCE_EXHAUSTED|quota|rate limit|\b429\b/i.test(msg)) return 'quota';
   if (/Network request failed|Failed to fetch|NetworkError|ENOTFOUND|timed? ?out|offline/i.test(msg)) return 'offline';
+  if (/\b503\b|UNAVAILABLE|high demand|overloaded/i.test(msg)) return 'busy';
   return 'other';
 }
 
@@ -90,6 +91,7 @@ export const KEY_PROBLEM_TEXT: Record<KeyProblem, string> = {
   invalid: "Gemini didn't accept this key. Check you copied all of it.",
   quota: "This key's free daily limit is used up. Notes are saved and will be tidied up later.",
   offline: "Couldn't reach Gemini. Check your connection; notes are saved either way.",
+  busy: 'Gemini is busy right now. Notes are saved and will be tidied up later.',
   other: 'Gemini returned an error. Notes are saved either way.',
 };
 

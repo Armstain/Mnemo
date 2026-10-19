@@ -1,6 +1,6 @@
 import { GoogleGenAI, Modality, Type, type GenerateContentParameters } from '@google/genai';
 import { getActiveApiKey, onApiKeyChanged } from './api-key';
-import { isMissingModel, pickTextModels, pickTtsModel, type ModelInfo } from './model-pick';
+import { isMissingModel, isOverloaded, pickTextModels, pickTtsModel, type ModelInfo } from './model-pick';
 import { aiEnabled } from './ai-mode';
 
 /** Thrown instead of calling Google when the person chose offline. */
@@ -35,7 +35,7 @@ export const ai = new Proxy({} as GoogleGenAI, {
 // the app go stale: Google renames and retires models, and one that 404s
 // left every note "Processing". These are only used if the list can't be
 // fetched.
-const FALLBACK_TEXT = ['gemini-flash-latest', 'gemini-2.5-flash'];
+const FALLBACK_TEXT = ['gemini-flash-latest'];
 const FALLBACK_TTS = 'gemini-2.5-flash-preview-tts';
 
 let catalog: Promise<ModelInfo[] | null> | null = null;
@@ -70,20 +70,32 @@ async function textModels(): Promise<string[]> {
   return picked.length > 0 ? picked : FALLBACK_TEXT;
 }
 
+const OVERLOAD_PAUSE_MS = 1500;
+
 async function generateText(params: Omit<GenerateContentParameters, 'model'>) {
   const client = getAIClient();
   let lastError: unknown;
-  for (const model of await textModels()) {
-    try {
-      return await client.models.generateContent({ model, ...params });
-    } catch (e) {
-      lastError = e;
-      // Only a missing model is worth trying another for. A bad key, a
-      // used-up quota or no signal would fail the same way on each.
-      if (!isMissingModel(e)) throw e;
+  let sawMissing = false;
+  // Two passes: when every model says "high demand" (it comes in spikes),
+  // one short pause and a second go beats failing the note.
+  for (let pass = 0; pass < 2; pass++) {
+    let overloaded = false;
+    for (const model of await textModels()) {
+      try {
+        return await client.models.generateContent({ model, ...params });
+      } catch (e) {
+        lastError = e;
+        // A missing model or a busy one is worth trying another for. A bad
+        // key, a used-up quota or no signal would fail the same way on each.
+        if (isMissingModel(e)) sawMissing = true;
+        else if (isOverloaded(e)) overloaded = true;
+        else throw e;
+      }
     }
+    if (!overloaded) break;
+    if (pass === 0) await new Promise((resolve) => setTimeout(resolve, OVERLOAD_PAUSE_MS));
   }
-  refreshModels();
+  if (sawMissing) refreshModels();
   throw lastError;
 }
 

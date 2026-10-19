@@ -545,7 +545,7 @@ export default function ThreadScreen() {
                   <Button variant="quiet" size="sm" icon="pause" className="flex-1" onPress={() => pauseItem(thread.id)}>
                     Pause
                   </Button>
-                ) : (
+                ) : thread.status === 'paused' ? (
                   <Button
                     variant="tonal"
                     size="sm"
@@ -560,6 +560,12 @@ export default function ThreadScreen() {
                   >
                     Resume
                   </Button>
+                ) : (
+                  // Finished or archived: bringing it back isn't a return to
+                  // work, so no briefing starts.
+                  <Button variant="tonal" size="sm" icon="play" className="flex-1" onPress={() => resumeItem(thread.id)}>
+                    Reopen
+                  </Button>
                 )}
                 {thread.status !== 'completed' ? (
                   <Button variant="quiet" size="sm" icon="check" className="flex-1" onPress={handleDone}>
@@ -571,8 +577,8 @@ export default function ThreadScreen() {
                   </Button>
                 ) : null}
                 <IconButton
-                  icon="volume"
-                  label="Play spoken re-brief"
+                  icon={rebrief.state === 'idle' ? 'volume' : 'x'}
+                  label={rebrief.state === 'idle' ? 'Play spoken re-brief' : 'Stop re-brief'}
                   size={36}
                   onPress={() => (rebrief.state === 'idle' ? rebrief.start(thread) : rebrief.stop())}
                 />

@@ -14,16 +14,37 @@ function isBangla(item: MnemoItem): boolean {
   return languageOf(`${item.title} ${item.content}`.slice(0, 400)) === 'bn-BD';
 }
 
+// Longest to wait on Gemini for the script and then its voice, before the
+// phone's own script and voice take over, so Resume never hangs.
+const SCRIPT_WAIT_MS = 5000;
+const VOICE_WAIT_MS = 7000;
+
+function withTimeout<T>(work: Promise<T>, ms: number): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error('Timed out')), ms);
+    work.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (error) => {
+        clearTimeout(timer);
+        reject(error);
+      },
+    );
+  });
+}
+
 export type RebriefState = 'idle' | 'preparing' | 'playing';
 
 /**
  * Spoken "re-brief": a short audio briefing that talks the user back
  * into an item they stepped away from.
  *
- * Preferred path: Gemini writes the script and voices it (nice voice,
- * matches the note's language). Every stage degrades gracefully —
- * offline it falls back to a locally composed script read by the
- * device's built-in TTS, so the feature always works.
+ * Preferred path: Gemini writes the script and voices it (warm, in the
+ * note's language). Each stage has a time limit and degrades on its own:
+ * a script composed on the phone, read by the device's built-in TTS, so
+ * the feature always works, offline or when Gemini is busy.
  */
 export function useRebrief() {
   const [state, setState] = useState<RebriefState>('idle');
@@ -65,19 +86,17 @@ export function useRebrief() {
 
       let script = composeLocalScript(item, timeAway);
       try {
-        script = await generateRebriefScript({
-          title: item.title,
-          timeAway,
-          whereLeftOff,
-          nextSteps,
-        });
+        script = await withTimeout(
+          generateRebriefScript({ title: item.title, timeAway, whereLeftOff, nextSteps }),
+          SCRIPT_WAIT_MS,
+        );
       } catch {
-        // Offline or AI unavailable — the local script covers it.
+        // Offline, busy or slow: the script composed on the phone covers it.
       }
       if (requestRef.current !== requestId) return;
 
       try {
-        const pcmBase64 = await generateSpeech(script);
+        const pcmBase64 = await withTimeout(generateSpeech(script), VOICE_WAIT_MS);
         if (requestRef.current !== requestId) return;
 
         const wav = pcmToWav(base64ToBytes(pcmBase64));
