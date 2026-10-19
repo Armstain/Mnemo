@@ -15,7 +15,6 @@ export interface When {
 }
 
 const MINUTE = 60_000;
-const DAY = 24 * 60 * MINUTE;
 
 // A word edge that works for Bangla too: start, space or punctuation.
 const S = String.raw`(?:^|[\s,.;:!?()'"])`;

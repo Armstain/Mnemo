@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { reviewLine, weekReview } from '@/lib/review';
+import { quietDays, reviewLine, shortLine, weekReview } from '@/lib/review';
 import { openStepsOf, spanLabel, wrapText, wrapThread } from '@/lib/wrapup';
-import { quietDays, shortLine } from '@/lib/review';
 
 const now = new Date('2026-10-12T10:00:00').getTime();
 const D = 864e5;

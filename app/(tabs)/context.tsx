@@ -88,7 +88,7 @@ export default function ThreadScreen() {
   const categories = useCategories();
 
   const thread = items.find((c) => c.id === id);
-  const entries = thread ? getEntries(thread.id) : [];
+  const entries = React.useMemo(() => (thread ? getEntries(thread.id) : []), [thread?.id, getEntries, store.entries]);
   usePreferences(); // re-render when AI is switched on or off
   // Finding one note in a long thread.
   const [finding, setFinding] = React.useState(false);

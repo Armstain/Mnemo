@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { AccessibilityInfo, Platform } from 'react-native';
+import { AccessibilityInfo } from 'react-native';
 
 /** Tracks the OS "Reduce Motion" setting, live. */
 export function useReduceMotion(): boolean {
