@@ -49,7 +49,8 @@ Mnemo is local-first. There is no account, no server, no analytics, no ads.
   storage. No key is ever bundled with the app.
 - **What leaves your phone, and only with your key:** note text, voice recordings
   and photos sent to Google for transcription and structuring; thread titles for
-  filing; link previews fetched by your phone. Voice recordings are deleted once
+  filing; the title and description of a link you save, so notes about it make sense;
+  link previews fetched by your phone. Voice recordings are deleted once
   transcribed.
 - **What never leaves:** everything else. There is no telemetry — nothing to opt
   out of, because nothing is collected.

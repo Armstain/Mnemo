@@ -2,6 +2,7 @@ import { GoogleGenAI, Modality, Type, type GenerateContentParameters } from '@go
 import { getActiveApiKey, onApiKeyChanged } from './api-key';
 import { isMissingModel, isOverloaded, pickTextModels, pickTtsModel, type ModelInfo } from './model-pick';
 import { aiEnabled } from './ai-mode';
+import { describePages, type PageContext } from './link-preview';
 
 /** Thrown instead of calling Google when the person chose offline. */
 export class AiOffError extends Error {
@@ -391,6 +392,8 @@ export async function processVoiceDump(
   ctx?: CaptureContext,
   /** Photos attached to the note, as base64 JPEG. */
   images: string[] = [],
+  /** Pages the note links to, as the phone read them. */
+  pages: PageContext[] = [],
 ): Promise<ProcessedCapture> {
   const photoRules = images.length
     ? `
@@ -405,6 +408,7 @@ export async function processVoiceDump(
 
     Understand the context, fix any errors, and structure this into a clean JSON object.
     ${LANGUAGE_RULES}
+    ${describePages(pages)}
     
     Also suggest the best category from this list: ${VALID_CATEGORIES.join(', ')}
     
@@ -475,6 +479,7 @@ export async function generateSpeech(text: string) {
 export async function processAudioDump(
   audio: { data: string; mimeType: string }[],
   ctx?: CaptureContext,
+  pages: PageContext[] = [],
 ): Promise<ProcessedCapture> {
   const prompt = `
     You are an expert productivity assistant. The user just recorded a voice thought about something in their life — it could be work, errands, shopping, study, health, ideas, or personal matters.
@@ -484,6 +489,7 @@ export async function processAudioDump(
     2. Detect the language of the speaker.
     3. Generate a structured analysis in the SAME language as the speaker.
     ${LANGUAGE_RULES}
+    ${describePages(pages)}
     4. Suggest the best category from this list: ${VALID_CATEGORIES.join(', ')}
     
     Return a clean JSON object:
