@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { formatReminder, hasTime, nextOccurrence, quickTimes, resumeOrder } from '@/lib/when';
+import { formatReminder, hasTime, nextOccurrence, quickTimes, resumeOrder, resumeReason } from '@/lib/when';
 
 const mon = new Date('2026-10-12T10:00:00').getTime();
 const d = (s: string) => new Date(s).getTime();
@@ -29,5 +29,31 @@ describe('reminders', () => {
       { now: mon },
     ).map((x: { id: string }) => x.id);
     expect(order).toEqual(['pinned', 'recent', 'due', 'old']);
+  });
+});
+
+describe('why a thread is on top of Home', () => {
+  const t = (o: object) => ({ id: 'a', status: 'active', updatedAt: mon - 2 * 864e5, ...o }) as never;
+  const kind = (o: object, focusId?: string) => resumeReason(t(o), { now: mon, focusId })?.kind ?? null;
+
+  it('a reminder missed or due within a day wins', () => {
+    expect(kind({ dueDate: mon - 3600e3, starred: true })).toBe('missed');
+    expect(kind({ dueDate: mon + 5 * 3600e3, starred: true })).toBe('due');
+  });
+
+  it('a repeating reminder is never missed: its next time counts', () => {
+    expect(kind({ dueDate: d('2026-10-11T18:00:00'), repeat: 'daily' })).toBe('due');
+    expect(kind({ dueDate: d('2026-10-05T09:00:00'), repeat: 'weekly' })).toBeNull();
+  });
+
+  it('then pinned, then the focus thread, then touched in the last few hours', () => {
+    expect(kind({ dueDate: mon + 3 * 864e5, starred: true })).toBe('starred');
+    expect(kind({}, 'a')).toBe('focus');
+    expect(kind({ updatedAt: mon - 3600e3 })).toBe('recent');
+    expect(kind({ lastResumedAt: mon - 3600e3 })).toBe('recent');
+  });
+
+  it('otherwise there is nothing to say', () => {
+    expect(kind({})).toBeNull();
   });
 });
