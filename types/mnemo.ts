@@ -22,6 +22,20 @@ export interface ChecklistItem {
   checked: boolean;
 }
 
+/**
+ * A thread's notes organised by theme, made when the person asks
+ * ("Organise these notes"). Kept until they redo it.
+ */
+export interface ThreadOverview {
+  /** When it was made: notes after this are "new since". */
+  at: number;
+  /** How many notes it was made from. */
+  notes: number;
+  themes: { title: string; points: string[]; notes: number }[];
+  /** Questions or choices the notes leave open. */
+  open: string[];
+}
+
 export interface AISummary {
   leftOff: string;
   nextSteps: string[];
@@ -76,6 +90,7 @@ export interface MnemoItem {
 
   // ─── AI Enhancement (optional) ────────────────────────────────
   aiSummary?: AISummary;
+  overview?: ThreadOverview;
 
   /** True while the item is queued for AI processing. */
   pending?: boolean;

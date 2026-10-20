@@ -30,7 +30,8 @@ standing in a shop. Mnemo optimises for two moments:
   repeats, and serious reliability engineering for Android's battery-saving habits.
 - 🔍 **Search that finds things** — hybrid keyword + semantic search.
   No connection? Keyword search still works.
-- 📓 **Reviews & digests** — wrap-ups and nudges resurface what matters before it
+- 📓 **Reviews & overviews** — a thread's loose notes organised by theme when you
+  ask; wrap-ups and nudges resurface what matters before it
   goes cold.
 - 📸 **More than text** — checklists, photos, links with previews, measures and
   rollups.
