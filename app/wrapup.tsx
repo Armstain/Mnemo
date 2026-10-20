@@ -14,6 +14,7 @@ import { useThemeColors } from '@/hooks/use-theme';
 import { useUndoToast } from '@/hooks/use-undo-toast';
 import { formatValue } from '@/lib/measures';
 import { headline, spanLabel, wrapText, wrapThread } from '@/lib/wrapup';
+import { celebrate, doneSummary, isRealTask } from '@/lib/done';
 import { useCategories } from '@/utils/categories';
 import { useEnter } from '@/utils/motion';
 
@@ -84,7 +85,10 @@ export default function WrapUpScreen() {
   };
 
   const finish = () => {
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    const mine = entries.filter((e) => e.threadId === thread.id);
+    // A real task gets the ring closing (and its haptics); anything else a plain success.
+    if (isRealTask(thread, mine)) celebrate({ title: thread.title, detail: doneSummary(thread, mine) });
+    else Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     const before = thread;
     const wasFocus = getFocusThreadId() === thread.id;
     completeItem(thread.id);
