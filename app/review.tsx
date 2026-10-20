@@ -7,7 +7,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Button, IconButton } from '@/components/ui/Button';
 import { Eyebrow } from '@/components/ui/Eyebrow';
-import { Icon } from '@/components/ui/Icon';
+import { DoneCheck } from '@/components/ui/DoneCheck';
 import { Text } from '@/components/ui/Text';
 import { OpenRing } from '@/components/ui/ThreadRing';
 import { ThreadList, ThreadRow } from '@/components/ui/ThreadRow';
@@ -142,19 +142,11 @@ export default function ReviewScreen() {
                       {t.title}
                     </Text>
                   </Pressable>
-                  <Pressable
-                    onPress={() => {
-                      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-                      showUndoToast(`Done: ${t.nextStep}`, completeNextStep(t.id));
-                    }}
-                    hitSlop={8}
-                    accessibilityRole="button"
-                    accessibilityLabel={`Mark done: ${t.nextStep}`}
-                    className="w-10 h-10 rounded-full items-center justify-center active:opacity-60"
-                    style={{ backgroundColor: colors.accentSoft }}
-                  >
-                    <Icon name="check" size={18} stroke={2.2} color={colors.accent} />
-                  </Pressable>
+                  <DoneCheck
+                    onDone={() => showUndoToast(`Done: ${t.nextStep}`, completeNextStep(t.id))}
+                    label={`Mark done: ${t.nextStep}`}
+                    restColor={colors.accentSoft}
+                  />
                 </MotiView>
               ))}
             </View>

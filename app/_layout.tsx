@@ -33,6 +33,7 @@ import { WidgetSync } from '@/components/WidgetSync';
 import { PendingProcessor } from '@/components/PendingProcessor';
 import { FilingNotifier } from '@/components/FilingNotifier';
 import { UndoToastHost } from '@/components/ui/UndoToastHost';
+import { CelebrationHost } from '@/components/CelebrationHost';
 import { MnemoStoreProvider } from '@/hooks/use-mnemo-store';
 import { UndoToastProvider } from '@/hooks/use-undo-toast';
 import { applyStoredThemePreference, PALETTE, useThemeName } from '@/hooks/use-theme';
@@ -217,6 +218,8 @@ function RootLayoutNav() {
           <WidgetSync />
           <NudgeScheduler />
           <UndoToastHost />
+          {/* A real task finished: the ring closes. Above everything, toast included. */}
+          <CelebrationHost />
         </ThemeProvider>
         </UndoToastProvider>
       </MnemoStoreProvider>
