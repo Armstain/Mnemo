@@ -22,7 +22,7 @@ import { buildBlocks } from '@/lib/threads';
 import { summarizeMeasures, trackedMetrics, verifyMeasures } from '@/lib/measures';
 import { understand, type KnownMetric } from '@/lib/understand';
 import { imageBase64, imagesOf } from '@/lib/images';
-import { fetchLinkPreview, type LinkPreview } from '@/lib/link-preview';
+import { fetchLinkPreview, type LinkPreview, type PageContext } from '@/lib/link-preview';
 import { languageOf } from '@/lib/language';
 import { getPreferences, setPreferences } from '@/lib/preferences';
 import { deleteAllAudio, deleteAudio, joinAudio, loadAudio, splitAudio } from '@/lib/voice-audio';
@@ -197,11 +197,30 @@ function saveNote(source: Entry['source'], params: NoteInput): { threadId: strin
 }
 
 const previewed = new Set<string>();
-const knownPreviews = new Map<string, LinkPreview>();
+// One fetch per link: the share screen, the AI and the link card all ask.
+const previews = new Map<string, Promise<LinkPreview | null>>();
+
+function previewOf(url: string): Promise<LinkPreview | null> {
+  let preview = previews.get(url);
+  if (!preview) {
+    preview = fetchLinkPreview(url);
+    previews.set(url, preview);
+    // A page that couldn't be read (no signal) is tried again next time.
+    preview.then((p) => p || previews.delete(url));
+  }
+  return preview;
+}
 
 /** A preview already fetched (the share screen shows one): no need to fetch again. */
 export function rememberPreview(url: string, preview: LinkPreview): void {
-  knownPreviews.set(url, preview);
+  previews.set(url, Promise.resolve(preview));
+}
+
+/** What the pages an entry links to say about themselves (as far as the phone could read them). */
+async function pagesOf(entry: Pick<Entry, 'blocks'>): Promise<PageContext[]> {
+  const urls = [...new Set(entry.blocks.flatMap((b) => (b.kind === 'link' ? [b.url] : [])))].slice(0, 3);
+  const read = await Promise.all(urls.map(async (url) => ({ url, preview: await previewOf(url) })));
+  return read.flatMap((r) => (r.preview ? [{ url: r.url, ...r.preview }] : []));
 }
 
 /**
@@ -214,7 +233,7 @@ export async function enrichLinks(entryId: string, store: CaptureStore): Promise
   const todo = entry.blocks.flatMap((b) => (b.kind === 'link' && !b.title && !previewed.has(b.url) ? [b.url] : []));
   for (const url of todo) {
     previewed.add(url);
-    const preview = knownPreviews.get(url) ?? (await fetchLinkPreview(url));
+    const preview = await previewOf(url);
     if (!preview) continue;
     // Re-read: the entry may have changed while the page loaded.
     const now = store.snapshot().entries.find((e) => e.id === entryId);
@@ -430,6 +449,8 @@ async function structure(entry: PendingEntry, store: CaptureStore): Promise<void
   let processed: ProcessedCapture;
   let transcript = entry.transcript;
   const photos = imagesOf([live]);
+  // What a linked page says about itself, so "read this later" is about the page.
+  const pages = await pagesOf(live);
 
   // What the note's text was when it went off to be read: an edit made
   // meanwhile is noticed against it.
@@ -442,7 +463,7 @@ async function structure(entry: PendingEntry, store: CaptureStore): Promise<void
     // Gemini writes out what was said (Bangla, English or both). Then the
     // recording goes: it's never kept with the note.
     try {
-      processed = await processAudioDump(sound.map((a) => ({ data: a.data, mimeType: a.mimeType })), ctx);
+      processed = await processAudioDump(sound.map((a) => ({ data: a.data, mimeType: a.mimeType })), ctx, pages);
       said = processed.transcript?.trim() || undefined;
     } catch (e) {
       if (e instanceof AiOffError) throw e;
@@ -462,7 +483,7 @@ async function structure(entry: PendingEntry, store: CaptureStore): Promise<void
       store.updateEntry(entry.id, { pendingRawText: words, pendingAudioUri: undefined });
       deleteAudio(recordings);
       nameFromWords(store, nowEntry.threadId, words);
-      processed = await processVoiceDump(words, ctx);
+      processed = await processVoiceDump(words, ctx, [], pages);
     }
     deleteAudio(recordings);
   } else if (recordings.length > 0 && !entry.pendingRawText) {
@@ -474,7 +495,7 @@ async function structure(entry: PendingEntry, store: CaptureStore): Promise<void
     const images = (await Promise.all(photos.slice(0, MAX_PHOTOS_TO_AI).map(imageBase64))).filter(
       (b): b is string => !!b,
     );
-    processed = await processVoiceDump(entry.pendingRawText ?? '', ctx, images);
+    processed = await processVoiceDump(entry.pendingRawText ?? '', ctx, images, pages);
   } else {
     store.updateEntry(entry.id, { pending: false });
     return;
