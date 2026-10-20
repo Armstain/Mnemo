@@ -125,3 +125,36 @@ export function resumeOrder(
     return score(b) - score(a);
   });
 }
+
+/** "You were just here": touched within this long. */
+const JUST_HERE_MS = 6 * 60 * 60 * 1000;
+
+/** Why a thread sits at the top of Home, in the order that wins when several apply. */
+export type ResumeReason =
+  | { kind: 'missed'; at: number }
+  | { kind: 'due'; at: number }
+  | { kind: 'starred' }
+  | { kind: 'focus' }
+  | { kind: 'recent' }
+  | null;
+
+/**
+ * The plain reason `resumeOrder` put this thread first, so Home can say it:
+ * a reminder missed or due within a day, pinned, the focus thread, or
+ * touched in the last few hours. Null when it's only "least cold".
+ */
+export function resumeReason(
+  thread: MnemoItem,
+  options: { now?: number; focusId?: string | null } = {},
+): ResumeReason {
+  const now = options.now ?? Date.now();
+  if (thread.dueDate) {
+    const at = nextOccurrence(thread.dueDate, thread.repeat, now);
+    if (!thread.repeat && at < now) return { kind: 'missed', at };
+    if (at < now + DAY_MS) return { kind: 'due', at };
+  }
+  if (thread.starred) return { kind: 'starred' };
+  if (thread.id === options.focusId) return { kind: 'focus' };
+  if (now - Math.max(thread.updatedAt, thread.lastResumedAt ?? 0) < JUST_HERE_MS) return { kind: 'recent' };
+  return null;
+}
