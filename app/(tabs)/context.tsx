@@ -19,7 +19,6 @@ import { formatDistanceToNow } from 'date-fns';
 
 import { NAV_CLEARANCE } from '@/components/ui/FloatingTabBar';
 import { Button, IconButton } from '@/components/ui/Button';
-import { Card } from '@/components/ui/Card';
 import { Eyebrow } from '@/components/ui/Eyebrow';
 import { Icon } from '@/components/ui/Icon';
 import { DoneCheck } from '@/components/ui/DoneCheck';
@@ -32,12 +31,14 @@ import { DetailSkeleton } from '@/components/ui/NoteListSkeleton';
 import { DueDatePicker, DueDateLabel } from '@/components/ui/DueDatePicker';
 import { ThreadRing } from '@/components/ui/ThreadRing';
 import { EntryCard } from '@/components/thread/EntryCard';
+import { OrganiseOffer, OverviewCard } from '@/components/thread/OverviewCard';
 import { NumbersSection, type MetricFix } from '@/components/thread/Measures';
 import { useMnemoStore } from '@/hooks/use-mnemo-store';
 import { useRebrief } from '@/hooks/use-rebrief';
 import { useUndoToast } from '@/hooks/use-undo-toast';
 import { useThemeColors } from '@/hooks/use-theme';
-import { summarizeContext } from '@/lib/gemini';
+import { organiseNotes } from '@/lib/gemini';
+import { canOrganise, cleanOverview, notesSince, notesToOrganise, overviewText } from '@/lib/overview';
 import { aiEnabled } from '@/lib/ai-mode';
 import { classifyAiError, KEY_PROBLEM_TEXT } from '@/lib/api-key';
 import { usePreferences } from '@/lib/preferences';
@@ -115,6 +116,7 @@ export default function ThreadScreen() {
 
   const [isEditing, setIsEditing] = React.useState(false);
   const [isGenerating, setIsGenerating] = React.useState(false);
+  const [organising, setOrganising] = React.useState(false);
   const [editTitle, setEditTitle] = React.useState('');
   const [editNextStep, setEditNextStep] = React.useState('');
   const [editWhereLeftOff, setEditWhereLeftOff] = React.useState('');
@@ -280,27 +282,33 @@ export default function ThreadScreen() {
     }
   };
 
-  const handleGenerateDigest = async () => {
-    setIsGenerating(true);
+  // Groups the thread's notes by theme, when the person asks.
+  const handleOrganise = async () => {
+    setOrganising(true);
     try {
-      const summary = await summarizeContext(thread.content, thread.links);
-      updateItem(thread.id, {
-        aiSummary: summary,
-        whereLeftOff: thread.whereLeftOff || summary.leftOff,
-        nextStep: thread.nextStep || summary.nextSteps?.[0],
-      });
+      const notes = notesToOrganise(entries);
+      const overview = cleanOverview(await organiseNotes(thread.title, notes), notes.length, Date.now());
+      if (!overview) throw new Error('Nothing to organise');
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      updateItem(thread.id, { overview });
     } catch (e) {
-      Alert.alert('Could not generate a digest', KEY_PROBLEM_TEXT[classifyAiError(e)]);
+      Alert.alert('Could not organise the notes', KEY_PROBLEM_TEXT[classifyAiError(e)]);
     } finally {
-      setIsGenerating(false);
+      setOrganising(false);
     }
   };
+  const newSinceOverview = thread.overview ? notesSince(thread.overview, entries) : 0;
+  const noteSpanDays = entries.length
+    ? Math.round((Math.max(...entries.map((e) => e.createdAt)) - Math.min(...entries.map((e) => e.createdAt))) / 86_400_000)
+    : 0;
 
-  // Only the digest is shared: the AI one, or offline the steps still open.
-  const digest = thread.aiSummary?.nextSteps.length ? thread.aiSummary.nextSteps : openSteps;
+  // What's shared: the overview, or offline the steps still open.
+  const shareText = thread.overview
+    ? overviewText(thread.title, thread.overview)
+    : openSteps.map((step, i) => `${i + 1}. ${step}`).join('\n');
   const onShare = async () => {
     try {
-      await Share.share({ message: digest.map((step, i) => `${i + 1}. ${step}`).join('\n') });
+      await Share.share({ message: shareText });
     } catch {
       // Share sheet dismissed or unavailable — nothing to do.
     }
@@ -354,7 +362,7 @@ export default function ThreadScreen() {
                   updateItem(thread.id, { starred: !thread.starred });
                 }}
               />
-              {digest.length > 0 && <IconButton icon="share" label="Share digest" variant="bare" onPress={onShare} />}
+              {shareText ? <IconButton icon="share" label={thread.overview ? 'Share overview' : 'Share what\'s still open'} variant="bare" onPress={onShare} /> : null}
               <IconButton icon="pencil" label="Edit thread" variant="bare" onPress={startEditing} />
               <IconButton icon="trash" label="Delete thread" variant="bare" onPress={handleDelete} />
             </View>
@@ -658,6 +666,13 @@ export default function ThreadScreen() {
                 </MotiView>
               )}
 
+              {/* ─── Organise: once there are enough loose notes ─── */}
+              {ai && !finding && canOrganise(entries, thread.overview) && (
+                <MotiView {...enter.rise(2)} className="px-6 mt-7">
+                  <OrganiseOffer count={entries.length} spanDays={noteSpanDays} busy={organising} onOrganise={handleOrganise} />
+                </MotiView>
+              )}
+
               {/* ─── Timeline ───────────────────────────── */}
               <MotiView {...enter.rise(2)} className="px-6 mt-9">
                 <View className="flex-row items-center justify-between">
@@ -712,6 +727,14 @@ export default function ThreadScreen() {
                 </View>
 
                 <View className="gap-3">
+                  {thread.overview && !finding ? (
+                    <OverviewCard
+                      overview={thread.overview}
+                      newNotes={newSinceOverview}
+                      busy={organising}
+                      onRedo={ai ? handleOrganise : undefined}
+                    />
+                  ) : null}
                   <AnimatePresence initial={false}>
                     {shownEntries.map((entry, i) => (
                       <MotiView key={entry.id} {...enter.row(i)} {...enter.rowExit()}>
@@ -727,7 +750,6 @@ export default function ThreadScreen() {
                 </View>
               </MotiView>
 
-              {/* ─── Smart digest ───────────────────────── */}
               {/* Offline: what's still open, gathered from the notes on the phone. */}
               {!ai && !thread.aiSummary && openSteps.length > 0 && (
                 <View className="px-6 mt-9">
@@ -747,58 +769,6 @@ export default function ThreadScreen() {
                   </View>
                 </View>
               )}
-              {(ai || thread.aiSummary) && (
-              <View className="px-6 mt-9">
-                <View className="flex-row items-center justify-between">
-                  <Eyebrow>Smart digest</Eyebrow>
-                  {thread.aiSummary && ai ? (
-                    // Notes change; the digest can catch up.
-                    <Pressable
-                      onPress={handleGenerateDigest}
-                      disabled={isGenerating}
-                      hitSlop={8}
-                      accessibilityRole="button"
-                      accessibilityLabel="Refresh the digest"
-                      className="mb-3 active:opacity-60"
-                    >
-                      <Text className="font-sans-semi text-sm" style={{ color: colors.accent }}>
-                        {isGenerating ? 'Thinking…' : 'Refresh'}
-                      </Text>
-                    </Pressable>
-                  ) : null}
-                </View>
-                {thread.aiSummary ? (
-                  <View className="gap-3">
-                    {thread.aiSummary.nextSteps.map((step, i) => (
-                      <View key={i} className="flex-row items-start">
-                        <View
-                          className="w-6 h-6 rounded-full items-center justify-center mr-3 mt-0.5"
-                          style={{ backgroundColor: colors.accentSoft }}
-                        >
-                          <Text className="font-sans-semi text-xs" style={{ color: colors.accent }}>
-                            {i + 1}
-                          </Text>
-                        </View>
-                        <Text className="flex-1 font-sans text-body leading-relaxed" style={{ color: colors.fg }}>
-                          {step}
-                        </Text>
-                      </View>
-                    ))}
-                  </View>
-                ) : (
-                  <Card variant="surface" pad="md" animated={false} className="flex-row items-center">
-                    <Icon name="sparkles" size={18} color={colors.accent} />
-                    <Text className="flex-1 font-sans text-sm leading-snug mx-3" style={{ color: colors.fgSecondary }}>
-                      Suggested next steps for this thread.
-                    </Text>
-                    <Button onPress={handleGenerateDigest} disabled={isGenerating} variant="tonal" size="sm">
-                      {isGenerating ? 'Thinking…' : 'Generate'}
-                    </Button>
-                  </Card>
-                )}
-              </View>
-              )}
-
               {/* ─── Related ────────────────────────────── */}
               {related.length > 0 && (
                 <View className="px-6 mt-9">
