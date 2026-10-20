@@ -22,6 +22,7 @@ import { Button, IconButton } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { Eyebrow } from '@/components/ui/Eyebrow';
 import { Icon } from '@/components/ui/Icon';
+import { DoneCheck } from '@/components/ui/DoneCheck';
 import { ThreadList, ThreadRow } from '@/components/ui/ThreadRow';
 import { CategoryPicker } from '@/components/ui/CategoryPicker';
 import { TagEditor } from '@/components/ui/TagEditor';
@@ -46,6 +47,7 @@ import { entryText } from '@/lib/threads';
 import { matchEntries } from '@/lib/find';
 import { quietDays as quietFor, STILL_ON_IT_DAYS } from '@/lib/review';
 import { openStepsOf } from '@/lib/wrapup';
+import { celebrate, doneSummary, isRealTask } from '@/lib/done';
 import { confirmAction } from '@/utils/confirm';
 import { metricKey, summarizeMeasures, type MetricSummary } from '@/lib/measures';
 import { useCategories, useStatusConfig } from '@/utils/categories';
@@ -230,6 +232,8 @@ export default function ThreadScreen() {
     }
     const before = thread;
     const wasFocus = isFocus;
+    // Something that was to be done gets its moment; a note filed away doesn't.
+    if (isRealTask(thread, entries)) celebrate({ title: thread.title, detail: doneSummary(thread, entries) });
     completeItem(thread.id);
     showUndoToast(`"${thread.title}" is done`, () => {
       restoreItem(before);
@@ -238,8 +242,8 @@ export default function ThreadScreen() {
   };
 
   const handleStepDone = () => {
+    // DoneCheck has already played the moment (ring, haptics) by now.
     const step = thread.nextStep;
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     const undo = store.completeNextStep(thread.id);
     showUndoToast(`Done: ${step}`, undo);
   };
@@ -492,16 +496,9 @@ export default function ThreadScreen() {
                           {thread.nextStep}
                         </Text>
                       </View>
-                      <Pressable
-                        onPress={handleStepDone}
-                        hitSlop={8}
-                        accessibilityRole="button"
-                        accessibilityLabel="Mark next step done"
-                        className="w-10 h-10 rounded-full items-center justify-center ml-2 active:opacity-60"
-                        style={{ backgroundColor: colors.surfaceLowest }}
-                      >
-                        <Icon name="check" size={18} stroke={2.2} color={colors.accent} />
-                      </Pressable>
+                      <View className="ml-2">
+                        <DoneCheck onDone={handleStepDone} label="Mark next step done" restColor={colors.surfaceLowest} />
+                      </View>
                     </View>
                   ) : null}
                 </MotiView>
