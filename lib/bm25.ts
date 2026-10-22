@@ -14,12 +14,19 @@ const BANGLA_ENDINGS = ['গুলোর', 'গুলো', 'গুলি', 'দ�
   .map((e) => e.normalize('NFC'))
   .sort((a, b) => b.length - a.length);
 
+function stripBanglaEnding(token: string): string {
+  for (const ending of BANGLA_ENDINGS) {
+    if (token.length > ending.length + 1 && token.endsWith(ending)) return token.slice(0, -ending.length);
+  }
+  return token;
+}
+
 function stem(token: string): string {
   if (/[\u0980-\u09FF]/.test(token)) {
-    for (const ending of BANGLA_ENDINGS) {
-      if (token.length > ending.length + 1 && token.endsWith(ending)) return token.slice(0, -ending.length);
-    }
-    return token;
+    // Twice, so a word and its forms land on the same key: "ডাক্তার" loses
+    // its last "র" (it reads like "মামার"), so "ডাক্তারকে" and "ডাক্তারের"
+    // must lose it too, not stop at "ডাক্তার". A key, not a word.
+    return stripBanglaEnding(stripBanglaEnding(token));
   }
   // English plurals: "tickets" finds "ticket".
   if (token.length > 3 && token.endsWith('s') && !token.endsWith('ss')) return token.slice(0, -1);

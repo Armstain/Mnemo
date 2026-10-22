@@ -100,7 +100,7 @@ export default function CaptureScreen() {
       images: photos,
       store,
     });
-    router.replace(`/(tabs)/context?id=${saved.threadId}` as any);
+    router.replace(`/(tabs)/context?id=${saved.threadId}`);
   };
 
   return (

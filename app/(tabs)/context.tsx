@@ -91,7 +91,9 @@ export default function ThreadScreen() {
   const categories = useCategories();
 
   const thread = items.find((c) => c.id === id);
-  const entries = React.useMemo(() => (thread ? getEntries(thread.id) : []), [thread?.id, getEntries, store.entries]);
+  const threadId = thread?.id;
+  // getEntries is rebuilt whenever any entry changes, so this follows new notes.
+  const entries = React.useMemo(() => (threadId ? getEntries(threadId) : []), [threadId, getEntries]);
   usePreferences(); // re-render when AI is switched on or off
   // Finding one note in a long thread.
   const [finding, setFinding] = React.useState(false);
@@ -229,7 +231,7 @@ export default function ThreadScreen() {
   const hasHistory = entries.length >= 3 || numbers.length > 0;
   const handleDone = () => {
     if (hasHistory) {
-      router.push(`/wrapup?id=${thread.id}` as any);
+      router.push(`/wrapup?id=${thread.id}`);
       return;
     }
     const before = thread;
@@ -317,7 +319,7 @@ export default function ThreadScreen() {
   /** After an entry moved out: follow it if this thread is now gone. */
   const followMove = (toThreadId: string) => {
     if (!snapshot().items.some((i) => i.id === thread.id)) {
-      router.replace(`/(tabs)/context?id=${toThreadId}` as any);
+      router.replace(`/(tabs)/context?id=${toThreadId}`);
     }
   };
 
@@ -329,7 +331,7 @@ export default function ThreadScreen() {
   };
 
   const addUpdate = (mode: 'write' | 'record') =>
-    router.push(`/${mode === 'write' ? 'capture' : 'dump'}?threadId=${thread.id}` as any);
+    router.push(`/${mode === 'write' ? 'capture' : 'dump'}?threadId=${thread.id}`);
 
   // ─── Render ────────────────────────────────────────────────
 
@@ -522,7 +524,7 @@ export default function ThreadScreen() {
                     Still going, or is it over?
                   </Text>
                   <View className="flex-row gap-2 mt-3">
-                    <Button variant="tonal" size="sm" icon="check" onPress={() => router.push(`/wrapup?id=${thread.id}` as any)}>
+                    <Button variant="tonal" size="sm" icon="check" onPress={() => router.push(`/wrapup?id=${thread.id}`)}>
                       Wrap it up
                     </Button>
                     <Button
@@ -577,7 +579,7 @@ export default function ThreadScreen() {
                     Done
                   </Button>
                 ) : hasHistory ? (
-                  <Button variant="quiet" size="sm" icon="share" className="flex-1" onPress={() => router.push(`/wrapup?id=${thread.id}` as any)}>
+                  <Button variant="quiet" size="sm" icon="share" className="flex-1" onPress={() => router.push(`/wrapup?id=${thread.id}`)}>
                     Summary card
                   </Button>
                 ) : null}
@@ -781,7 +783,7 @@ export default function ThreadScreen() {
                         detail={reason}
                         index={i}
                         last={i === related.length - 1}
-                        onPress={() => router.push(`/(tabs)/context?id=${r.id}` as any)}
+                        onPress={() => router.push(`/(tabs)/context?id=${r.id}`)}
                       />
                     ))}
                   </ThreadList>

@@ -1,7 +1,7 @@
 import { Platform } from 'react-native';
 
 import { formatValue } from '@/lib/measures';
-import { ensureAndroidChannel, hasNudgePermission, loadNudgePrefs } from '@/lib/nudges';
+import { ANDROID_CHANNEL_ID, ensureAndroidChannel, hasNudgePermission, loadNudgePrefs } from '@/lib/nudges';
 import { Notifications } from '@/lib/notifications';
 import { reviewLine, weekReview } from '@/lib/review';
 import type { Entry, MnemoItem } from '@/types/mnemo';
@@ -12,7 +12,6 @@ import type { Entry, MnemoItem } from '@/types/mnemo';
 // holds at that moment, and follows the same switch as the nudges.
 
 const ID = 'weekly-review';
-const CHANNEL = 'nudges';
 
 function inBangladesh(): boolean {
   try {
@@ -60,7 +59,7 @@ export async function scheduleWeeklyReview(items: MnemoItem[], entries: Entry[])
         body: reviewLine(review, (t) => `${t.metric} ${formatValue(t.total, t.unit)}`),
         data: { route: '/review' },
       },
-      trigger: { type: Notifications.SchedulableTriggerInputTypes.DATE, date: new Date(at), channelId: CHANNEL },
+      trigger: { type: Notifications.SchedulableTriggerInputTypes.DATE, date: new Date(at), channelId: ANDROID_CHANNEL_ID },
     });
   } catch {
     // A missed weekly notification is no loss; the review is always in the app.

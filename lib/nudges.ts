@@ -3,6 +3,7 @@ import { Notifications } from '@/lib/notifications';
 import { Platform } from 'react-native';
 import type { MnemoItem } from '@/types/mnemo';
 import { ensureReminderCategory, REMINDER_CATEGORY } from '@/lib/reminders';
+import { DAY_MS } from '@/utils/time';
 
 // ─── Gentle nudges ──────────────────────────────────────────────
 // "Resume" only works if the user remembers to open the app. Nudges are
@@ -38,9 +39,9 @@ const DEFAULT_PREFS: NudgePrefs = { enabled: true, time: 'morning', weekly: true
 const PREFS_KEY = 'mnemo-nudge-prefs';
 const STATE_KEY = 'mnemo-nudge-state';
 const ID_PREFIX = 'nudge-';
-const ANDROID_CHANNEL_ID = 'nudges';
+/** Nudges and the weekly review share one Android channel (one switch in system settings). */
+export const ANDROID_CHANNEL_ID = 'nudges';
 
-const DAY_MS = 24 * 60 * 60 * 1000;
 /** How many days ahead to schedule. At most one nudge per day. */
 const PLAN_DAYS = 7;
 /** A thread counts as quiet once it's been untouched this long. */

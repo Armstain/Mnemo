@@ -190,7 +190,7 @@ export function FloatingTabBar() {
               if (captureActive) closeCapture();
               if (index === activeIndex) return;
               Haptics.selectionAsync();
-              router.push(tab.route as any);
+              router.push(tab.route);
             }}
           />
         ))}

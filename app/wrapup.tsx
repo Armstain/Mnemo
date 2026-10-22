@@ -102,7 +102,7 @@ export default function WrapUpScreen() {
     });
     // Back to the review it came from; otherwise Home, since the thread is finished.
     if (from === 'review') router.back();
-    else router.dismissTo('/' as any);
+    else router.dismissTo('/');
   };
 
   return (

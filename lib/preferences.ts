@@ -20,6 +20,14 @@ export interface Preferences {
   speechLang: SpeechLang;
   /** What Home greets them by. Empty: no name. */
   name: string;
+  /**
+   * Set when Gemini is turned on: threads made before then (offline) stay
+   * out of meaning search, so their text never leaves the phone, unless
+   * the person agrees (then it's cleared). See PendingProcessor.
+   */
+  earlierNotesBefore?: number;
+  /** Whether they've been asked about those earlier notes since the switch. */
+  earlierNotesAsked?: boolean;
 }
 
 /** Long enough for most first names, short enough for the greeting to fit. */
@@ -79,6 +87,10 @@ export function getPreferences(): Preferences {
 }
 
 export function setPreferences(update: Partial<Preferences>): void {
+  // Turning Gemini on: what was written until now was written offline.
+  if (update.aiMode === 'gemini' && current.aiMode !== 'gemini') {
+    update = { earlierNotesBefore: Date.now(), earlierNotesAsked: false, ...update };
+  }
   current = { ...current, ...update };
   listeners.forEach((l) => l());
   write(JSON.stringify(current)).catch(() => {

@@ -32,7 +32,7 @@ export function FilingNotifier() {
   useEffect(() => {
     const viewing = (threadId: string) =>
       routeRef.current.pathname.includes('context') && routeRef.current.id === threadId;
-    const open = (threadId: string) => router.replace(`/(tabs)/context?id=${threadId}` as any);
+    const open = (threadId: string) => router.replace(`/(tabs)/context?id=${threadId}`);
     /** Drops a thread an entry just left, if that left it empty. */
     const dropIfEmpty = (threadId: string) => {
       const s = storeRef.current;

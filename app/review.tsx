@@ -21,11 +21,11 @@ import { reviewLine, STILL_ON_IT_DAYS, weekReview, type WeekReview } from '@/lib
 import { formatReminder } from '@/lib/when';
 import { spanLabel } from '@/lib/wrapup';
 import { DUR_BASE, EASE_OUT, useEnter } from '@/utils/motion';
+import { DAY_MS } from '@/utils/time';
 
-const open = (id: string) => router.push(`/(tabs)/context?id=${id}` as any);
+const open = (id: string) => router.push(`/(tabs)/context?id=${id}`);
 /** Longer lists show this many until "Show all". */
 const SHOW = 4;
-const DAY_MS = 24 * 60 * 60 * 1000;
 
 /**
  * The weekly review: the last seven days and the next, in one place. What
@@ -188,7 +188,7 @@ export default function ReviewScreen() {
                     </View>
                   </Pressable>
                   <View className="flex-row flex-wrap gap-2 mt-3.5">
-                    <Button variant="tonal" size="sm" icon="check" onPress={() => router.push(`/wrapup?id=${item.id}&from=review` as any)}>
+                    <Button variant="tonal" size="sm" icon="check" onPress={() => router.push(`/wrapup?id=${item.id}&from=review`)}>
                       Wrap up
                     </Button>
                     <Button

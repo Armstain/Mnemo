@@ -1,6 +1,7 @@
 import { tokenize } from '@/lib/bm25';
 import { metricKey } from '@/lib/measures';
 import type { Entry, MnemoItem } from '@/types/mnemo';
+import { DAY_MS } from '@/utils/time';
 
 // Finding things on the phone: a time span said in the search ("cng last
 // week", "গত মাসে বাজার"), totals of the numbers that match across every
@@ -13,7 +14,6 @@ export interface Period {
   label: string;
 }
 
-const DAY_MS = 24 * 60 * 60 * 1000;
 
 function startOfDay(ts: number): number {
   const d = new Date(ts);

@@ -226,7 +226,7 @@ function BarRow({ label, value, share, color, unit, note }: { label: string; val
           from={{ scaleX: 0 }}
           animate={{ scaleX: Math.max(0.03, share) }}
           transition={{ type: 'spring', damping: 20, stiffness: 140 }}
-          style={{ height: '100%', width: '100%', borderRadius: 999, backgroundColor: color, transformOrigin: 'left' } as any}
+          style={{ height: '100%', width: '100%', borderRadius: 999, backgroundColor: color, transformOrigin: 'left' }}
         />
       </View>
     </View>
@@ -293,7 +293,7 @@ export function MetricCard({ summary, onFix }: { summary: MetricSummary; onFix?:
             animate={{ scaleX: 1 }}
             transition={{ type: 'spring', damping: 22, stiffness: 120 }}
             className="flex-row h-2.5 rounded-full overflow-hidden mb-3"
-            style={{ backgroundColor: colors.surfaceHigh, transformOrigin: 'left' } as any}
+            style={{ backgroundColor: colors.surfaceHigh, transformOrigin: 'left' }}
           >
             {groups.map((g, i) => (
               <View key={g.group} style={{ flex: g.total / total, backgroundColor: palette[i % palette.length] }} />

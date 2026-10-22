@@ -1,11 +1,11 @@
 import type { MnemoItem } from '@/types/mnemo';
+import { DAY_MS } from '@/utils/time';
 
 // Reminder times: the quick choices offered, the next time a repeating one
 // comes round, and how a reminder reads. Pure, so it's easy to test.
 
 export type Repeat = NonNullable<MnemoItem['repeat']>;
 
-const DAY_MS = 24 * 60 * 60 * 1000;
 
 function at(day: Date, hour: number, minute = 0): Date {
   const d = new Date(day);

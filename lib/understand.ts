@@ -61,6 +61,77 @@ export function sentences(text: string): string[] {
     .filter(Boolean);
 }
 
+// ─── Speech with no punctuation ─────────────────────────────────
+// The phone's speech service punctuates English only, and only on some
+// phones; Bangla and Banglish arrive as one long run ("meeting with rahim
+// went well he wants the budget by friday"). In a long note with no
+// sentence ends, break where a spoken clause plainly starts or ends, so
+// the title, next step and left-off each come from one thought.
+
+const SPOKEN_MIN_WORDS = 10;
+const CLAUSE_MIN_WORDS = 3;
+
+// English: a clause starts at these ("…went well | he wants…").
+const CLAUSE_START =
+  /\s+(?=(?:and then|but|anyway|after that|next (?:is|up)|(?:he|she|they) (?:said|says|told)|karon|kintu|tarpor|tarpore|তারপর|কিন্তু|কারণ|(?:and |but |so )?(?:i|we|you|he|she|they)(?:'ll| will| need(?:s)? to| have to| has to| should| must| want(?:s)? to| wants| gotta| got to| am going to| are going to| is going to)|(?:and )?(?:remember to|don'?t forget|remind me))\b)/gi;
+
+// Bangla and Banglish put the verb last: a clause ends after a finished
+// verb ("গিয়েছিলাম", "chilo"), unless a particle still belongs to it ("না").
+const BN_VERB_END = /(?:লাম|ছিল|ছিলো|ছি|ছে|ছেন|বে|বো|বেন|লো|তাম)$/;
+const BN_NOT_VERBS = new Set(['কাছে', 'পাছে', 'মাঝে', 'নিচে', 'উপরে'].map(nfc));
+const BANGLISH_VERBS = new Set(
+  (
+    'chilo chilam silo silam chhilo gelam gechi geche gesi gese korlam korsi korechi koreche korse korbo korbe ' +
+    'dilam disi dibe dibo debe nibo nilam chaise chaiche chailo bollo bolse bolche bolechi hobe hoise hoyeche holo ' +
+    'jabo jabe gelo pailam paisi pelam peyechi asbe ashbe ashlam aslam kinlam kinbo khelam ache ase'
+  ).split(' '),
+);
+const PARTICLES = new Set(['না', 'নি', 'কি', 'তো', 'যে', 'বলে', 'na', 'ni', 'ki', 'to', 'je', 'bole'].map(nfc));
+
+const LINK_WORD = /^(?:and|but|so|then|ar|aar|abar|ebong|আর|এবং)$/i;
+
+function endsClause(word: string, next: string | undefined): boolean {
+  if (!next || PARTICLES.has(nfc(next.toLowerCase()))) return false;
+  const w = nfc(word);
+  if (BANGLISH_VERBS.has(w.toLowerCase())) return true;
+  return /[ঀ-৿]/.test(w) && [...w].length >= 3 && BN_VERB_END.test(w) && !BN_NOT_VERBS.has(w);
+}
+
+/**
+ * Long unpunctuated text with a new line at each clause break; anything
+ * else unchanged. Only for reading it: the note keeps the words as said.
+ */
+export function spokenClauses(text: string): string {
+  const words = text.trim().split(/\s+/);
+  if (words.length < SPOKEN_MIN_WORDS || /[.!?।\n]/.test(text)) return text;
+  const pieces = text.trim().replace(CLAUSE_START, '\n').split('\n');
+  const clauses: string[][] = [];
+  for (const piece of pieces) {
+    let current: string[] = [];
+    const ws = piece.trim().split(/\s+/);
+    ws.forEach((w, i) => {
+      current.push(w);
+      if (endsClause(w, ws[i + 1])) {
+        clauses.push(current);
+        current = [];
+      }
+    });
+    if (current.length > 0) clauses.push(current);
+  }
+  // A lone "and" / "so" opens the clause after it.
+  for (let i = clauses.length - 2; i >= 0; i--) {
+    if (clauses[i].length === 1 && LINK_WORD.test(clauses[i][0])) clauses.splice(i, 2, [...clauses[i], ...clauses[i + 1]]);
+  }
+  // A two-word scrap is part of the clause before it, not a thought of its own.
+  const merged: string[][] = [];
+  for (const clause of clauses) {
+    const last = merged[merged.length - 1];
+    if (last && (clause.length < CLAUSE_MIN_WORDS || last.length < CLAUSE_MIN_WORDS)) last.push(...clause);
+    else merged.push([...clause]);
+  }
+  return merged.map((c) => c.join(' ')).join('\n');
+}
+
 // ─── Lists ──────────────────────────────────────────────────────
 
 const LIST_LINE = /^\s*(?:[-*•▪◦–]|\[\s?[xX✓ ]?\s?\]|\d{1,2}[.)]|[০-৯]{1,2}[.)])\s+(.+)$/;
@@ -353,13 +424,13 @@ export function readMeasures(text: string, known: KnownMetric[] = [], currency?:
 // ─── Next step, where it stopped ────────────────────────────────
 
 const INTENT_EN =
-  /\b(need(?:s)? to|have to|has to|got to|gotta|must|should|remember to|remind(?: me)?(?: to)?|don'?t forget(?: to)?|do not forget(?: to)?|todo|to-do|next step|next:|i'?ll|i will|we'?ll|we will|going to|plan to|planning to|let'?s|tomorrow|by (?:monday|tuesday|wednesday|thursday|friday|saturday|sunday))\b/i;
+  /\b(need(?:s)? to|have to|has to|got to|gotta|must|should|remember to|remind(?: me)?(?: to)?|don'?t forget(?: to)?|do not forget(?: to)?|todo|to-do|next step|next:|next (?:is|up)|i'll|i will|we'll|we will|going to|plan to|planning to|let'?s|tomorrow|by (?:monday|tuesday|wednesday|thursday|friday|saturday|sunday))\b/i;
 const INTENT_BN = /(তে হবে|লাগবে|মনে করে|মনে করিয়ে|ভুল(?:বো|ব|ো|ে যেও|ে যাবো) না|করবো|করব|যাবো|যাব|কিনবো|কিনব|দেবো|দিব|আগামীকাল)/;
 const INTENT_LATIN_BN =
   /\b(\w+te hobe|lagbe|mone kore|mone koriye|bhulbo na|vulbo na|korbo|jabo|kinbo|dibo|debo|nibo|agamikal)\b/i;
 
 const LEAD_INS =
-  /^(?:[-*•]\s+)?(?:(?:so|ok(?:ay)?|and|also|um+|uh+|then|please|pls|plz|kindly|(?:can|could|would|will) you)[,:]?\s+)*(?:remember:|reminder:|todo:|to-do:|note:|task:)?\s*(?:i\s+|we\s+)?(?:really\s+)?(?:need(?:s)? to|have to|has to|got to|gotta|must|should|remember to|remind(?: me)? to|don'?t forget to|do not forget to|todo:?|to-do:?|next step:?|next:|i'?ll|will|am going to|are going to|going to|plan to|planning to|let'?s)\s+/i;
+  /^(?:[-*•]\s+)?(?:(?:so|ok(?:ay)?|and|also|um+|uh+|then|please|pls|plz|kindly|(?:can|could|would|will) you)[,:]?\s+)*(?:remember:|reminder:|todo:|to-do:|note:|task:)?\s*(?:i\s+|we\s+)?(?:really\s+)?(?:need(?:s)? to|have to|has to|got to|gotta|must|should|remember to|remind(?: me)? to|don'?t forget to|do not forget to|todo:?|to-do:?|next step:?|next:|next (?:is|up)|i'?ll|will|am going to|are going to|going to|plan to|planning to|let'?s)\s+/i;
 
 /** "…, remind me" / "remind me please" at the end: the request, not the step. */
 const REMIND_TAIL = /[\s,;.-]*(?:(?:please|pls|plz)\s+)?remind me(?:\s+(?:please|pls|plz))?[.!]?\s*$/i;
@@ -440,6 +511,9 @@ function readTags(text: string): string[] {
 const TITLE_LEAD =
   /^(?:[-*•]\s+)?(?:(?:so|ok(?:ay)?|um+|uh+|hmm+|well|basically|alright|note|remember|reminder|todo|to-do|task|please|pls|plz|(?:can|could|would|will) you|আচ্ছা|তো|শোনো|accha|acha|to)[,:]?\s+)+/i;
 
+/** "so I was thinking about the passport renewal": the passport renewal. */
+const SPOKEN_TITLE_LEAD = /^(?:i\s+(?:was|am|'m)\s+)?(?:just\s+)?(?:thinking|talking)\s+(?:about|of)\s+(?:the\s+|my\s+|our\s+)?/i;
+
 function readTitle(text: string, items: ChecklistItem[], hasWhen: boolean): string {
   const firstLine = text.split('\n').map((l) => l.trim()).find(Boolean) ?? '';
   const multiLine = text.trim().includes('\n');
@@ -451,7 +525,7 @@ function readTitle(text: string, items: ChecklistItem[], hasWhen: boolean): stri
   // "tomorrow at 5pm" belongs in the reminder, not the name of the thread;
   // with no reminder read, the words stay ("met Rumi at 3pm").
   if (hasWhen) title = withoutWhen(title);
-  title = trimEnd(title.replace(/^#+\s*/, '').replace(STEP_LEAD, '').replace(TITLE_LEAD, '').replace(LEAD_INS, '').replace(REMIND_TAIL, ''));
+  title = trimEnd(title.replace(/^#+\s*/, '').replace(STEP_LEAD, '').replace(TITLE_LEAD, '').replace(SPOKEN_TITLE_LEAD, '').replace(LEAD_INS, '').replace(REMIND_TAIL, ''));
   // A title is no place for a link or a hashtag.
   title = title.replace(/\b(?:https?:\/\/|www\.)\S+/gi, '').replace(/(?:^|\s)#\S+/g, '').trim();
   title = trimEnd(title.replace(/\s+(?:and|or|at|on|by)$/i, ''));
@@ -470,6 +544,11 @@ function readTitle(text: string, items: ChecklistItem[], hasWhen: boolean): stri
  * already tracks; `now` is for "tomorrow"; `monthFirst` reads 3/4 as
  * March 4 (otherwise 3 April).
  */
+/** Speech services write "i" for "I"; a title or step shouldn't. */
+function upperI<T extends string | undefined>(s: T): T {
+  return (s?.replace(/(^|\s)i(?=$|\s|')/g, '$1I') ?? s) as T;
+}
+
 export function understand(
   input: string,
   options: { known?: KnownMetric[]; now?: number; monthFirst?: boolean; currency?: string } = {},
@@ -477,14 +556,17 @@ export function understand(
   const raw = straightQuotes(input.trim());
   const list = readList(raw);
   const text = list.text;
-  const { step, sentence } = readNextStep(text || raw);
+  // What the title, step, time and left-off are read from: the text, in
+  // clauses when it was said without punctuation.
+  const said = spokenClauses(text || raw);
+  const { step, sentence } = readNextStep(said);
   const words = numberTokens(raw);
   // The step's sentence first; otherwise any sentence that's a plan with a
   // time ("call amma at 7:30pm", "gym at 6am"), never a past one ("met Rumi at 3pm").
   let when = sentence && isPlan(sentence, true) ? readWhenFull(sentence, options.now, options.monthFirst) : undefined;
   let planStep: string | undefined;
   if (!when) {
-    for (const s of sentences(text || raw)) {
+    for (const s of sentences(said)) {
       if (!isPlan(s, false)) continue;
       when = readWhenFull(s, options.now, options.monthFirst);
       if (when) {
@@ -500,15 +582,24 @@ export function understand(
     const out = trimEnd(withoutWhen(t).replace(STEP_LEAD, '').replace(LEAD_INS, '').replace(REMIND_TAIL, '').replace(/\s+(?:at|on|by)$/i, ''));
     return /^(?:remind me|reminder|মনে করিয়ে দিও|mone koriye dio|(?:can|could|would|will) you|please|pls|plz|kindly)?$/i.test(out) ? undefined : capitalize(out);
   };
+  let nextStep = due ? bare(step ?? planStep) : step;
+  // Said in clauses, a step can lose what it's about: "rahim bhai budget
+  // chaise | shukrobar er moddhe dite hobe" leaves "dite hobe". The clause
+  // before says what.
+  const clauses = said === (text || raw) ? [] : sentences(said);
+  const at = clauses.indexOf(sentence ?? '');
+  if (nextStep && at > 0 && nextStep.split(/\s+/).length < 3) {
+    nextStep = clip(`${cleanStep(clauses[at - 1])}, ${nextStep.charAt(0).toLowerCase()}${nextStep.slice(1)}`, STEP_MAX);
+  }
   return {
     text,
-    title: readTitle(text || raw, list.items, due !== undefined) || (due ? 'Reminder' : ''),
+    title: upperI(readTitle(said, list.items, due !== undefined)) || (due ? 'Reminder' : ''),
     checklist: list.items,
     links: readLinks(raw),
     measures: readMeasures(text || raw, options.known, options.currency),
     // The time lives in the reminder; the step says what to do.
-    nextStep: due ? bare(step ?? planStep) : step,
-    leftOff: readLeftOff(text, sentence),
+    nextStep: upperI(nextStep),
+    leftOff: upperI(readLeftOff(text ? said : '', sentence)),
     due,
     repeat: due ? when?.repeat : undefined,
     category: readCategory(words),

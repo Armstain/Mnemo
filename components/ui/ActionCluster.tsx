@@ -117,7 +117,7 @@ export function ActionCluster({ visible = true }: { visible?: boolean }) {
   const focusThread =
     !currentThread && focusThreadId ? items.find((i) => i.id === focusThreadId) : undefined;
   const target = currentThread ?? focusThread;
-  const threadQuery = currentThread ? `?threadId=${currentThread.id}` : '';
+  const threadParams = currentThread ? { threadId: currentThread.id } : {};
 
   const [expanded, setExpanded] = useState(false);
 
@@ -194,13 +194,13 @@ export function ActionCluster({ visible = true }: { visible?: boolean }) {
   const goRecordScreen = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     setExpanded(false);
-    router.push(`/dump${threadQuery}` as any);
+    router.push({ pathname: '/dump', params: threadParams });
   };
 
   const goNote = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     setExpanded(false);
-    router.push(`/capture${threadQuery}` as any);
+    router.push({ pathname: '/capture', params: threadParams });
   };
 
   const showTail = (next: Exclude<Tail, null | { kind: 'finishing' }>) => {
