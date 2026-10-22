@@ -22,14 +22,6 @@ export function getAIClient(): GoogleGenAI {
   return new GoogleGenAI({ apiKey: getActiveApiKey() });
 }
 
-export const ai = new Proxy({} as GoogleGenAI, {
-  get(_target, prop) {
-    const client = getAIClient();
-    const value = (client as any)[prop];
-    return typeof value === 'function' ? value.bind(client) : value;
-  },
-});
-
 // ─── Which models ───────────────────────────────────────────────
 // Asked of Google once per launch (and again after a key change or a
 // model that's gone), then chosen in lib/model-pick.ts. Names written into

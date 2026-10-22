@@ -17,7 +17,6 @@
     "@expo-google-fonts/literata": "^0.4.3",
     "@expo-google-fonts/noto-sans-bengali": "^0.4.4",
     "@expo-google-fonts/noto-serif-bengali": "^0.4.4",
-    "@expo/vector-icons": "^15.0.3",
     "@google/genai": "^1.49.0",
     "@noble/ciphers": "^2.4.0",
     "@noble/hashes": "^2.4.0",

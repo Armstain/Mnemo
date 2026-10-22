@@ -91,7 +91,7 @@ export default function DumpScreen() {
     if (audio.length > 0) {
       const saved = saveVoiceNote({ text: '', audio, category, threadId: targetThread?.id, filing: target.filing, store });
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      router.replace(`/(tabs)/context?id=${saved.threadId}` as any);
+      router.replace(`/(tabs)/context?id=${saved.threadId}`);
       return;
     }
     // "Record more" appends to what's already there.
@@ -109,7 +109,7 @@ export default function DumpScreen() {
     if (!text) return;
     const saved = saveVoiceNote({ text, category, threadId: targetThread?.id, filing: target.filing, store });
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    router.replace(`/(tabs)/context?id=${saved.threadId}` as any);
+    router.replace(`/(tabs)/context?id=${saved.threadId}`);
   }
 
   function close() {

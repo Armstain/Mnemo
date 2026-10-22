@@ -33,7 +33,7 @@ function Listener({ module }: { module: typeof import('expo-share-intent') }) {
       photos,
     });
     resetShareIntent();
-    router.push('/share' as any);
+    router.push('/share');
   }, [hasShareIntent, isLoaded]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return null;

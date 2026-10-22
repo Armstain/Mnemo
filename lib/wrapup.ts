@@ -1,11 +1,11 @@
 import { formatValue, summarizeMeasures, type MetricSummary } from '@/lib/measures';
 import type { Entry, MnemoItem } from '@/types/mnemo';
+import { DAY_MS } from '@/utils/time';
 
 // Wrapping up a thread: when a trip, project or errand is over, one card
 // says what it was. When it ran, how much went into it, what the numbers
 // came to, and what's still open. Worked out on the phone.
 
-const DAY_MS = 24 * 60 * 60 * 1000;
 
 export interface ThreadWrap {
   from: number;

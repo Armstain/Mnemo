@@ -1,10 +1,10 @@
 import type { Entry, MnemoItem } from '@/types/mnemo';
+import { DAY_MS } from '@/utils/time';
 
 // Finishing something gets a moment (components/CelebrationHost), but only
 // when it was something to do: a note filed away doesn't deserve fanfare,
 // and a celebration for every idea would cheapen the real ones.
 
-const DAY_MS = 24 * 60 * 60 * 1000;
 
 /**
  * Whether a thread was a task the person meant to get done: they set a

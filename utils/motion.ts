@@ -14,22 +14,14 @@ export const EASE_OUT = Easing.bezier(0.23, 1, 0.32, 1);
 /** Symmetric ease for on-screen movement that isn't an entrance/exit. */
 export const EASE_IN_OUT = Easing.bezier(0.77, 0, 0.175, 1);
 
-/** iOS sheet curve — for anything entering with sheet-like weight. */
-export const EASE_SHEET = Easing.bezier(0.32, 0.72, 0, 1);
-
-/**
- * Named duration scale. UI motion stays under 300ms — DUR_SLOW is for
- * *ambient* motion (breathing halos, loops) only, never a screen entrance.
- */
+/** Named duration scale. UI motion stays under 300ms. */
 export const DUR_FAST = 140;
 export const DUR_BASE = 240;
-export const DUR_SLOW = 420;
 
 /** Toggles, chips, disclosures — a small state change the user just caused. */
 export const DUR_TOGGLE = 200;
 
-/** Press feedback. 120ms / 3% is the ceiling for something touched all day. */
-export const DUR_PRESS = 120;
+/** Press feedback. 3% is the ceiling for something touched all day. */
 export const PRESS_SCALE = 0.97;
 
 /** Breathing-halo cadence for the record affordance — idle vs. actively recording. */
@@ -53,14 +45,6 @@ export const SPRING_NAV = {
   damping: 18,
   stiffness: 220,
   mass: 0.6,
-};
-
-/** Press/release feedback on a tap target. Snappier than nav. */
-export const SPRING_PRESS = {
-  type: 'spring' as const,
-  damping: 20,
-  stiffness: 380,
-  mass: 0.5,
 };
 
 /** Sheets, toasts, anything with weight entering the screen. */

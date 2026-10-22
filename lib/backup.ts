@@ -2,6 +2,7 @@ import { xchacha20poly1305 } from '@noble/ciphers/chacha.js';
 import { scryptAsync } from '@noble/hashes/scrypt.js';
 
 import type { Entry, MnemoItem } from '@/types/mnemo';
+import { DAY_MS } from '@/utils/time';
 
 // Encrypted backup: one `.mnemo` file holding every thread and entry,
 // sealed with a passphrase only the person knows. There is no Mnemo
@@ -247,7 +248,6 @@ export function backupFileName(now = new Date()): string {
 // pure part (tested in tests/backup.test.ts): names, what's due, what to
 // keep, and when Home should bring backups up.
 
-const DAY_MS = 24 * 60 * 60 * 1000;
 export const AUTO_EVERY_MS = DAY_MS;
 const AUTO_PREFIX = 'mnemo-auto-';
 const AUTO_NAME = /^mnemo-auto-(\d{4})-(\d{2})-(\d{2})-(\d{6})\.mnemo$/;

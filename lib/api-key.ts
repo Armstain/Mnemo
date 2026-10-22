@@ -23,7 +23,6 @@ export async function loadStoredApiKeys(): Promise<void> {
     }
   } catch (e) {
     console.error('Failed to load stored API keys:', e);
-  } finally {
   }
 }
 
@@ -71,10 +70,6 @@ export async function saveApiKey(key: string): Promise<void> {
   }
 }
 
-export function getApiKeySource(): 'custom' | 'none' {
-  return getActiveApiKey() ? 'custom' : 'none';
-}
-
 export type KeyProblem = 'invalid' | 'quota' | 'offline' | 'busy' | 'other';
 
 /** Sorts a Gemini error into something the person can act on. */
@@ -112,8 +107,7 @@ export async function validateApiKey(keyToTest?: string): Promise<{ valid: boole
   if (!key) return { valid: false, error: 'Paste your Gemini key first.', problem: 'invalid' };
   try {
     const client = new GoogleGenAI({ apiKey: key });
-    const pager = await client.models.list({ config: { pageSize: 1 } });
-    void pager;
+    await client.models.list({ config: { pageSize: 1 } });
     return { valid: true };
   } catch (err) {
     const problem = classifyAiError(err);
@@ -129,10 +123,6 @@ export async function validateApiKey(keyToTest?: string): Promise<{ valid: boole
  */
 export function getActiveGroqApiKey(): string {
   return cachedGroqApiKey?.trim() ?? '';
-}
-
-export function getGroqApiKeySource(): 'custom' | 'none' {
-  return getActiveGroqApiKey() ? 'custom' : 'none';
 }
 
 export async function saveGroqApiKey(key: string): Promise<void> {

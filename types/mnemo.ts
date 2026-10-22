@@ -98,9 +98,6 @@ export interface MnemoItem {
   pendingAudioUri?: string;
 }
 
-/** Thread is the product name for a MnemoItem; new code should prefer it. */
-export type Thread = MnemoItem;
-
 // ─── Entries & blocks ───────────────────────────────────────────
 // One capture inside a thread. See docs/specs/threads.md.
 

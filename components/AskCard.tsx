@@ -95,7 +95,7 @@ export function AskCard({ question, ranked }: { question: string; ranked: MnemoI
                 return (
                   <Pressable
                     key={id}
-                    onPress={() => router.push(`/(tabs)/context?id=${id}` as any)}
+                    onPress={() => router.push(`/(tabs)/context?id=${id}`)}
                     accessibilityRole="button"
                     className="rounded-full px-3 h-8 items-center justify-center active:opacity-70"
                     style={{ backgroundColor: colors.surfaceLowest, maxWidth: '100%' }}
