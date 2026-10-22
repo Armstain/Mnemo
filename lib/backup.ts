@@ -240,3 +240,132 @@ export function backupFileName(now = new Date()): string {
   const d = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
   return `mnemo-backup-${d}.mnemo`;
 }
+
+// ─── Automatic backups ──────────────────────────────────────────
+// lib/auto-backup.ts writes a sealed backup into a folder the person chose,
+// at most once a day and only when something changed. These rules are the
+// pure part (tested in tests/backup.test.ts): names, what's due, what to
+// keep, and when Home should bring backups up.
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+export const AUTO_EVERY_MS = DAY_MS;
+const AUTO_PREFIX = 'mnemo-auto-';
+const AUTO_NAME = /^mnemo-auto-(\d{4})-(\d{2})-(\d{2})-(\d{6})\.mnemo$/;
+/** Every backup from the last week is kept, then one a month for half a year. */
+const KEEP_DAILY = 7;
+const KEEP_MONTHLY = 6;
+
+const pad = (n: number) => String(n).padStart(2, '0');
+
+/** A new name for every run, so an earlier file is never written over. */
+export function autoBackupName(now = new Date()): string {
+  const d = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+  return `${AUTO_PREFIX}${d}-${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}.mnemo`;
+}
+
+/**
+ * A file's name from its Android folder-picker URI, which only carries the
+ * provider's document id (`primary:Documents/mnemo-auto-….mnemo`, encoded).
+ * Providers with opaque ids give something that matches no Mnemo name, so
+ * their files are simply never tidied away.
+ */
+export function nameFromUri(uri: string): string {
+  const last = uri.replace(/\/+$/, '').split('/').pop() ?? '';
+  let id = last;
+  try {
+    id = decodeURIComponent(last);
+  } catch {
+    // Not encoded after all.
+  }
+  return id.slice(Math.max(id.lastIndexOf('/'), id.lastIndexOf(':')) + 1);
+}
+
+export function isAutoBackupName(name: string): boolean {
+  return AUTO_NAME.test(name);
+}
+
+/**
+ * Which of Mnemo's own files in the folder can go once a new one is written:
+ * the newest few are kept, and the newest of each earlier month, so notes
+ * lost slowly (deleted bit by bit) can still be found in an older file.
+ * Anything not named by Mnemo is never touched.
+ */
+export function autoBackupsToDelete(names: string[]): string[] {
+  const ours = names.filter(isAutoBackupName).sort().reverse(); // newest first: the names sort by time
+  const keep = new Set(ours.slice(0, KEEP_DAILY));
+  const months = new Set<string>();
+  for (const name of ours.slice(KEEP_DAILY)) {
+    const [, y, m] = AUTO_NAME.exec(name)!;
+    const month = `${y}-${m}`;
+    if (months.has(month) || months.size >= KEEP_MONTHLY) continue;
+    months.add(month);
+    keep.add(name);
+  }
+  return ours.filter((n) => !keep.has(n));
+}
+
+/** Changes whenever a thread or entry is added, removed or edited. */
+export function backupFingerprint(items: { updatedAt: number }[], entries: { updatedAt: number }[]): string {
+  let latest = 0;
+  for (const x of items) latest = Math.max(latest, x.updatedAt ?? 0);
+  for (const x of entries) latest = Math.max(latest, x.updatedAt ?? 0);
+  return `${items.length}:${entries.length}:${latest}`;
+}
+
+export interface AutoBackupStatus {
+  /** When the last automatic backup was written. */
+  lastAt?: number;
+  /** backupFingerprint of what that backup held. */
+  lastFingerprint?: string;
+}
+
+/**
+ * Due once a day, and only if the notes changed since the last one. Nothing
+ * is written while there are no threads: after "Clear all data", empty
+ * files would otherwise push the real backups out of the folder.
+ */
+export function autoBackupDue(status: AutoBackupStatus, fingerprint: string, threads: number, now = Date.now()): boolean {
+  if (threads === 0) return false;
+  if (status.lastFingerprint === fingerprint) return false;
+  return !status.lastAt || now - status.lastAt >= AUTO_EVERY_MS;
+}
+
+export interface BackupNudgeInput {
+  threads: number;
+  /** Automatic backups are on (a folder and passphrase are set). */
+  autoOn: boolean;
+  /** Automatic backups can run on this platform. */
+  autoAvailable: boolean;
+  /** The latest backup of any kind: automatic, or a file exported by hand. */
+  lastBackupAt?: number;
+  /** When automatic backups started failing, if they are. */
+  failingSince?: number;
+  dismissedAt?: number;
+  now?: number;
+}
+
+/** Enough threads that losing them would hurt. */
+const NUDGE_MIN_THREADS = 5;
+const NUDGE_AFTER_MS = 14 * DAY_MS;
+const NUDGE_SNOOZE_MS = 30 * DAY_MS;
+/** A day of failures can be a folder briefly offline; three is a broken setup. */
+const FAILING_FOR_MS = 3 * DAY_MS;
+
+/**
+ * What Home says about backups, if anything:
+ * - 'failing': automatic backups are on but haven't worked for days.
+ *   Not snoozable: the person thinks they are covered.
+ * - 'turn-on' / 'export': no backup for a while, so suggest one (automatic
+ *   where it can run, a file by hand where it can't). "Not now" holds it
+ *   off for a month.
+ */
+export function backupNudge(input: BackupNudgeInput): 'failing' | 'turn-on' | 'export' | null {
+  const now = input.now ?? Date.now();
+  if (input.autoOn) {
+    return input.failingSince && now - input.failingSince >= FAILING_FOR_MS ? 'failing' : null;
+  }
+  if (input.threads < NUDGE_MIN_THREADS) return null;
+  if (input.lastBackupAt && now - input.lastBackupAt < NUDGE_AFTER_MS) return null;
+  if (input.dismissedAt && now - input.dismissedAt < NUDGE_SNOOZE_MS) return null;
+  return input.autoAvailable ? 'turn-on' : 'export';
+}

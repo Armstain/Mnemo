@@ -7,6 +7,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Card } from '@/components/ui/Card';
 import { ReminderSetupPrompt } from '@/components/ReminderSetupPrompt';
+import { BackupPrompt } from '@/components/BackupPrompt';
 import { Button, IconButton } from '@/components/ui/Button';
 import { Icon, type IconName } from '@/components/ui/Icon';
 import { Eyebrow } from '@/components/ui/Eyebrow';
@@ -279,6 +280,8 @@ export function PulseHome() {
         ) : null}
         {/* Strict phones: a one-time nudge to check reminders will arrive. */}
         <ReminderSetupPrompt />
+        {/* No backup in a while, or automatic backups stopped working. */}
+        <BackupPrompt />
         {/* Gemini stopped answering for a reason the person can fix. */}
         {aiProblem ? (
           <Pressable

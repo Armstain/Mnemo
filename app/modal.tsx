@@ -27,7 +27,7 @@ import DateTimePicker from '@react-native-community/datetimepicker';
 import { Button, IconButton } from '@/components/ui/Button';
 import { Pill } from '@/components/ui/Pill';
 import { Eyebrow } from '@/components/ui/Eyebrow';
-import { BackupCard } from '@/components/settings/BackupCard';
+import { AutoBackupCard, BackupCard } from '@/components/settings/BackupCard';
 import { AiModeCard } from '@/components/settings/AiModeCard';
 import { noFocusRing } from '@/utils/web';
 import { confirmAction } from '@/utils/confirm';
@@ -616,6 +616,7 @@ export default function ModalScreen() {
           {/* Backup */}
           <MotiView {...enter.rise(2)} className="gap-3 mb-10">
             <Eyebrow className="mb-1">Backup</Eyebrow>
+            <AutoBackupCard />
             <BackupCard />
           </MotiView>
 
