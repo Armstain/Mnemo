@@ -1,4 +1,4 @@
-import { ai, modelCatalog, refreshModels } from '@/lib/gemini';
+import { getAIClient, modelCatalog, refreshModels } from '@/lib/gemini';
 import { isMissingModel, pickEmbeddingModel } from '@/lib/model-pick';
 import type { MnemoItem } from '@/types/mnemo';
 
@@ -18,7 +18,7 @@ export async function embeddingModel(): Promise<string> {
 
 async function embed(contents: string | string[], taskType: EmbeddingTaskType) {
   try {
-    return await ai.models.embedContent({
+    return await getAIClient().models.embedContent({
       model: await embeddingModel(),
       contents,
       config: { taskType, outputDimensionality: EMBEDDING_DIMS },

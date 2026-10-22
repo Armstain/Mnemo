@@ -26,6 +26,7 @@ import "../global.css";
 
 import { ONBOARDING_KEY } from '@/app/onboarding';
 import { NudgeScheduler } from '@/components/NudgeScheduler';
+import { AutoBackup } from '@/components/AutoBackup';
 import { ReminderActions } from '@/components/ReminderActions';
 import { installGlobalErrorLog } from '@/lib/errors';
 import { ShareIntake } from '@/components/ShareIntake';
@@ -217,6 +218,8 @@ function RootLayoutNav() {
           <ShareIntake />
           <WidgetSync />
           <NudgeScheduler />
+          {/* The daily backup into the person's chosen folder, when it's on. */}
+          <AutoBackup />
           <UndoToastHost />
           {/* A real task finished: the ring closes. Above everything, toast included. */}
           <CelebrationHost />

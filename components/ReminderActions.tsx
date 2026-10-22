@@ -44,13 +44,13 @@ export function ReminderActions() {
 
       // The test reminder came and was tapped: the check passed.
       if (content.data?.test) {
-        markTestArrived().finally(() => router.navigate(TEST_ROUTE as any));
+        markTestArrived().finally(() => router.navigate(TEST_ROUTE));
         return;
       }
 
       // The weekly review notification opens the review (once, if it's already open).
       if (content.data?.route === '/review') {
-        router.navigate('/review' as any);
+        router.navigate('/review');
         return;
       }
 
@@ -65,7 +65,7 @@ export function ReminderActions() {
         if (text) {
           const saved = saveTextNote({ text, category: 'general', store: s });
           showToast({ message: "That thread is gone, so it's saved as a new note" });
-          router.push(`/(tabs)/context?id=${saved.threadId}` as any);
+          router.push(`/(tabs)/context?id=${saved.threadId}`);
         }
         return;
       }
@@ -92,7 +92,7 @@ export function ReminderActions() {
         else s.updateItem(item.id, { dueDate: at });
         showToast({ message: `Reminding you ${formatReminder(at).toLowerCase()}` });
       }
-      router.push(`/(tabs)/context?id=${item.id}` as any);
+      router.push(`/(tabs)/context?id=${item.id}`);
     };
 
     // The tap that opened the app, then any while it's open.

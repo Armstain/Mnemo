@@ -91,7 +91,7 @@ export function ChecklistEditor({
                 transformOrigin: 'left',
                 backgroundColor:
                   progress === 1 ? statusColors.completed.color : colors.accent,
-              } as any}
+              }}
             />
           </View>
         </View>

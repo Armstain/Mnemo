@@ -26,7 +26,7 @@ export function formatCompactDistance(date: Date | string | number): string {
     .replace(' year', 'y');
 }
 
-const DAY_MS = 24 * 60 * 60 * 1000;
+export const DAY_MS = 24 * 60 * 60 * 1000;
 
 /**
  * How "warm" a thread still is, from 1 (touched just now) down to 0 at

@@ -97,7 +97,7 @@ export default function ShareScreen() {
       store,
     });
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    router.replace(`/(tabs)/context?id=${saved.threadId}` as any);
+    router.replace(`/(tabs)/context?id=${saved.threadId}`);
   };
 
   const host = share.url ? hostOf(share.url) : undefined;

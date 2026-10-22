@@ -129,7 +129,7 @@ export default function LibraryScreen() {
         last={index === filteredItems.length - 1}
         // Only the first screenful plays the entrance; rows scrolled in just appear.
         cell={{ first: index === 0, animate: index < 10 }}
-        onPress={() => router.push(`/(tabs)/context?id=${item.id}` as any)}
+        onPress={() => router.push(`/(tabs)/context?id=${item.id}`)}
         onSwipeDelete={() => {
           deleteItem(item.id);
           showUndoToast(`"${item.title}" deleted`, () => undoDelete(item.id));

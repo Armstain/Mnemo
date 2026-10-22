@@ -1,12 +1,12 @@
 import { metricKey, summarizeMeasures } from '@/lib/measures';
 import { nextOccurrence } from '@/lib/when';
 import type { Entry, MnemoItem } from '@/types/mnemo';
+import { DAY_MS } from '@/utils/time';
 
 // The weekly review: one look back at the week and ahead at the next,
 // worked out on the phone from the notes. What moved, what's due, which
 // steps are open, which threads went quiet, and what the numbers added up to.
 
-const DAY_MS = 24 * 60 * 60 * 1000;
 /** Quiet this long and a thread is worth a decision: keep going, pause, or wrap up. */
 export const QUIET_DAYS = 7;
 /** Past this it's not "quiet", it's forgotten; the review stops listing it. */

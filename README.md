@@ -38,7 +38,8 @@ standing in a shop. Mnemo optimises for two moments:
 - ⚡ **Capture from anywhere** — home-screen widget, quick actions, share intents
   from other apps.
 - 🔒 **Encrypted backups** — passphrase-protected, photos included, nothing uploaded
-  anywhere.
+  anywhere. On Android, a daily automatic backup into a folder you choose, and a
+  nudge on Home when your notes haven't been backed up in a while.
 
 ## Privacy
 

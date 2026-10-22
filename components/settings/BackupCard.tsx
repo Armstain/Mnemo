@@ -3,25 +3,27 @@ import { ActivityIndicator, Platform, View } from 'react-native';
 import { TextInput } from '@/components/ui/TextInput';
 import { Text } from '@/components/ui/Text';
 import * as Haptics from 'expo-haptics';
-import * as Crypto from 'expo-crypto';
 import * as DocumentPicker from 'expo-document-picker';
 import * as Sharing from 'expo-sharing';
 import { File, Paths } from 'expo-file-system';
+import { formatDistanceToNowStrict } from 'date-fns';
 
 import { Button } from '@/components/ui/Button';
 import { Icon } from '@/components/ui/Icon';
 import { useMnemoStore } from '@/hooks/use-mnemo-store';
 import { useThemeColors } from '@/hooks/use-theme';
 import {
-  BackupError,
-  MIN_PASSPHRASE,
-  backupFileName,
-  openBackup,
-  sealBackup,
-  type BackupPayload,
-} from '@/lib/backup';
+  autoBackupAvailable,
+  autoBackupOn,
+  noteManualBackup,
+  runAutoBackup,
+  sealWithImages,
+  turnOffAutoBackup,
+  turnOnAutoBackup,
+  useBackupState,
+} from '@/lib/auto-backup';
+import { BackupError, MIN_PASSPHRASE, backupFileName, openBackup, type BackupPayload } from '@/lib/backup';
 import { noFocusRing } from '@/utils/web';
-import { imageBase64, imagesOf } from '@/lib/images';
 
 type Step =
   | { kind: 'idle' }
@@ -61,6 +63,24 @@ async function readPicked(asset: DocumentPicker.DocumentPickerAsset): Promise<st
   return new File(asset.uri).text();
 }
 
+function PassphraseField({ value, onChange, placeholder, label }: { value: string; onChange: (v: string) => void; placeholder: string; label: string }) {
+  const colors = useThemeColors();
+  return (
+    <TextInput
+      value={value}
+      onChangeText={onChange}
+      placeholder={placeholder}
+      placeholderTextColor={colors.fgTertiary}
+      secureTextEntry
+      autoCapitalize="none"
+      autoCorrect={false}
+      accessibilityLabel={label}
+      className="font-sans text-body rounded-md px-4 h-12"
+      style={[{ color: colors.fg, backgroundColor: colors.surfaceLowest, borderWidth: 1, borderColor: colors.border }, noFocusRing]}
+    />
+  );
+}
+
 /**
  * Settings → Backup. Export seals every thread into one `.mnemo` file with a
  * passphrase; import opens one and merges it in, never deleting anything.
@@ -89,15 +109,9 @@ export function BackupCard() {
     const payload = exportBackup();
     setStep({ kind: 'working', label: 'Encrypting…' });
     try {
-      // Photos go in too, so a restored note is whole.
-      const images: Record<string, string> = {};
-      for (const block of imagesOf(payload.entries)) {
-        const data = block.file ? await imageBase64(block) : undefined;
-        if (block.file && data) images[block.file] = data;
-      }
-      if (Object.keys(images).length > 0) payload.images = images;
-      const text = await sealBackup(payload, pass, Crypto.getRandomBytes);
+      const text = await sealWithImages(payload, pass);
       await deliver(backupFileName(), text);
+      noteManualBackup();
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       setPass('');
       setConfirm('');
@@ -156,18 +170,7 @@ export function BackupCard() {
   };
 
   const input = (value: string, onChange: (v: string) => void, placeholder: string, label: string) => (
-    <TextInput
-      value={value}
-      onChangeText={onChange}
-      placeholder={placeholder}
-      placeholderTextColor={colors.fgTertiary}
-      secureTextEntry
-      autoCapitalize="none"
-      autoCorrect={false}
-      accessibilityLabel={label}
-      className="font-sans text-body rounded-md px-4 h-12"
-      style={[{ color: colors.fg, backgroundColor: colors.surfaceLowest, borderWidth: 1, borderColor: colors.border }, noFocusRing]}
-    />
+    <PassphraseField value={value} onChange={onChange} placeholder={placeholder} label={label} />
   );
 
   return (
@@ -295,6 +298,160 @@ export function BackupCard() {
           </View>
           <Button variant="quiet" size="sm" onPress={reset}>
             Done
+          </Button>
+        </View>
+      )}
+    </View>
+  );
+}
+
+type AutoStep = { kind: 'idle' } | { kind: 'setup' } | { kind: 'working'; label: string };
+
+/**
+ * Settings → Backup, on Android: a sealed backup written once a day into a
+ * folder the person picks (lib/auto-backup.ts), with how it's going.
+ */
+export function AutoBackupCard() {
+  const colors = useThemeColors();
+  const { exportBackup } = useMnemoStore();
+  const backup = useBackupState();
+  const [step, setStep] = useState<AutoStep>({ kind: 'idle' });
+  const [pass, setPass] = useState('');
+  const [confirm, setConfirm] = useState('');
+  const [setupError, setSetupError] = useState('');
+  const on = autoBackupOn(backup);
+
+  if (!autoBackupAvailable) return null;
+
+  const backUpNow = async (label: string) => {
+    setStep({ kind: 'working', label });
+    const result = await runAutoBackup(exportBackup(), { force: true });
+    Haptics.notificationAsync(
+      result === 'failed' ? Haptics.NotificationFeedbackType.Error : Haptics.NotificationFeedbackType.Success,
+    );
+    setStep({ kind: 'idle' });
+  };
+
+  const chooseFolder = async () => {
+    setSetupError('');
+    let picked: boolean;
+    try {
+      picked = await turnOnAutoBackup(pass);
+    } catch {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      setSetupError("The passphrase couldn't be kept on this phone, so automatic backups are still off.");
+      return;
+    }
+    if (!picked) return;
+    setPass('');
+    setConfirm('');
+    await backUpNow('Saving the first backup…');
+  };
+
+  return (
+    <View className="bg-surface rounded-lg p-5 border border-border/50">
+      <View className="flex-row items-center mb-2">
+        <Icon name="repeat" size={15} color={colors.accent} />
+        <Text className="font-sans-semi text-sm text-fg ml-2">Automatic backup</Text>
+      </View>
+
+      {!on && step.kind === 'idle' && (
+        <>
+          <Text className="font-sans text-sm text-fg-secondary leading-relaxed mb-4">
+            Once a day, when something changed, Mnemo saves a locked backup into a folder you choose. It
+            keeps the last week, and one from each month before that.
+          </Text>
+          <Button variant="primary" size="sm" icon="check" onPress={() => setStep({ kind: 'setup' })}>
+            Turn on
+          </Button>
+        </>
+      )}
+
+      {step.kind === 'setup' && (
+        <View className="gap-2.5">
+          <PassphraseField value={pass} onChange={setPass} placeholder={`Passphrase (at least ${MIN_PASSPHRASE} characters)`} label="Passphrase" />
+          <PassphraseField value={confirm} onChange={setConfirm} placeholder="Type it again" label="Confirm passphrase" />
+          <Text className="font-sans text-sm" style={{ color: colors.fgTertiary }}>
+            Write the passphrase down: a new phone needs it to open these backups. Next, pick a folder. One
+            that syncs somewhere else keeps your notes safe even if this phone is lost.
+          </Text>
+          {setupError ? (
+            <Text className="font-sans text-sm" style={{ color: colors.error }}>
+              {setupError}
+            </Text>
+          ) : null}
+          <View className="flex-row gap-2 mt-1">
+            <Button
+              variant="ghost"
+              size="sm"
+              onPress={() => {
+                setPass('');
+                setConfirm('');
+                setStep({ kind: 'idle' });
+              }}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="primary"
+              size="sm"
+              icon="arrowRight"
+              className="flex-1"
+              disabled={pass.length < MIN_PASSPHRASE || pass !== confirm}
+              onPress={chooseFolder}
+            >
+              {pass && confirm && pass !== confirm ? "Passphrases don't match" : 'Choose folder'}
+            </Button>
+          </View>
+        </View>
+      )}
+
+      {step.kind === 'working' && (
+        <View className="flex-row items-center py-2">
+          <ActivityIndicator size="small" color={colors.accent} />
+          <Text className="font-sans-medium text-sm ml-3" style={{ color: colors.fgSecondary }}>
+            {step.label}
+          </Text>
+        </View>
+      )}
+
+      {on && step.kind === 'idle' && (
+        <View className="gap-3">
+          <View>
+            <Text className="font-sans text-sm text-fg-secondary leading-relaxed">
+              Every day, to {backup.folderName ? `“${backup.folderName}”` : 'the folder you chose'}.
+            </Text>
+            <Text className="font-sans text-sm text-fg-secondary leading-relaxed">
+              {backup.lastAt
+                ? `Last backup ${formatDistanceToNowStrict(backup.lastAt, { addSuffix: true })}.`
+                : 'No backup saved yet.'}
+            </Text>
+          </View>
+          {backup.lastError ? (
+            <View className="flex-row items-start">
+              <Icon name="x" size={16} color={colors.error} stroke={2.4} />
+              <Text className="flex-1 font-sans text-sm ml-2" style={{ color: colors.error }}>
+                {backup.lastError}
+              </Text>
+            </View>
+          ) : null}
+          <View className="flex-row gap-2">
+            <Button variant="primary" size="sm" icon="archive" className="flex-1" onPress={() => backUpNow('Saving a backup…')}>
+              Back up now
+            </Button>
+            <Button variant="quiet" size="sm" className="flex-1" onPress={() => setStep({ kind: 'setup' })}>
+              Change folder
+            </Button>
+          </View>
+          <Button
+            variant="ghost"
+            size="sm"
+            onPress={() => {
+              Haptics.selectionAsync();
+              turnOffAutoBackup();
+            }}
+          >
+            Turn off (files already saved stay)
           </Button>
         </View>
       )}

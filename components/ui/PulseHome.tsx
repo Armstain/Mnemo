@@ -7,6 +7,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Card } from '@/components/ui/Card';
 import { ReminderSetupPrompt } from '@/components/ReminderSetupPrompt';
+import { BackupPrompt } from '@/components/BackupPrompt';
 import { Button, IconButton } from '@/components/ui/Button';
 import { Icon, type IconName } from '@/components/ui/Icon';
 import { Eyebrow } from '@/components/ui/Eyebrow';
@@ -18,12 +19,11 @@ import { useMnemoStore } from '@/hooks/use-mnemo-store';
 import { useThemeColors } from '@/hooks/use-theme';
 import { useAiProblem, type AiProblem } from '@/lib/ai-mode';
 import { usePreferences } from '@/lib/preferences';
-import { formatCompactDistance } from '@/utils/time';
+import { formatCompactDistance, DAY_MS } from '@/utils/time';
 import { CATEGORY_LIST, useCategories } from '@/utils/categories';
 import { useEnter } from '@/utils/motion';
 import type { MnemoItem } from '@/types/mnemo';
 
-const DAY_MS = 24 * 60 * 60 * 1000;
 /** How far ahead "Coming up" looks for due dates. */
 const COMING_UP_DAYS = 7;
 /** Threads after the resume card, in the same order, under "Up next". */
@@ -35,7 +35,7 @@ const NUMBER_WORDS = ['Zero', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Sev
 /** Small counts read better spelled out in a sentence. */
 const numberWord = (n: number) => NUMBER_WORDS[n] ?? String(n);
 
-const openItem = (id: string) => router.push(`/(tabs)/context?id=${id}` as any);
+const openItem = (id: string) => router.push(`/(tabs)/context?id=${id}`);
 
 /** What the resume card's chip says: why this thread is first. */
 function reasonChip(reason: NonNullable<ResumeReason>, repeats: boolean): { icon: IconName; label: string } {
@@ -215,7 +215,7 @@ export function PulseHome() {
           <Text className="font-sans-medium text-sm" style={{ color: colors.fgTertiary }}>
             {today}
           </Text>
-          <IconButton icon="settings" label="Open settings" variant="bare" onPress={() => router.push('/modal' as any)} />
+          <IconButton icon="settings" label="Open settings" variant="bare" onPress={() => router.push('/modal')} />
         </View>
         <Text
           className="font-display leading-tight"
@@ -232,7 +232,7 @@ export function PulseHome() {
             </Text>
             {items.length > 0 ? (
               <Pressable
-                onPress={() => router.push('/review' as any)}
+                onPress={() => router.push('/review')}
                 accessibilityRole="button"
                 accessibilityLabel="Your week"
                 hitSlop={8}
@@ -253,7 +253,7 @@ export function PulseHome() {
             style={{ backgroundColor: colors.accentSoft, maxWidth: '100%' }}
           >
             <Pressable
-              onPress={() => router.push(`/(tabs)/context?id=${focusThread.id}` as any)}
+              onPress={() => router.push(`/(tabs)/context?id=${focusThread.id}`)}
               accessibilityRole="button"
               accessibilityLabel={`Quick captures go to ${focusThread.title}. Open it.`}
               className="flex-row items-center shrink h-10 active:opacity-70"
@@ -279,10 +279,12 @@ export function PulseHome() {
         ) : null}
         {/* Strict phones: a one-time nudge to check reminders will arrive. */}
         <ReminderSetupPrompt />
+        {/* No backup in a while, or automatic backups stopped working. */}
+        <BackupPrompt />
         {/* Gemini stopped answering for a reason the person can fix. */}
         {aiProblem ? (
           <Pressable
-            onPress={() => router.push('/modal' as any)}
+            onPress={() => router.push('/modal')}
             accessibilityRole="button"
             accessibilityLabel={`${AI_PROBLEM_TEXT[aiProblem]} Open settings.`}
             className="flex-row items-center rounded-lg px-4 py-3 mt-4 active:opacity-80"
@@ -315,10 +317,10 @@ export function PulseHome() {
                 Capture a thought with the + button, or hold it to start recording straight away. It lands here, ready to pick back up.
               </Text>
               <View className="flex-row gap-2">
-                <Button variant="primary" icon="mic" className="flex-1" onPress={() => router.push('/dump' as any)}>
+                <Button variant="primary" icon="mic" className="flex-1" onPress={() => router.push('/dump')}>
                   Record
                 </Button>
-                <Button variant="quiet" icon="pencil" className="flex-1" onPress={() => router.push('/capture' as any)}>
+                <Button variant="quiet" icon="pencil" className="flex-1" onPress={() => router.push('/capture')}>
                   Write
                 </Button>
               </View>
@@ -331,7 +333,7 @@ export function PulseHome() {
           <MotiView {...enter.rise(2)} className="mb-7">
             <Eyebrow
               action={openCount > 1 + upNext.length ? `See all ${openCount}` : undefined}
-              onAction={() => router.push('/(tabs)/library' as any)}
+              onAction={() => router.push('/(tabs)/library')}
             >
               Up next
             </Eyebrow>
@@ -356,7 +358,7 @@ export function PulseHome() {
           <MotiView {...enter.rise(3)} className="mb-8">
             <Eyebrow
               action={comingUp.length > COMING_UP_LIMIT ? `All ${comingUp.length}` : undefined}
-              onAction={() => router.push('/(tabs)/library' as any)}
+              onAction={() => router.push('/(tabs)/library')}
             >
               Coming up
             </Eyebrow>
@@ -382,7 +384,7 @@ export function PulseHome() {
         {/* Browse — only categories that hold something */}
         {categoryCounts.length > 0 && (
           <MotiView {...enter.rise(4)}>
-            <Eyebrow action="Library" onAction={() => router.push('/(tabs)/library' as any)}>
+            <Eyebrow action="Library" onAction={() => router.push('/(tabs)/library')}>
               Browse
             </Eyebrow>
             <View className="flex-row flex-wrap gap-2">
@@ -392,7 +394,7 @@ export function PulseHome() {
                 return (
                   <Pressable
                     key={key}
-                    onPress={() => router.push(`/(tabs)/library?category=${key}` as any)}
+                    onPress={() => router.push(`/(tabs)/library?category=${key}`)}
                     accessibilityRole="button"
                     accessibilityLabel={`${config.label}, ${count} ${count === 1 ? 'note' : 'notes'}`}
                     className="flex-row items-center rounded-full pl-2 pr-3.5 h-10 active:opacity-70"

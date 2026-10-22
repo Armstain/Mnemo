@@ -4,6 +4,7 @@ import { entryText, newestFirst } from '@/lib/threads';
 import { trackedMetrics } from '@/lib/measures';
 import type { ThreadCandidate, ThreadMatch } from '@/lib/gemini';
 import type { Entry, MnemoItem } from '@/types/mnemo';
+import { DAY_MS } from '@/utils/time';
 
 // Auto-filing: which thread a quick capture belongs to. See
 // docs/specs/threads.md §3. The model proposes, the device checks.
@@ -15,7 +16,6 @@ export const SUGGEST_CONFIDENCE = 0.5;
 /** A focused thread only lets go of a capture the model is this sure about. */
 const FOCUS_RELEASE_CONFIDENCE = 0.8;
 
-const DAY_MS = 24 * 60 * 60 * 1000;
 const MAX_CANDIDATES = 12;
 const RECENT_MS = 14 * DAY_MS;
 const SNIPPET_CHARS = 140;

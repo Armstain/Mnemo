@@ -9,14 +9,18 @@ export function confirmAction(options: {
   message: string;
   confirmLabel: string;
   onConfirm: () => void;
+  /** For a question rather than a warning: names the "no", and it isn't red. */
+  cancelLabel?: string;
+  onCancel?: () => void;
 }): void {
-  const { title, message, confirmLabel, onConfirm } = options;
+  const { title, message, confirmLabel, onConfirm, cancelLabel, onCancel } = options;
   if (Platform.OS === 'web') {
     if (typeof window !== 'undefined' && window.confirm(`${title}\n\n${message}`)) onConfirm();
+    else onCancel?.();
     return;
   }
   Alert.alert(title, message, [
-    { text: 'Cancel', style: 'cancel' },
-    { text: confirmLabel, style: 'destructive', onPress: onConfirm },
+    { text: cancelLabel ?? 'Cancel', style: 'cancel', onPress: onCancel },
+    { text: confirmLabel, style: cancelLabel ? 'default' : 'destructive', onPress: onConfirm },
   ]);
 }

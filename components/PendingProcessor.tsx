@@ -1,9 +1,10 @@
 import { useEffect, useRef } from 'react';
 import { AppState } from 'react-native';
 import { useMnemoStore } from '@/hooks/use-mnemo-store';
-import { finishOnDevice, resolvePendingEntry } from '@/lib/capture';
+import { finishOnDevice, resolvePendingEntry, retryWaitingNow } from '@/lib/capture';
 import { deleteUnusedAudio } from '@/lib/voice-audio';
-import { usePreferences } from '@/lib/preferences';
+import { getPreferences, setPreferences, usePreferences } from '@/lib/preferences';
+import { confirmAction } from '@/utils/confirm';
 import { onApiKeyChanged } from '@/lib/api-key';
 import { aiEnabled, appReady } from '@/lib/ai-mode';
 import { embedBatch, embeddableText, embeddingModel, toBlob, EMBEDDING_DIMS } from '@/lib/embeddings';
@@ -16,14 +17,52 @@ import type { MnemoItem } from '@/types/mnemo';
 // next launch, so there's no need to retry within the same sweep.
 const BACKFILL_BATCH_SIZE = 20;
 
+/** Made before Gemini was turned on, and not agreed to be sent since. */
+function earlier(item: MnemoItem): boolean {
+  const before = getPreferences().earlierNotesBefore;
+  return before !== undefined && item.createdAt < before;
+}
+
+async function unembeddedOf(items: MnemoItem[]): Promise<MnemoItem[]> {
+  const embeddedIds = await getEmbeddedItemIds(await embeddingModel());
+  // Only structured (non-pending) items have stable enough content to
+  // embed — a pending item's text is about to be rewritten once its own
+  // structuring finishes, which will embed it then.
+  return items.filter((item) => !item.pending && !embeddedIds.has(item.id));
+}
+
+/**
+ * Once after Gemini is turned on: notes written before stay on the phone
+ * (keyword search only) unless the person says to make them searchable by
+ * meaning, which sends their text to Google. Not asked when there are none.
+ */
+async function askAboutEarlierNotes(items: MnemoItem[], onYes: () => void): Promise<void> {
+  const prefs = getPreferences();
+  if (prefs.earlierNotesBefore === undefined || prefs.earlierNotesAsked) return;
+  const count = (await unembeddedOf(items)).filter(earlier).length;
+  if (count === 0) {
+    setPreferences({ earlierNotesAsked: true });
+    return;
+  }
+  confirmAction({
+    title: 'Your earlier notes',
+    message:
+      `${count} ${count === 1 ? 'thread was' : 'threads were'} written before Gemini was on, and stayed on this phone. ` +
+      'Make them searchable by meaning too? Their text is sent to Google to do it. Either way, they keep their titles and stay where they are.',
+    confirmLabel: 'Make searchable',
+    cancelLabel: 'Keep on phone',
+    onConfirm: () => {
+      setPreferences({ earlierNotesAsked: true, earlierNotesBefore: undefined });
+      onYes();
+    },
+    onCancel: () => setPreferences({ earlierNotesAsked: true }),
+  });
+}
+
 async function backfillEmbeddings(items: MnemoItem[]): Promise<void> {
   try {
     const model = await embeddingModel();
-    const embeddedIds = await getEmbeddedItemIds(model);
-    // Only structured (non-pending) items have stable enough content to
-    // embed — a pending item's text is about to be rewritten once its own
-    // structuring finishes, which will embed it then.
-    const unembedded = items.filter((item) => !item.pending && !embeddedIds.has(item.id));
+    const unembedded = (await unembeddedOf(items)).filter((item) => !earlier(item));
 
     for (let i = 0; i < unembedded.length; i += BACKFILL_BATCH_SIZE) {
       const batch = unembedded.slice(i, i + BACKFILL_BATCH_SIZE);
@@ -59,7 +98,8 @@ const SWEEP_EVERY_MS = 60_000;
  *    comes back to the foreground, and every minute while any wait (each
  *    note backs off on its own after a failure; see resolvePendingEntry).
  * 2. Offline, finishes any waiting note with the phone's own reading.
- * 3. Backfills embeddings for notes that don't have one yet.
+ * 3. Backfills embeddings for notes that don't have one yet, except
+ *    notes written before Gemini was turned on, until the person agrees.
  */
 export function PendingProcessor() {
   const store = useMnemoStore();
@@ -93,6 +133,7 @@ export function PendingProcessor() {
       if (!backfilled) {
         backfilled = true;
         backfillEmbeddings(items);
+        askAboutEarlierNotes(items, () => backfillEmbeddings(storeRef.current.snapshot().items));
       }
     };
 
@@ -105,7 +146,10 @@ export function PendingProcessor() {
       if (storeRef.current.snapshot().entries.some((e) => e.pending)) sweep();
     }, SWEEP_EVERY_MS);
     const subscription = AppState.addEventListener('change', (state) => {
-      if (state === 'active') sweep();
+      if (state !== 'active') return;
+      // Back in the app: try every waiting note now, not after its back-off.
+      retryWaitingNow();
+      sweep();
     });
     // A new key: try the waiting notes right away (after it's stored).
     const offKey = onApiKeyChanged(() => setTimeout(sweep, 0));

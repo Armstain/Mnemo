@@ -6,7 +6,7 @@ import {
   type ProcessedCapture,
 } from '@/lib/gemini';
 import { aiEnabled, setAiProblem } from '@/lib/ai-mode';
-import { classifyAiError, onApiKeyChanged } from '@/lib/api-key';
+import { classifyAiError, isNoConnection, onApiKeyChanged } from '@/lib/api-key';
 import { logError } from '@/lib/errors';
 import {
   embedText,
@@ -265,7 +265,6 @@ function suggestByKeywords(saved: { threadId: string; entry: Entry }, text: stri
   });
 }
 
-/** 3/4 is March 4 on phones set to US English, 3 April elsewhere. */
 /** The phone's currency, for amounts said without one ("salary 45000"). */
 const REGION_CURRENCY: Record<string, string> = { BD: 'BDT', IN: 'INR', US: 'USD', GB: 'GBP', IE: 'EUR', DE: 'EUR', FR: 'EUR', ES: 'EUR', IT: 'EUR', NL: 'EUR', PT: 'EUR', BE: 'EUR', AT: 'EUR', FI: 'EUR', GR: 'EUR' };
 function localCurrency(): string | undefined {
@@ -279,6 +278,7 @@ function localCurrency(): string | undefined {
   }
 }
 
+/** 3/4 is March 4 on phones set to US English, 3 April elsewhere. */
 function monthFirst(): boolean {
   try {
     return /^en-US$/i.test(Intl.DateTimeFormat().resolvedOptions().locale);
@@ -288,9 +288,9 @@ function monthFirst(): boolean {
 }
 
 /**
- * Saves what was said in a voice note (transcribed live on the phone; no
- * audio is kept). With a `threadId` it joins that thread; otherwise it
- * starts one.
+ * Saves a voice note: the recording, for Gemini to write out (deleted once
+ * it has), or offline the words the phone heard. With a `threadId` it joins
+ * that thread; otherwise it starts one.
  */
 export function saveVoiceNote(params: Omit<NoteInput, 'checklistItems' | 'leftOff' | 'nextStep' | 'dueDate'>) {
   return saveNote('voice', params);
@@ -707,6 +707,12 @@ export async function resolvePendingEntry(entry: PendingEntry, store: CaptureSto
     setAiProblem(null);
   } catch (e) {
     if (e instanceof AiOffError) return;
+    // No connection: nothing reached Gemini, so no reason to wait longer
+    // each time. The next sweep (within a minute) tries again.
+    if (isNoConnection(e)) {
+      attempts.delete(entry.id);
+      return;
+    }
     const count = (previous?.count ?? 0) + 1;
     attempts.set(entry.id, { count, nextAt: Date.now() + BACKOFF_MS[Math.min(count, BACKOFF_MS.length) - 1] });
     const problem = classifyAiError(e);
@@ -715,5 +721,10 @@ export async function resolvePendingEntry(entry: PendingEntry, store: CaptureSto
   }
 }
 
+/** Forgets past failures, so the next sweep tries every waiting note. */
+export function retryWaitingNow(): void {
+  attempts.clear();
+}
+
 // A new key: forget past failures, so the next sweep tries everything.
-onApiKeyChanged(() => attempts.clear());
+onApiKeyChanged(retryWaitingNow);
