@@ -13,7 +13,7 @@ const MODES: { value: Exclude<AiMode, 'unset'>; icon: IconName; title: string; b
     value: 'gemini',
     icon: 'sparkles',
     title: 'Smart, with Gemini',
-    body: 'Your notes are tidied up, numbers and next steps found, and each note filed into the right thread. Each new note (and any photo on it) goes to Google with your key, along with the titles of your recent threads so it can be filed.',
+    body: 'Your notes are tidied up, numbers and next steps found, and each note filed into the right thread. Each new note (and any photo on it) goes to Google with your key, along with the titles of your recent threads so it can be filed. Notes you wrote offline stay as they are.',
   },
   {
     value: 'offline',

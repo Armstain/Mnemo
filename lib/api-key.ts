@@ -87,6 +87,14 @@ export function classifyAiError(err: unknown): KeyProblem {
   return 'other';
 }
 
+/**
+ * The request never left the phone (no connection), so it cost nothing and
+ * can be tried again soon. A timeout isn't this: the call may have reached Gemini.
+ */
+export function isNoConnection(err: unknown): boolean {
+  return /Network request failed|Failed to fetch|NetworkError|ENOTFOUND/i.test(String((err as { message?: string })?.message ?? err));
+}
+
 export const KEY_PROBLEM_TEXT: Record<KeyProblem, string> = {
   invalid: "Gemini didn't accept this key. Check you copied all of it.",
   quota: "This key's free daily limit is used up. Notes are saved and will be tidied up later.",

@@ -477,7 +477,7 @@ const PRIVACY_FACTS = [
   {
     title: 'With Gemini on',
     body:
-      'Sent to Google with your key: the text of each new note, the recording of a voice note, and any photo on it; the title and description of a page you saved a link to, as your phone read them, so the note can be understood; the titles and a line from your recently active threads, so it can file the note; your question and the notes that best match it, when you ask; note text for meaning search, and the notes of a thread when you ask to organise them. On a free key, Google may use what you send to improve its products, and people may review it. Offline, none of this happens.',
+      'Sent to Google with your key: the text of each new note, the recording of a voice note, and any photo on it; the title and description of a page you saved a link to, as your phone read them, so the note can be understood; the titles and a line from your recently active threads, so it can file the note; your question and the notes that best match it, when you ask; note text for meaning search (notes written before you turned Gemini on only if you say so), and the notes of a thread when you ask to organise them. On a free key, Google may use what you send to improve its products, and people may review it. Offline, none of this happens.',
   },
   {
     title: 'Voice',
