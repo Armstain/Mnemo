@@ -33,6 +33,13 @@ describe('finding', () => {
     expect(bm25Scored('ডাল', docs).map((r) => r.doc.id)).toEqual(['z']);
   });
 
+  it('a Bangla word ending in র finds its forms, and they find it', () => {
+    const doc = (id: string, title: string) => ({ id, title, content: '', tags: [], category: 'general', updatedAt: 1 }) as never;
+    const docs = [doc('a', 'ডাক্তারকে ফোন করতে হবে'), doc('b', 'ডাক্তারের রিপোর্ট'), doc('c', 'বাজারের লিস্ট')];
+    expect(bm25Scored('ডাক্তার', docs).map((r) => r.doc.id).sort()).toEqual(['a', 'b']);
+    expect(bm25Scored('ডাক্তারের', [doc('d', 'ডাক্তার দেখানো')]).map((r) => r.doc.id)).toEqual(['d']);
+  });
+
   it('inside one thread', () => {
     const e = [{ id: 'q' }, { id: 'r' }] as never[];
     const text = (x: { id: string }) => (x.id === 'r' ? 'CNG fare to Sylhet' : 'lunch');

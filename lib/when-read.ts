@@ -530,7 +530,8 @@ export function withoutWhen(text: string): string {
     .replace(/\s+([,;:])/g, '$1')
     .replace(/\s{2,}/g, ' ')
     .replace(/(?:\s+(?:at|on|by|in|for|around|before|sharp|to|from|is|are|এ|e))+\s*$/i, '')
-    .replace(/^\s*(?:at|on|by|in|এ|e)\s+/i, '')
+    // …and what "aj ke", "shukrobar er moddhe" leave once the day is out.
+    .replace(/^\s*(?:at|on|by|in|এ|e|ke|er(?:\s+moddhe)?|এর(?:\s+মধ্যে)?)\s+/i, '')
     .trim();
   return out.length > 0 && /[^\s,.;:!?()'"-]/.test(out) ? out : text.trim();
 }

@@ -24,4 +24,9 @@ describe('filing', () => {
     expect(keywordMatch({ text: 'The tea garden in Sylhet was beautiful', threads })?.threadId).toBe('s');
     expect(keywordMatch({ text: 'sylhet hotel bill 3000 taka', threads })).toBeNull();
   });
+
+  it('offline: a Bangla note finds the thread named by the plain word', () => {
+    const threads = [thread('d', 'ডাক্তার দেখানো'), thread('b', 'Office budget')];
+    expect(keywordMatch({ text: 'ডাক্তারকে ফোন করতে হবে', threads })?.threadId).toBe('d');
+  });
 });

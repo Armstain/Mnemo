@@ -148,3 +148,41 @@ describe('a time counted from now', () => {
     expect(understand('I’ll send the quote tomorrow', { now: seven }).nextStep).toBe('Send the quote');
   });
 });
+
+describe('said without punctuation', () => {
+  it('reads one thought per clause: title, step, left off', () => {
+    const r = read('so i was thinking about the passport renewal i need to get the photos done and then submit the form at the office');
+    expect(r.title).toBe('Passport renewal');
+    expect(r.nextStep).toBe('Get the photos done');
+
+    const l = read('talked to the landlord about the rent he said it is going up soon so we need to start looking at other flats');
+    expect(l.title).toBe('Talked to the landlord about the rent');
+    expect(l.nextStep).toBe('Start looking at other flats');
+
+    const b = read('just finished chapter 4 of the networking book next is the tcp congestion section');
+    expect(b.leftOff).toBe('Just finished chapter 4 of the networking book');
+    expect(b.nextStep).toBe('The tcp congestion section');
+  });
+
+  it('"went well" and "ill" are not plans; a lone i is I', () => {
+    const r = read('meeting with rahim went well and i think the client was happy with what we showed them overall');
+    expect(r.nextStep).toBeUndefined();
+    expect(r.title).toBe('Meeting with rahim went well and I think the…');
+  });
+
+  it('Bangla and Banglish end a clause on the verb, not before "na"', () => {
+    const bn = read('আজকে ডাক্তারের কাছে গিয়েছিলাম রিপোর্ট আগামী সপ্তাহে দিবে তারপর আবার যেতে হবে');
+    expect(bn.title).toBe('ডাক্তারের কাছে গিয়েছিলাম');
+    const bl = read('aj ke office e meeting chilo rahim bhai budget chaise shukrobar er moddhe dite hobe');
+    expect(bl.title).toBe('Office e meeting chilo');
+    // "dite hobe" alone says nothing: the clause before says what.
+    expect(bl.nextStep).toBe('Rahim bhai budget chaise, dite hobe');
+    expect(at(bl.due)).toBe('Fri Oct 16 2026 09:00');
+    expect(read('ami kal office e jabo na karon shorir ta bhalo nei doctor er kache jete hobe').title).toBe('Ami office e jabo na');
+  });
+
+  it('punctuated or short text is read as before', () => {
+    expect(read('Passport: photos done. Need to book the appointment slot online.').title).toBe('Passport');
+    expect(read('call amma about the wedding gifts').title).toBe('Call amma about the wedding gifts');
+  });
+});
