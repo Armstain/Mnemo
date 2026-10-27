@@ -16,12 +16,13 @@ import { useThemeColors, useThemeName } from '@/hooks/use-theme';
 import { useReduceMotion } from '@/hooks/use-accessibility-motion';
 import { closeCapture, useCaptureActive } from '@/hooks/use-capture-active';
 import { Icon, type IconName } from '@/components/ui/Icon';
+import { Text } from '@/components/ui/Text';
 
 // Two tabs either side of the capture button (ActionCluster), which sits in
 // a notch in the middle of the bar. Search lives inside Library.
 const TABS = [
   { name: 'Home', icon: 'home' as IconName, route: '/' },
-  { name: 'Library', icon: 'layers' as IconName, route: '/(tabs)/library' },
+  { name: 'Library', icon: 'library' as IconName, route: '/(tabs)/library' },
 ] as const;
 
 // ─── Geometry ───────────────────────────────────────────────────
@@ -121,8 +122,7 @@ export function activeTabIndex(pathname: string): number {
 
 const DOT = 6;
 const DOT_STRETCH = 14;
-const ICON_Y = NAV_BAR_HEIGHT / 2 - 5;
-const DOT_Y = NAV_BAR_HEIGHT - 15;
+const DOT_Y = NAV_BAR_HEIGHT - 12;
 const TOUCH = 64;
 
 /**
@@ -156,9 +156,8 @@ export function BottomFade() {
 
 /**
  * FloatingTabBar: a floating bar with a notch the capture button sits in.
- * The active tab is its accent colour and a dot underneath; the dot is one
- * element that springs between tabs (stretching as it travels), and slides
- * under the capture button while that's in use.
+ * Each tab is an icon over its name, in the accent colour when it's the one
+ * you're on. A dot slides under the capture button while that's in use.
  */
 export function FloatingTabBar() {
   const insets = useSafeAreaInsets();
@@ -191,7 +190,10 @@ export function FloatingTabBar() {
     );
   }, [dotTarget, width]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // The label's colour marks the tab you're on; the dot shows only while
+  // the capture button is in use, slid under it.
   const dotStyle = useAnimatedStyle(() => ({
+    opacity: withTiming(captureActive ? 1 : 0, { duration: 160 }),
     width: dotW.value,
     transform: [{ translateX: dotX.value - dotW.value / 2 }],
   }));
@@ -299,15 +301,22 @@ function TabButton({
       accessibilityRole="button"
       accessibilityState={{ selected: active }}
       accessibilityLabel={name}
-      style={[styles.touch, { left: x - TOUCH / 2, top: ICON_Y - TOUCH / 2 }]}
+      style={[styles.touch, { left: x - TOUCH / 2, top: (NAV_BAR_HEIGHT - TOUCH) / 2 }]}
     >
-      <Animated.View style={iconStyle}>
+      <Animated.View style={[styles.tab, iconStyle]}>
         <Icon
           name={icon}
           size={24}
           color={active ? colors.accent : colors.fgTertiary}
           stroke={active ? 2.2 : 1.8}
         />
+        <Text
+          className={active ? 'font-sans-semi' : 'font-sans-medium'}
+          style={[styles.label, { color: active ? colors.accent : colors.fgTertiary }]}
+          numberOfLines={1}
+        >
+          {name}
+        </Text>
       </Animated.View>
     </Pressable>
   );
@@ -336,6 +345,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  tab: { alignItems: 'center', gap: 2 },
+  label: { fontSize: 11, lineHeight: 14, letterSpacing: 0.1 },
   dot: {
     position: 'absolute',
     left: 0,

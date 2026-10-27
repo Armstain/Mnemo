@@ -2,6 +2,7 @@ import {
   Home,
   Search,
   Layers,
+  Library,
   Settings,
   Mic,
   Plus,
@@ -40,6 +41,7 @@ export type IconName =
   | 'home'
   | 'search'
   | 'layers'
+  | 'library'
   | 'settings'
   | 'mic'
   | 'plus'
@@ -82,6 +84,7 @@ const ICONS: Record<IconName, IconComponent> = {
   home: Home,
   search: Search,
   layers: Layers,
+  library: Library,
   settings: Settings,
   mic: Mic,
   plus: Plus,
