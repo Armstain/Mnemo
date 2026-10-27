@@ -3,7 +3,7 @@ import type { Category, ChecklistItem, LaterStep, Measure, Rollup } from '@/type
 import { capitalize, hostOf, nfc } from '@/utils/text';
 import { DAY_MS } from '@/utils/time';
 import { queueSteps } from '@/lib/when';
-import { isPlan, MONTH_WORDS, readWhenFull, withoutWhen, type Repeat } from '@/lib/when-read';
+import { isPlan, MONTH_WORDS, opensInPast, readWhenFull, withoutWhen, type Repeat } from '@/lib/when-read';
 
 // Reading a note on the phone, with no AI: a title, lists, links, the
 // numbers worth adding up, the next step and when it's due, a category
@@ -471,6 +471,9 @@ function splitTimed(text: string, now?: number, monthFirst?: boolean): string {
   let split = false;
   const out = sentences(text).map((s) => {
     const parts = s.split(THEN).filter(Boolean);
+    // A log of what happened keeps its verb for every day it names:
+    // "ran 3k monday, 5k wednesday" isn't a run planned for wednesday.
+    if (opensInPast(parts[0] ?? '')) return s;
     const timed = parts.filter((p) => withoutWhen(p) !== p.trim() && readWhenFull(p, now, monthFirst));
     if (timed.length < 2) return s;
     split = true;

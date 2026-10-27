@@ -444,6 +444,22 @@ const PAST_VERBS = new Set(
 const IMPERATIVE = new Set(
   'call ring text email mail message whatsapp pick pay send buy get take meet go visit submit book finish bring collect check clean wake cook fix renew return drop leave start join attend charge water feed print sign order cancel reply apply prepare study wash iron pack catch board drink eat sleep ask tell remind remember review practice practise post upload download install update backup back'.split(' '),
 );
+/** A Bangla or Banglish past-tense verb: "gelam", "করেছি", "korechilam". */
+const BN_PAST = /(^|\s)\S+(লাম|েছি|েছিলাম)(\s|$)|(^|\s)[a-z]+(lam|echi|echilam)(\s|$)/;
+
+/**
+ * Whether a sentence opens by telling what already happened: "ran 3k
+ * monday, 5k wednesday", "I met Rumi on friday", "gelam bazar". Only the
+ * leading verb counts, so "call about the signed form friday" is still a plan.
+ */
+export function opensInPast(sentence: string): boolean {
+  const t = normalizeWhen(sentence).replace(/^[-*•]\s+/, '');
+  if (PAST.test(t) || BN_PAST.test(t)) return true;
+  const ws = t.split(/[\s,.;:!?()'"]+/).filter(Boolean);
+  const verb = /^(i|we|he|she|they)$/.test(ws[0] ?? '') ? ws[1] : ws[0];
+  return !!verb && (PAST_VERBS.has(verb) || (/^[a-z]{3,}ed$/.test(verb) && !/^(need|bed|red|feed|speed|seed|shed|wed)$/.test(verb)));
+}
+
 /** Facts, not plans: "the shop opens at 10". */
 const FACT_VERBS = /\b(opens|closes|starts|ends|is|are|runs|leaves|arrives|departs)\b/;
 
@@ -454,7 +470,7 @@ const FACT_VERBS = /\b(opens|closes|starts|ends|is|are|runs|leaves|arrives|depar
  */
 export function isPlan(sentence: string, intent: boolean): boolean {
   const t = normalizeWhen(sentence).replace(/^[-*•]\s+/, '');
-  if (PAST.test(t) || /(^|\s)\S+(লাম|েছি|েছিলাম)(\s|$)|(^|\s)[a-z]+(lam|echi|echilam)(\s|$)/.test(t)) return false;
+  if (PAST.test(t) || BN_PAST.test(t)) return false;
   if (intent) return true;
   const ws = t.split(/[\s,.;:!?()'"]+/).filter(Boolean);
   // A day that can only be ahead makes it a plan whatever the verb ("booked a table for tomorrow 8pm").

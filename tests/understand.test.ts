@@ -132,6 +132,19 @@ describe('a time with no day', () => {
   it('one time is one reminder', () => {
     expect(understand('remind me to charge my watch and ear buds at 6 pm', { now: noon }).later).toEqual([]);
   });
+  it('a log of days already past is not a list of plans', () => {
+    for (const log of ['Ran 3k Monday, 5k Wednesday, 4.2k Friday', 'I walked 2k tuesday and 3k thursday']) {
+      const r = read(log);
+      expect(r.due).toBeUndefined();
+      expect(r.later).toEqual([]);
+      expect(r.nextStep).toBeUndefined();
+    }
+  });
+  it('a list of plans still splits into steps', () => {
+    const r = understand('call amma at 5 pm and email Rahim at 7 pm', { now: noon });
+    expect(r.nextStep).toBe('Call amma');
+    expect(r.later).toHaveLength(1);
+  });
 });
 
 describe('a time counted from now', () => {
