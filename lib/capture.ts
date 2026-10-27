@@ -127,7 +127,7 @@ function saveNote(source: Entry['source'], params: NoteInput): { threadId: strin
   // Gemini can read a photo too (a receipt, a whiteboard), so one alone is worth sending.
   const recorded = params.audio ?? [];
   // A recording is written out by Gemini: with AI off there's no one to.
-  const ai = aiEnabled() && (words.length > 0 || images.length > 0 || recorded.length > 0);
+  const ai = aiEnabled() && (words.length > 0 || images.length > 0 || recorded.length > 0 || (params.links?.length ?? 0) > 0);
   const audio = ai ? recorded : [];
   if (!ai) deleteAudio(recorded);
   const reading = understand(words, { known: knownMetrics(store, threadId), monthFirst: monthFirst(), currency: localCurrency() });
@@ -177,7 +177,10 @@ function saveNote(source: Entry['source'], params: NoteInput): { threadId: strin
       {
         title: (reading.title || params.title?.trim() || fallback).slice(0, 80),
         // Offline, the phone's guess beats "General"; with AI on, Gemini guesses.
-        category: category === 'general' && !ai ? reading.category ?? 'general' : category,
+        category:
+          category === 'general' && !ai
+            ? reading.category ?? (words || !params.title ? undefined : understand(params.title, { monthFirst: monthFirst() }).category) ?? 'general'
+            : category,
         tags: reading.tags,
         status: 'active',
         dueDate: due,
@@ -490,7 +493,7 @@ async function structure(entry: PendingEntry, store: CaptureStore): Promise<void
     // The recording is gone and nothing else was said.
     store.updateEntry(entry.id, { pending: false, pendingAudioUri: undefined });
     return;
-  } else if (entry.pendingRawText || photos.length > 0) {
+  } else if (entry.pendingRawText || photos.length > 0 || pages.length > 0) {
     transcript = transcript ?? (entry.pendingRawText || undefined);
     const images = (await Promise.all(photos.slice(0, MAX_PHOTOS_TO_AI).map(imageBase64))).filter(
       (b): b is string => !!b,
