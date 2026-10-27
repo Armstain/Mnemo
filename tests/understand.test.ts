@@ -118,6 +118,20 @@ describe('a time with no day', () => {
     expect(r.nextStep).toBe('Charge my watch and ear buds');
     expect(r.due).toBe(at('2026-10-14T18:00:00'));
   });
+  it('two times, two steps: the first is due, the second waits', () => {
+    const r = understand('I need to bring a file at 10 pm and send it to my friend at 11 pm', { now: noon });
+    expect(r.due).toBe(at('2026-10-14T22:00:00'));
+    expect(r.nextStep).toBe('Bring a file');
+    expect(r.later).toEqual([{ at: at('2026-10-14T23:00:00'), step: 'Send it to my friend' }]);
+  });
+  it('two times said past the first: both move to tomorrow, in the order said', () => {
+    const r = understand('I need to bring a file at 10 pm and send it to my friend at 11 pm', { now: at('2026-10-14T22:30:00') });
+    expect(r.due).toBe(at('2026-10-15T22:00:00'));
+    expect(r.later).toEqual([{ at: at('2026-10-15T23:00:00'), step: 'Send it to my friend' }]);
+  });
+  it('one time is one reminder', () => {
+    expect(understand('remind me to charge my watch and ear buds at 6 pm', { now: noon }).later).toEqual([]);
+  });
 });
 
 describe('a time counted from now', () => {

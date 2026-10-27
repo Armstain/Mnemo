@@ -36,6 +36,11 @@ export interface ThreadOverview {
   open: string[];
 }
 
+export interface LaterStep {
+  at: number;
+  step?: string;
+}
+
 export interface AISummary {
   leftOff: string;
   nextSteps: string[];
@@ -81,6 +86,8 @@ export interface MnemoItem {
 
   /** Optional due date as Unix timestamp (ms). */
   dueDate?: number;
+
+  laterSteps?: LaterStep[];
 
   createdAt: number;
   updatedAt: number;

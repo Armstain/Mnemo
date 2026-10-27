@@ -169,8 +169,12 @@ export function PulseHome() {
   const upNext = activeItems.slice(1, 1 + UP_NEXT_LIMIT);
   const shownIds = new Set([latestItem?.id, ...upNext.map((i) => i.id)]);
   const comingUp = activeItems
-    .filter((i) => !shownIds.has(i.id) && i.dueDate && i.dueDate < now + COMING_UP_DAYS * DAY_MS)
-    .sort((a, b) => (a.dueDate ?? 0) - (b.dueDate ?? 0));
+    .flatMap((i): { item: MnemoItem; at: number; step?: string }[] => [
+      ...(!shownIds.has(i.id) && i.dueDate ? [{ item: i, at: i.dueDate }] : []),
+      ...(i.laterSteps ?? []).filter((l) => l.at > now).map((l) => ({ item: i, at: l.at, step: l.step })),
+    ])
+    .filter((r) => r.at < now + COMING_UP_DAYS * DAY_MS)
+    .sort((a, b) => a.at - b.at);
   const dueSoon = (i: MnemoItem) => !!i.dueDate && i.dueDate < now + COMING_UP_DAYS * DAY_MS;
 
   const categoryCounts = CATEGORY_LIST.map((key) => ({
@@ -363,20 +367,18 @@ export function PulseHome() {
               Coming up
             </Eyebrow>
             <ThreadList>
-              {comingUp.slice(0, COMING_UP_LIMIT).map((item, i, shown) => {
-                const overdue = (item.dueDate ?? 0) < now;
-                return (
-                  <ThreadRow
-                    key={item.id}
-                    item={item}
-                    index={i}
-                    onPress={() => openItem(item.id)}
-                    trailing={formatReminder(item.dueDate!)}
-                    trailingTone={overdue ? colors.error : colors.accent}
-                    last={i === shown.length - 1}
-                  />
-                );
-              })}
+              {comingUp.slice(0, COMING_UP_LIMIT).map(({ item, at, step }, i, shown) => (
+                <ThreadRow
+                  key={`${item.id}:${at}`}
+                  item={item}
+                  index={i}
+                  onPress={() => openItem(item.id)}
+                  detail={step}
+                  trailing={formatReminder(at)}
+                  trailingTone={at < now ? colors.error : colors.accent}
+                  last={i === shown.length - 1}
+                />
+              ))}
             </ThreadList>
           </MotiView>
         )}

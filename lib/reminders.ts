@@ -1,5 +1,6 @@
 import { Notifications } from '@/lib/notifications';
 import { Platform } from 'react-native';
+import type { NotificationRequest, NotificationTriggerInput } from 'expo-notifications';
 import type { MnemoItem } from '@/types/mnemo';
 
 // Reminders pop up and make a sound (HIGH). Android never raises an existing
@@ -37,7 +38,15 @@ export async function ensureAndroidChannel(): Promise<void> {
   androidChannelReady = true;
 }
 
-type ReminderItem = Pick<MnemoItem, 'id' | 'title' | 'dueDate' | 'status' | 'repeat' | 'nextStep' | 'whereLeftOff'>;
+type ReminderItem = Pick<MnemoItem, 'id' | 'title' | 'dueDate' | 'status' | 'repeat' | 'nextStep' | 'whereLeftOff' | 'laterSteps'>;
+
+const stepPrefix = (id: string) => `${id}:step:`;
+
+async function cancelLaterSteps(id: string, scheduled?: NotificationRequest[]): Promise<void> {
+  for (const r of scheduled ?? (await Notifications.getAllScheduledNotificationsAsync())) {
+    if (r.identifier.startsWith(stepPrefix(id))) await Notifications.cancelScheduledNotificationAsync(r.identifier);
+  }
+}
 
 export const REMINDER_CATEGORY = 'reminder';
 let categoryReady = false;
@@ -68,6 +77,23 @@ function reminderBody(item: ReminderItem): string {
   return 'Time to pick this back up.';
 }
 
+const onceAt = (at: number) =>
+  ({ type: Notifications.SchedulableTriggerInputTypes.DATE, date: new Date(at), channelId: ANDROID_CHANNEL_ID }) as const;
+
+function notify(
+  identifier: string,
+  item: ReminderItem,
+  trigger: NotificationTriggerInput,
+  body = reminderBody(item),
+  data: Record<string, unknown> = { itemId: item.id },
+) {
+  return Notifications.scheduleNotificationAsync({
+    identifier,
+    content: { title: item.title, body, data, categoryIdentifier: REMINDER_CATEGORY },
+    trigger,
+  });
+}
+
 function repeatingTrigger(item: ReminderItem & { dueDate: number }) {
   const d = new Date(item.dueDate);
   const hour = d.getHours();
@@ -91,15 +117,19 @@ function repeatingTrigger(item: ReminderItem & { dueDate: number }) {
  * absorbed rather than surfaced or thrown — a reminder is a convenience on
  * top of an already-saved note, never something a mutation should block on.
  */
-export async function syncReminderForItem(item: ReminderItem): Promise<void> {
+export async function syncReminderForItem(item: ReminderItem, scheduled?: NotificationRequest[]): Promise<void> {
   try {
     // Clear any existing reminder first — covers the due date being
     // removed, moved into the past, or the item being completed/archived.
     await Notifications.cancelScheduledNotificationAsync(item.id);
+    await cancelLaterSteps(item.id, scheduled);
 
     const isActive = item.status === 'active' || item.status === 'paused';
     if (!isActive || !item.dueDate) return;
-    if (!item.repeat && item.dueDate <= Date.now()) return;
+    const now = Date.now();
+    const later = (item.laterSteps ?? []).filter((s) => s.at > now);
+    const current = !!item.repeat || item.dueDate > now;
+    if (!current && later.length === 0) return;
 
     // Channel first: Android 13+ shows no permission prompt until one exists.
     await ensureAndroidChannel();
@@ -108,18 +138,12 @@ export async function syncReminderForItem(item: ReminderItem): Promise<void> {
 
     await ensureReminderCategory();
 
-    await Notifications.scheduleNotificationAsync({
-      identifier: item.id,
-      content: {
-        title: item.title,
-        body: reminderBody(item),
-        data: { itemId: item.id },
-        categoryIdentifier: REMINDER_CATEGORY,
-      },
-      trigger: item.repeat
-        ? repeatingTrigger({ ...item, dueDate: item.dueDate })
-        : { type: Notifications.SchedulableTriggerInputTypes.DATE, date: new Date(item.dueDate), channelId: ANDROID_CHANNEL_ID },
-    });
+    if (current) {
+      await notify(item.id, item, item.repeat ? repeatingTrigger({ ...item, dueDate: item.dueDate }) : onceAt(item.dueDate));
+    }
+    for (const s of later) {
+      await notify(`${stepPrefix(item.id)}${s.at}`, item, onceAt(s.at), s.step ? `Next: ${s.step}` : undefined, { itemId: item.id, at: s.at });
+    }
   } catch {
     // See doc comment — never let this surface or block the caller.
   }
@@ -133,16 +157,7 @@ export async function remindOnce(item: ReminderItem, at: number): Promise<void> 
   try {
     await ensureAndroidChannel();
     await ensureReminderCategory();
-    await Notifications.scheduleNotificationAsync({
-      identifier: `${item.id}:again`,
-      content: {
-        title: item.title,
-        body: reminderBody(item),
-        data: { itemId: item.id },
-        categoryIdentifier: REMINDER_CATEGORY,
-      },
-      trigger: { type: Notifications.SchedulableTriggerInputTypes.DATE, date: new Date(at), channelId: ANDROID_CHANNEL_ID },
-    });
+    await notify(`${item.id}:again`, item, onceAt(at));
   } catch {
     // Best-effort, like every reminder.
   }
@@ -162,14 +177,15 @@ export async function rearmReminders(items: ReminderItem[]): Promise<void> {
     if (!(await Notifications.getPermissionsAsync()).granted) return;
     const byId = new Map(items.map((i) => [i.id, i]));
     // One-off "In an hour" reminders on repeating threads: same time again.
-    const again = (await Notifications.getAllScheduledNotificationsAsync()).flatMap((r) => {
+    const scheduled = await Notifications.getAllScheduledNotificationsAsync();
+    const again = scheduled.flatMap((r) => {
       if (!r.identifier.endsWith(':again')) return [];
       const t = r.trigger as { value?: number; date?: number | string } | null;
       const at = typeof t?.value === 'number' ? t.value : t?.date ? new Date(t.date).getTime() : NaN;
       const item = byId.get(r.identifier.slice(0, -':again'.length));
       return item && at > Date.now() ? [{ item, at }] : [];
     });
-    for (const item of items) if (item.dueDate) await syncReminderForItem(item);
+    for (const item of items) if (item.dueDate) await syncReminderForItem(item, scheduled);
     for (const { item, at } of again) await remindOnce(item, at);
   } catch {
     // Best-effort, like every reminder.
@@ -180,6 +196,7 @@ export async function rearmReminders(items: ReminderItem[]): Promise<void> {
 export async function cancelReminder(id: string): Promise<void> {
   try {
     await Notifications.cancelScheduledNotificationAsync(id);
+    await cancelLaterSteps(id);
   } catch {
     // Nothing to clean up, or already cancelled.
   }

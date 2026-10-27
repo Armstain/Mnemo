@@ -5,7 +5,7 @@ import { useMnemoStore } from '@/hooks/use-mnemo-store';
 import { useUndoToast } from '@/hooks/use-undo-toast';
 import { Notifications, notificationsAvailable } from '@/lib/notifications';
 import { remindOnce } from '@/lib/reminders';
-import { formatReminder } from '@/lib/when';
+import { afterReminder, formatReminder, queueSteps, rescheduled } from '@/lib/when';
 import { saveTextNote } from '@/lib/capture';
 import { markTestArrived, TEST_ROUTE } from '@/lib/reliability';
 
@@ -70,6 +70,10 @@ export function ReminderActions() {
         return;
       }
 
+      const stepAt = typeof content.data?.at === 'number' ? content.data.at : undefined;
+      const later = stepAt === undefined ? undefined : item.laterSteps?.find((l) => l.at === stepAt);
+      const otherSteps = item.laterSteps?.filter((l) => l !== later) ?? [];
+
       if (response.actionIdentifier === 'reply') {
         // What was typed into the notification goes into the thread; with
         // nothing typed, it just opens it.
@@ -78,18 +82,23 @@ export function ReminderActions() {
           showToast({ message: `Added to ${item.title}` });
         }
       } else if (response.actionIdentifier === 'done') {
-        if (item.nextStep) {
+        if (later) {
+          const before = item.laterSteps;
+          s.updateItem(item.id, { laterSteps: otherSteps.length > 0 ? otherSteps : undefined });
+          showToast({ message: `Done: ${later.step ?? item.title}`, actionLabel: 'Undo', onAction: () => s.updateItem(item.id, { laterSteps: before }) });
+        } else if (item.nextStep) {
           const step = item.nextStep;
           const undo = s.completeNextStep(item.id);
           showToast({ message: `Done: ${step}`, actionLabel: 'Undo', onAction: undo });
         } else if (!item.repeat) {
-          s.updateItem(item.id, { dueDate: undefined });
+          s.updateItem(item.id, afterReminder(item));
         }
       } else if (response.actionIdentifier === 'hour' || response.actionIdentifier === 'tomorrow') {
         const at = response.actionIdentifier === 'hour' ? Date.now() + 60 * 60 * 1000 : tomorrowMorning();
+        if (later) s.updateItem(item.id, { laterSteps: queueSteps(otherSteps, [{ ...later, at }]) });
         // A repeating reminder keeps its schedule; this is one more on top.
-        if (item.repeat) remindOnce(item, at);
-        else s.updateItem(item.id, { dueDate: at });
+        else if (item.repeat) remindOnce(item, at);
+        else s.updateItem(item.id, rescheduled(item, at));
         showToast({ message: `Reminding you ${formatReminder(at).toLowerCase()}` });
       }
       router.push(`/(tabs)/context?id=${item.id}`);

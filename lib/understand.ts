@@ -1,6 +1,8 @@
 import { numberTokens, scanNumbers, metricKey, type NumberSpan } from '@/lib/measures';
-import type { Category, ChecklistItem, Measure, Rollup } from '@/types/mnemo';
+import type { Category, ChecklistItem, LaterStep, Measure, Rollup } from '@/types/mnemo';
 import { capitalize, hostOf, nfc } from '@/utils/text';
+import { DAY_MS } from '@/utils/time';
+import { queueSteps } from '@/lib/when';
 import { isPlan, MONTH_WORDS, readWhenFull, withoutWhen, type Repeat } from '@/lib/when-read';
 
 // Reading a note on the phone, with no AI: a title, lists, links, the
@@ -23,6 +25,7 @@ export interface Reading {
   due?: number;
   /** "every day at 8", "every Friday", "প্রতিদিন". */
   repeat?: Repeat;
+  later: LaterStep[];
   category?: Category;
   tags: string[];
 }
@@ -462,6 +465,20 @@ function readNextStep(text: string): { step?: string; sentence?: string } {
   return {};
 }
 
+const THEN = /\s*[,;]\s*(?:and then\s+|and\s+|then\s+)?|\s+(?:and then|and|then|after that|আর|তারপর|tarpor)\s+/i;
+
+function splitTimed(text: string, now?: number, monthFirst?: boolean): string {
+  let split = false;
+  const out = sentences(text).map((s) => {
+    const parts = s.split(THEN).filter(Boolean);
+    const timed = parts.filter((p) => withoutWhen(p) !== p.trim() && readWhenFull(p, now, monthFirst));
+    if (timed.length < 2) return s;
+    split = true;
+    return parts.join('\n');
+  });
+  return split ? out.join('\n') : text;
+}
+
 const LEFT_OFF =
   /\b(stopped at|left off|got (?:up )?to|finished|done with|completed|reached|halfway|up to (?:page|chapter|step))\b|(পর্যন্ত|শেষ করলাম|শেষ হয়েছে|শেষ হলো|থামলাম)|\b(porjonto|shesh korlam|sesh korlam|shesh holo)\b/i;
 
@@ -559,18 +576,21 @@ export function understand(
   // What the title, step, time and left-off are read from: the text, in
   // clauses when it was said without punctuation.
   const said = spokenClauses(text || raw);
-  const { step, sentence } = readNextStep(said);
+  const steps = splitTimed(said, options.now, options.monthFirst);
+  const { step, sentence } = readNextStep(steps);
   const words = numberTokens(raw);
   // The step's sentence first; otherwise any sentence that's a plan with a
   // time ("call amma at 7:30pm", "gym at 6am"), never a past one ("met Rumi at 3pm").
   let when = sentence && isPlan(sentence, true) ? readWhenFull(sentence, options.now, options.monthFirst) : undefined;
+  let whenSentence = when ? sentence : undefined;
   let planStep: string | undefined;
   if (!when) {
-    for (const s of sentences(said)) {
+    for (const s of sentences(steps)) {
       if (!isPlan(s, false)) continue;
       when = readWhenFull(s, options.now, options.monthFirst);
       if (when) {
         planStep = cleanStep(s);
+        whenSentence = s;
         break;
       }
     }
@@ -591,6 +611,24 @@ export function understand(
   if (nextStep && at > 0 && nextStep.split(/\s+/).length < 3) {
     nextStep = clip(`${cleanStep(clauses[at - 1])}, ${nextStep.charAt(0).toLowerCase()}${nextStep.slice(1)}`, STEP_MAX);
   }
+  let timed: LaterStep[] = [];
+  if (due !== undefined && when?.repeat) timed.push({ at: due, step: upperI(nextStep) });
+  else if (due !== undefined) {
+    for (const s of sentences(steps)) {
+      const primary = !!whenSentence && s.includes(whenSentence);
+      const w = primary ? when : isPlan(s, isIntent(s)) ? readWhenFull(s, options.now, options.monthFirst) : undefined;
+      if (!w || (!primary && w.repeat)) continue;
+      let at = w.at;
+      const before = timed[timed.length - 1]?.at;
+      if (before !== undefined && at < before && before - at < DAY_MS) {
+        const again = readWhenFull(primary ? whenSentence! : s, before, options.monthFirst)?.at;
+        if (again !== undefined && Math.abs(again - at - DAY_MS) <= DAY_MS / 24) at = again;
+      }
+      timed.push({ at, step: primary ? upperI(nextStep) : upperI(bare(cleanStep(s))) });
+    }
+    timed = queueSteps(timed);
+  }
+  const later = timed.slice(1);
   return {
     text,
     title: upperI(readTitle(said, list.items, due !== undefined)) || (due ? 'Reminder' : ''),
@@ -598,10 +636,11 @@ export function understand(
     links: readLinks(raw),
     measures: readMeasures(text || raw, options.known, options.currency),
     // The time lives in the reminder; the step says what to do.
-    nextStep: upperI(nextStep),
+    nextStep: timed.length > 0 ? timed[0].step : upperI(nextStep),
     leftOff: upperI(readLeftOff(text ? said : '', sentence)),
-    due,
+    due: timed[0]?.at,
     repeat: due ? when?.repeat : undefined,
+    later,
     category: readCategory(words),
     tags: readTags(raw),
   };

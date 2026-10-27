@@ -1,8 +1,31 @@
 import { describe, expect, it } from 'vitest';
-import { formatReminder, hasTime, nextOccurrence, quickTimes, resumeOrder, resumeReason } from '@/lib/when';
+import { afterReminder, formatReminder, hasTime, nextOccurrence, quickTimes, rescheduled, resumeOrder, resumeReason } from '@/lib/when';
 
 const mon = new Date('2026-10-12T10:00:00').getTime();
 const d = (s: string) => new Date(s).getTime();
+
+describe('steps with their own times', () => {
+  const thread = {
+    nextStep: 'Bring a file',
+    pinned: {},
+    laterSteps: [{ at: d('2026-10-12T23:00:00'), step: 'Send it' }],
+  };
+  it('done: the next waiting step takes over', () => {
+    expect(afterReminder(thread)).toEqual({
+      dueDate: d('2026-10-12T23:00:00'),
+      laterSteps: undefined,
+      nextStep: 'Send it',
+      pinned: { nextStep: true },
+    });
+  });
+  it('moved past a waiting step: that step comes first', () => {
+    const moved = rescheduled(thread, d('2026-10-13T09:00:00'));
+    expect(moved.dueDate).toBe(d('2026-10-12T23:00:00'));
+    expect(moved.nextStep).toBe('Send it');
+    expect(moved.laterSteps).toEqual([{ at: d('2026-10-13T09:00:00'), step: 'Bring a file' }]);
+    expect(rescheduled(thread, d('2026-10-12T22:30:00'))).toEqual({ dueDate: d('2026-10-12T22:30:00') });
+  });
+});
 
 describe('reminders', () => {
   it('repeating reminders roll forward', () => {

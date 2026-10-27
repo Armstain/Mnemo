@@ -1,4 +1,4 @@
-import type { MnemoItem } from '@/types/mnemo';
+import type { LaterStep, MnemoItem } from '@/types/mnemo';
 import { DAY_MS } from '@/utils/time';
 
 // Reminder times: the quick choices offered, the next time a repeating one
@@ -39,6 +39,32 @@ export function nextOccurrence(due: number, repeat: Repeat | undefined, now = Da
     d = repeat === 'daily' ? addDays(d, 1) : repeat === 'weekly' ? addDays(d, 7) : addMonths(d, 1);
   }
   return d.getTime();
+}
+
+export function queueSteps(current: LaterStep[] = [], added: LaterStep[] = []): LaterStep[] {
+  return [...current, ...added].filter((l, i, all) => all.findIndex((x) => x.at === l.at) === i).sort((a, b) => a.at - b.at);
+}
+
+export function afterReminder(
+  thread: Pick<MnemoItem, 'laterSteps' | 'pinned'>,
+): Pick<MnemoItem, 'dueDate' | 'laterSteps' | 'nextStep' | 'pinned'> {
+  const [next, ...rest] = thread.laterSteps ?? [];
+  return {
+    dueDate: next?.at,
+    laterSteps: rest.length > 0 ? rest : undefined,
+    nextStep: next?.step,
+    pinned: { ...thread.pinned, nextStep: !!next?.step },
+  };
+}
+
+export function rescheduled(
+  thread: Pick<MnemoItem, 'laterSteps' | 'pinned' | 'nextStep' | 'repeat'>,
+  at: number,
+): Pick<MnemoItem, 'dueDate' | 'laterSteps' | 'nextStep' | 'pinned'> {
+  const waiting = thread.laterSteps ?? [];
+  if (thread.repeat || waiting.length === 0 || at <= waiting[0].at) return { dueDate: at };
+  const [next, ...rest] = [...waiting, { at, step: thread.nextStep }].sort((a, b) => a.at - b.at);
+  return { dueDate: next.at, nextStep: next.step, pinned: { ...thread.pinned, nextStep: true }, laterSteps: rest };
 }
 
 export interface QuickTime {

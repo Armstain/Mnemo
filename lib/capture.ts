@@ -16,7 +16,8 @@ import {
   EMBEDDING_DIMS,
 } from '@/lib/embeddings';
 import { getVectors, upsertEmbedding } from '@/lib/db';
-import type { Block, Category, ChecklistItem, Entry, Filing, MnemoItem } from '@/types/mnemo';
+import type { Block, Category, ChecklistItem, Entry, Filing, LaterStep, MnemoItem } from '@/types/mnemo';
+import { queueSteps } from '@/lib/when';
 import type { CaptureStore } from '@/hooks/use-mnemo-store';
 import { buildBlocks } from '@/lib/threads';
 import { summarizeMeasures, trackedMetrics, verifyMeasures } from '@/lib/measures';
@@ -120,6 +121,17 @@ export function onReminderSet(listener: (event: ReminderSetEvent) => void): () =
 }
 const reminderSet = (event: ReminderSetEvent) => reminderListeners.forEach((l) => l(event));
 
+function withReminders(
+  thread: MnemoItem,
+  add: { due: number; step?: string; later: LaterStep[]; repeat?: MnemoItem['repeat']; force?: boolean },
+): Partial<MnemoItem> {
+  if (add.force || !thread.dueDate || thread.dueDate < Date.now()) {
+    return { dueDate: add.due, repeat: add.repeat, ...(add.later.length > 0 ? { laterSteps: queueSteps(thread.laterSteps, add.later) } : {}) };
+  }
+  const queued = [{ at: add.due, step: add.step }, ...add.later].filter((l) => l.at !== thread.dueDate && (!thread.repeat || l.at > Date.now()));
+  return queued.length > 0 ? { laterSteps: queueSteps(thread.laterSteps, queued) } : {};
+}
+
 function saveNote(source: Entry['source'], params: NoteInput): { threadId: string; entry: Entry } {
   const { category, threadId, store } = params;
   const words = params.text.trim();
@@ -135,6 +147,7 @@ function saveNote(source: Entry['source'], params: NoteInput): { threadId: strin
   // With AI on, the text stays exactly as said: Gemini rewrites it, and an
   // edit made meanwhile is noticed against it. Offline, list lines become a
   // checklist.
+  const later = params.dueDate ? [] : reading.later;
   const checklist = [...(params.checklistItems ?? []), ...(ai ? [] : reading.checklist)];
   const blocks: Block[] = [
     ...buildBlocks({ text: ai ? words : reading.text }),
@@ -148,7 +161,7 @@ function saveNote(source: Entry['source'], params: NoteInput): { threadId: strin
     transcript: words || undefined,
     blocks,
     leftOff: params.leftOff?.trim() || (ai ? undefined : reading.leftOff),
-    nextStep: params.nextStep?.trim() || (ai ? undefined : reading.nextStep),
+    nextStep: params.nextStep?.trim() || (ai && later.length === 0 ? undefined : reading.nextStep),
     pending: ai,
     pendingRawText: ai ? words : undefined,
     pendingAudioUri: joinAudio(audio),
@@ -160,12 +173,16 @@ function saveNote(source: Entry['source'], params: NoteInput): { threadId: strin
     saved = { threadId, entry: store.addEntry(threadId, { ...entryInput, filing: params.filing ?? { by: 'user' } }) };
     const thread = store.getThread(threadId);
     if (thread) {
-      const updates: Partial<MnemoItem> = {};
       // A day named in the note sets the reminder, unless one's already coming.
-      if (due && (params.dueDate || !thread.dueDate || thread.dueDate < Date.now())) {
-        updates.dueDate = due;
-        updates.repeat = params.dueDate ? thread.repeat : reading.repeat;
-      }
+      const updates: Partial<MnemoItem> = due
+        ? withReminders(thread, {
+            due,
+            step: reading.nextStep,
+            later,
+            repeat: params.dueDate ? thread.repeat : reading.repeat,
+            force: !!params.dueDate,
+          })
+        : {};
       if (reading.tags.some((t) => !thread.tags.includes(t))) updates.tags = [...new Set([...thread.tags, ...reading.tags])].slice(0, 8);
       if (Object.keys(updates).length > 0) store.updateItem(threadId, updates);
       if (updates.dueDate) reminderSet({ threadId, at: updates.dueDate, previous: thread.dueDate });
@@ -184,6 +201,7 @@ function saveNote(source: Entry['source'], params: NoteInput): { threadId: strin
         tags: reading.tags,
         status: 'active',
         dueDate: due,
+        laterSteps: later.length > 0 ? later : undefined,
         repeat: params.dueDate ? undefined : reading.repeat,
         // A placeholder title the AI replaces, when AI is on.
         pending: ai,
@@ -600,11 +618,20 @@ async function structure(entry: PendingEntry, store: CaptureStore): Promise<void
   if (decision.action === 'attach') {
     const own = store.getThread(now.threadId);
     store.moveEntry(entry.id, decision.threadId, { by: 'auto', confidence: decision.confidence });
-    if (own && !store.snapshot().entries.some((e) => e.threadId === own.id)) {
-      store.removeThreadNow(own.id);
-    }
+    const emptied = own && !store.snapshot().entries.some((e) => e.threadId === own.id) ? own : undefined;
+    if (emptied) store.removeThreadNow(emptied.id);
     const target = store.getThread(decision.threadId);
     if (!target) return;
+    if (emptied?.dueDate) {
+      const carried = withReminders(target, {
+        due: emptied.dueDate,
+        step: nextStep ?? emptied.nextStep,
+        later: emptied.laterSteps ?? [],
+        repeat: emptied.repeat,
+      });
+      if (Object.keys(carried).length > 0) store.updateItem(target.id, carried);
+      if (carried.dueDate) reminderSet({ threadId: target.id, at: carried.dueDate, previous: target.dueDate });
+    }
     if (tags.length > 0) {
       store.updateItem(target.id, { tags: [...new Set([...target.tags, ...tags])].slice(0, 8) });
     }

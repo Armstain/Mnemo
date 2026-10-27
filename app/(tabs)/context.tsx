@@ -48,6 +48,7 @@ import { entryText } from '@/lib/threads';
 import { matchEntries } from '@/lib/find';
 import { quietDays as quietFor, STILL_ON_IT_DAYS } from '@/lib/review';
 import { openStepsOf } from '@/lib/wrapup';
+import { afterReminder, formatReminder, quickTimes, rescheduled } from '@/lib/when';
 import { celebrate, doneSummary, isRealTask } from '@/lib/done';
 import { confirmAction } from '@/utils/confirm';
 import { metricKey, summarizeMeasures, type MetricSummary } from '@/lib/measures';
@@ -252,6 +253,23 @@ export default function ThreadScreen() {
     showUndoToast(`Done: ${step}`, undo);
   };
 
+  const showDue = !!thread.dueDate && (thread.status === 'active' || thread.status === 'paused');
+  const missed = showDue && !thread.repeat && thread.dueDate! < Date.now();
+  const waiting = (thread.laterSteps ?? []).filter((l) => !thread.repeat || l.at > Date.now());
+
+  const handleReminderDone = () => {
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    if (thread.nextStep) return handleStepDone();
+    const { dueDate, laterSteps, nextStep, pinned } = thread;
+    updateItem(thread.id, afterReminder(thread));
+    showUndoToast('Reminder done', () => updateItem(thread.id, { dueDate, laterSteps, nextStep, pinned }));
+  };
+
+  const handleReminderLater = () => {
+    Haptics.selectionAsync();
+    updateItem(thread.id, rescheduled(thread, quickTimes().find((q) => q.key === 'tomorrow')!.at));
+  };
+
   const handleDelete = () => {
     const remove = () => {
       deleteItem(thread.id);
@@ -427,7 +445,7 @@ export default function ThreadScreen() {
                   <Eyebrow className="mb-2">Remind me</Eyebrow>
                   <DueDatePicker
                     value={thread.dueDate}
-                    onChange={(d) => updateItem(thread.id, { dueDate: d })}
+                    onChange={(d) => updateItem(thread.id, d ? rescheduled(thread, d) : { dueDate: undefined, laterSteps: undefined })}
                     repeat={thread.repeat}
                     onRepeatChange={(r) => updateItem(thread.id, { repeat: r })}
                   />
@@ -445,14 +463,45 @@ export default function ThreadScreen() {
                 <Text className="font-display text-fg leading-tight" style={{ fontSize: 32, letterSpacing: -0.4 }}>
                   {thread.title}
                 </Text>
-                {thread.tags.length > 0 || thread.dueDate ? (
+                {thread.tags.length > 0 || (showDue && !missed) ? (
                   <View className="flex-row flex-wrap items-center gap-x-4 gap-y-1 mt-2.5">
-                    {thread.dueDate ? <DueDateLabel dueDate={thread.dueDate} repeat={thread.repeat} /> : null}
+                    {showDue && !missed ? <DueDateLabel dueDate={thread.dueDate!} repeat={thread.repeat} /> : null}
                     {thread.tags.length > 0 ? (
                       <Text className="font-sans text-sm" style={{ color: colors.fgTertiary }}>
                         {thread.tags.map((t) => `#${t}`).join('  ')}
                       </Text>
                     ) : null}
+                  </View>
+                ) : null}
+                {missed ? (
+                  <View
+                    className="flex-row items-center rounded-md mt-3 pl-3.5 pr-2 py-2 gap-2"
+                    style={{ backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border }}
+                  >
+                    <View className="flex-1" style={{ minWidth: 0 }}>
+                      <Text className="font-sans text-sm" style={{ color: colors.fgTertiary }}>
+                        {formatReminder(thread.dueDate!)}
+                      </Text>
+                      <Text className="font-sans-medium text-sm" style={{ color: colors.fg }} numberOfLines={2}>
+                        {thread.nextStep ? `${thread.nextStep}?` : 'Done with this?'}
+                      </Text>
+                    </View>
+                    <Button size="sm" variant="quiet" onPress={handleReminderLater}>
+                      Tomorrow
+                    </Button>
+                    <Button size="sm" variant="primary" icon="check" onPress={handleReminderDone}>
+                      Done
+                    </Button>
+                  </View>
+                ) : null}
+                {showDue && waiting.length > 0 ? (
+                  <View className="mt-2 gap-1">
+                    {waiting.slice(0, 3).map((l) => (
+                      <Text key={l.at} className="font-sans text-sm" style={{ color: colors.fgTertiary }} numberOfLines={1}>
+                        Then {formatReminder(l.at)}
+                        {l.step ? ` · ${l.step}` : ''}
+                      </Text>
+                    ))}
                   </View>
                 ) : null}
               </>

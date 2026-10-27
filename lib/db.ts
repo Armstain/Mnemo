@@ -79,14 +79,14 @@ export function initDb(): Promise<void> {
 //   2 — reminders: items gain `repeat` and `starred`, entries `stepDone`.
 //   3 — reviews: items gain `completedAt` and `quietUntil`.
 //   4 — overviews: items gain `overview`.
-const SCHEMA_VERSION = 4;
+const SCHEMA_VERSION = 5;
 
 // Every column, in one place, for the INSERT statements below.
 const ITEM_COLUMNS = [
   'id', 'type', 'title', 'content', 'checklistItems', 'links', 'category', 'tags', 'status',
   'nextStep', 'whereLeftOff', 'dueDate', 'createdAt', 'updatedAt', 'lastResumedAt',
   'aiSummary', 'pending', 'pendingRawText', 'pendingAudioUri', 'pinned', 'repeat', 'starred',
-  'completedAt', 'quietUntil', 'overview',
+  'completedAt', 'quietUntil', 'overview', 'laterSteps',
 ];
 const ENTRY_COLUMNS = [
   'id', 'threadId', 'createdAt', 'updatedAt', 'source', 'transcript', 'blocks', 'leftOff', 'nextStep',
@@ -124,6 +124,9 @@ async function runMigrations(db: SQLite.SQLiteDatabase): Promise<void> {
   }
   if (version < 4) {
     await addColumn(db, 'items', 'overview', 'TEXT');
+  }
+  if (version < 5) {
+    await addColumn(db, 'items', 'laterSteps', 'TEXT');
   }
   await db.execAsync(`PRAGMA user_version = ${SCHEMA_VERSION}`);
 }
@@ -181,6 +184,7 @@ interface ItemRow {
   completedAt: number | null;
   quietUntil: number | null;
   overview: string | null;
+  laterSteps: string | null;
 }
 
 function rowToItem(row: ItemRow): MnemoItem {
@@ -210,6 +214,7 @@ function rowToItem(row: ItemRow): MnemoItem {
     completedAt: row.completedAt ?? undefined,
     quietUntil: row.quietUntil ?? undefined,
     overview: row.overview ? JSON.parse(row.overview) : undefined,
+    laterSteps: row.laterSteps ? JSON.parse(row.laterSteps) : undefined,
   };
 }
 
@@ -240,6 +245,7 @@ function itemToParams(item: MnemoItem) {
     $completedAt: item.completedAt ?? null,
     $quietUntil: item.quietUntil ?? null,
     $overview: item.overview ? JSON.stringify(item.overview) : null,
+    $laterSteps: item.laterSteps?.length ? JSON.stringify(item.laterSteps) : null,
   };
 }
 
@@ -274,13 +280,13 @@ export async function insertItems(items: MnemoItem[]): Promise<void> {
 // Columns updateItem is allowed to touch. Used both as a whitelist (so the
 // dynamic SET clause never interpolates anything but a known column name)
 // and to look up how each value needs to be serialized for storage.
-const JSON_COLUMNS = new Set(['checklistItems', 'links', 'tags', 'aiSummary', 'pinned', 'overview']);
+const JSON_COLUMNS = new Set(['checklistItems', 'links', 'tags', 'aiSummary', 'pinned', 'overview', 'laterSteps']);
 const BOOLEAN_COLUMNS = new Set(['pending', 'starred']);
 const COLUMN_KEYS = new Set([
   'type', 'title', 'content', 'checklistItems', 'links', 'category', 'tags', 'status',
   'nextStep', 'whereLeftOff', 'dueDate', 'createdAt', 'updatedAt', 'lastResumedAt',
   'aiSummary', 'pending', 'pendingRawText', 'pendingAudioUri', 'pinned', 'repeat', 'starred',
-  'completedAt', 'quietUntil', 'overview',
+  'completedAt', 'quietUntil', 'overview', 'laterSteps',
 ]);
 
 function serializeColumnValue(key: string, value: unknown): string | number | null {
