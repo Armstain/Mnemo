@@ -24,6 +24,8 @@ import { formatCompactDistance, DAY_MS } from '@/utils/time';
 import { sameWords } from '@/utils/text';
 import { CATEGORY_LIST, useCategories } from '@/utils/categories';
 import { useEnter } from '@/utils/motion';
+import { useReduceMotion } from '@/hooks/use-accessibility-motion';
+import { flightsEnabled, launchFlight } from '@/lib/card-flight';
 import type { MnemoItem } from '@/types/mnemo';
 
 /** How far ahead "Coming up" looks for due dates. */
@@ -67,6 +69,29 @@ function ResumeCard({ item, reason }: { item: MnemoItem; reason: ResumeReason })
   const checklist = item.type === 'checklist' ? item.checklistItems ?? [] : [];
   const done = checklist.filter((c) => c.checked).length;
   const chip = reason ? reasonChip(reason, !!item.repeat) : null;
+  const reduceMotion = useReduceMotion();
+  const cardRef = React.useRef<View>(null);
+  const titleRef = React.useRef<View>(null);
+
+  // Opens the thread with the card growing into it (CardFlightHost), on
+  // phones that keep up; otherwise the thread's usual entrance.
+  const open = () => {
+    const card = cardRef.current;
+    const title = titleRef.current;
+    if (reduceMotion || !flightsEnabled() || !card || !title) return openItem(item.id);
+    card.measureInWindow((x, y, width, height) => {
+      title.measureInWindow((tx, ty, tw, th) => {
+        launchFlight({
+          threadId: item.id,
+          from: { x, y, width, height },
+          titleFrom: { x: tx, y: ty, width: tw, height: th },
+          title: item.title,
+          chip: chip?.label,
+        });
+        openItem(item.id);
+      });
+    });
+  };
   // Under the title, only what adds to it.
   const nextStep = item.nextStep && !sameWords(item.nextStep, item.title) ? item.nextStep : undefined;
   const whereLeftOff = item.whereLeftOff && !sameWords(item.whereLeftOff, item.title) ? item.whereLeftOff : undefined;
@@ -81,6 +106,8 @@ function ResumeCard({ item, reason }: { item: MnemoItem; reason: ResumeReason })
   return (
     // Lifted off the page by a shadow in its own colour; the card inside clips.
     <View
+      ref={cardRef}
+      collapsable={false}
       className="mb-7"
       style={{
         borderRadius: 30,
@@ -94,7 +121,7 @@ function ResumeCard({ item, reason }: { item: MnemoItem; reason: ResumeReason })
       }}
     >
       <Pressable
-        onPress={() => openItem(item.id)}
+        onPress={open}
         accessibilityRole="button"
         accessibilityLabel={`Resume ${item.title}${chip ? `. ${chip.label}` : ''}`}
         className="overflow-hidden active:opacity-95"
@@ -135,9 +162,11 @@ function ResumeCard({ item, reason }: { item: MnemoItem; reason: ResumeReason })
             </Text>
           </View>
 
-          <Text className="font-display leading-tight mt-3.5" style={{ color: colors.onHero, fontSize: 24 }} numberOfLines={2}>
-            {item.title}
-          </Text>
+          <View ref={titleRef} className="mt-3.5" collapsable={false}>
+            <Text className="font-display leading-tight" style={{ color: colors.onHero, fontSize: 24 }} numberOfLines={2}>
+              {item.title}
+            </Text>
+          </View>
 
           <View className="flex-row items-center pt-3.5 mt-4" style={{ borderTopWidth: 1, borderTopColor: colors.heroSoft, gap: 12 }}>
             <View className="flex-1" style={{ minWidth: 0 }}>

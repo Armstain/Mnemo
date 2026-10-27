@@ -54,8 +54,9 @@ import { celebrate, doneSummary, isRealTask } from '@/lib/done';
 import { confirmAction } from '@/utils/confirm';
 import { metricKey, summarizeMeasures, type MetricSummary } from '@/lib/measures';
 import { useCategories, useStatusConfig } from '@/utils/categories';
-import { EASE_IN_OUT, useEnter } from '@/utils/motion';
+import { DUR_BASE, EASE_IN_OUT, useEnter } from '@/utils/motion';
 import { freshness } from '@/utils/time';
+import { reportFlightTarget } from '@/lib/card-flight';
 
 /**
  * ThreadScreen — one thread: where you are (left off, next step), what to
@@ -120,6 +121,16 @@ export default function ThreadScreen() {
 
   const [isEditing, setIsEditing] = React.useState(false);
   const [menuOpen, setMenuOpen] = React.useState(false);
+  const titleRef = React.useRef<React.ComponentRef<typeof Text>>(null);
+  // Where the Resume card's title should land when it opens this thread.
+  // Measured again once the header's entrance has risen into place, since
+  // it starts a little low.
+  const reportTitlePlace = () => {
+    const report = () =>
+      titleRef.current?.measureInWindow((x, y, width, height) => reportFlightTarget(id, { x, y, width, height }));
+    report();
+    setTimeout(report, DUR_BASE + 20);
+  };
   // Height of the nav row, where the ⋯ menu drops from.
   const [navBottom, setNavBottom] = React.useState(64);
   const [isGenerating, setIsGenerating] = React.useState(false);
@@ -493,7 +504,13 @@ export default function ThreadScreen() {
               </View>
             ) : (
               <>
-                <Text className="font-display text-fg leading-tight" style={{ fontSize: 32, letterSpacing: -0.4 }}>
+                <Text
+                  ref={titleRef}
+                  // Where the Resume card's title lands when it opens this thread.
+                  onLayout={reportTitlePlace}
+                  className="font-display text-fg leading-tight"
+                  style={{ fontSize: 32, letterSpacing: -0.4 }}
+                >
                   {thread.title}
                 </Text>
                 {thread.tags.length > 0 || (showDue && !missed) ? (

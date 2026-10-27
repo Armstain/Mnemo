@@ -35,6 +35,7 @@ import { PendingProcessor } from '@/components/PendingProcessor';
 import { FilingNotifier } from '@/components/FilingNotifier';
 import { UndoToastHost } from '@/components/ui/UndoToastHost';
 import { CelebrationHost } from '@/components/CelebrationHost';
+import { CardFlightHost } from '@/components/CardFlightHost';
 import { MnemoStoreProvider } from '@/hooks/use-mnemo-store';
 import { UndoToastProvider } from '@/hooks/use-undo-toast';
 import { applyStoredThemePreference, PALETTE, useThemeName } from '@/hooks/use-theme';
@@ -222,6 +223,8 @@ function RootLayoutNav() {
           {/* The daily backup into the person's chosen folder, when it's on. */}
           <AutoBackup />
           <UndoToastHost />
+          {/* The Resume card opening into its thread, over the screen it opens. */}
+          <CardFlightHost />
           {/* A real task finished: the ring closes. Above everything, toast included. */}
           <CelebrationHost />
         </ThemeProvider>
