@@ -48,3 +48,6 @@ yarn-error.*
 # agent workspaces
 .agents/
 .claude/
+
+# native module build output
+modules/*/android/build/
