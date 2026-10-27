@@ -10,11 +10,23 @@ People with busy, interrupted lives who context-switch constantly — knowledge 
 
 ## Product Purpose
 
-Mnemo is a "resume your life" memory app. It captures thoughts (voice, notes, checklists), structures them with AI (title, summary, where-you-left-off, next step), and makes re-entry instant: open the app, see the thread you dropped, resume it. Success = the time between "I had a thought" and "it's safely captured" approaching zero, and zero restart friction when returning.
+Mnemo is a "resume your life" memory app. It captures thoughts (voice, notes, checklists, photos, links), structures them with AI (title, category, summary, where-you-left-off, next step), files them into threads, and makes re-entry instant: open the app, see the thread you dropped, resume it. Success = the time between "I had a thought" and "it's safely captured" approaching zero, and zero restart friction when returning.
+
+## Scope
+
+In: everything under [Features](README.md#features). Out, for now:
+
+- File attachments (PDF, Word, other documents). Shared files other than photos are not saved.
+- Accounts, sync, a server, collaboration.
+- iOS parity: Android-first, iOS widget, share intents and production builds are in progress.
+
+## Privacy
+
+Local-first: no account, server, analytics or telemetry. What leaves the phone, and only with the person's own key, is listed in [README Privacy](README.md#privacy).
 
 ## Brand Personality
 
-Calm, nocturnal, luminous. The app is a quiet dark room where your thoughts glow softly — not a productivity dashboard shouting metrics. Three words: **ambient, focused, weightless**. The signature visual language is **liquid glass**: translucent surfaces floating over a deep, softly-lit color field.
+Calm, nocturnal, luminous. The app is a quiet dark room where your thoughts glow softly — not a productivity dashboard shouting metrics. It follows the system theme: the light theme keeps the same softly-lit glass, never a flat white page. Three words: **ambient, focused, weightless**. The signature visual language is **liquid glass**: translucent surfaces floating over a deep, softly-lit color field.
 
 ## Anti-references
 
@@ -30,6 +42,7 @@ Calm, nocturnal, luminous. The app is a quiet dark room where your thoughts glow
 3. **Re-entry over browsing.** Surfaces optimize for "what was I doing?" — the resume card, next steps, and where-you-left-off always outrank archives.
 4. **Motion conveys state.** Pulses mean "listening", drifts mean "ambient"; nothing animates for decoration on task surfaces.
 5. **Native where it counts.** Real iOS 26 Liquid Glass when available; the fallback must be indistinguishable in spirit on Android/web.
+6. **Local first, AI optional.** Capture never waits on a network or a key; AI makes a capture better afterwards, and the phone's own reading is always the floor.
 
 ## Accessibility & Inclusion
 

@@ -27,7 +27,8 @@ standing in a shop. Mnemo optimises for two moments:
   title, summary, *where you left off*, and *next step*. Auto-filing suggests where
   things belong; you stay in control.
 - ⏰ **Reminders that actually fire** — natural language ("remind me in 20 mins"),
-  repeats, and serious reliability engineering for Android's battery-saving habits.
+  repeats, several timed steps in one note ("bring the file at 10, send it at 11"),
+  and serious reliability engineering for Android's battery-saving habits.
 - 🔍 **Search that finds things** — hybrid keyword + semantic search.
   No connection? Keyword search still works.
 - 📓 **Reviews & overviews** — a thread's loose notes organised by theme when you
@@ -36,7 +37,9 @@ standing in a shop. Mnemo optimises for two moments:
 - 📸 **More than text** — checklists, photos, links with previews, measures and
   rollups.
 - ⚡ **Capture from anywhere** — home-screen widget, quick actions, share intents
-  from other apps.
+  from other apps; a shared link is categorised from its page, no note needed.
+- 📴 **Works without AI** — the phone reads times, amounts, lists, links and a
+  best-guess category on its own.
 - 🔒 **Encrypted backups** — passphrase-protected, photos included, nothing uploaded
   anywhere. On Android, a daily automatic backup into a folder you choose, and a
   nudge on Home when your notes haven't been backed up in a while.
@@ -57,8 +60,7 @@ Mnemo is local-first. There is no account, no server, no analytics, no ads.
 - **What never leaves:** everything else. There is no telemetry — nothing to opt
   out of, because nothing is collected.
 
-Read the full privacy notes in the app (Settings → Privacy) and in
-[PRODUCT.md](PRODUCT.md).
+Read the full privacy notes in the app (Settings → Privacy).
 
 ## Tech
 
@@ -85,7 +87,7 @@ docs/           # Specs & platform notes
 tests/          # Unit tests (vitest)
 ```
 
-Key docs: [PRODUCT.md](PRODUCT.md) (vision, design principles, privacy),
+Key docs: [PRODUCT.md](PRODUCT.md) (vision, scope, design principles),
 [docs/specs/threads.md](docs/specs/threads.md) (threads data model),
 [docs/reminders-on-android.md](docs/reminders-on-android.md) (reminder reliability).
 
