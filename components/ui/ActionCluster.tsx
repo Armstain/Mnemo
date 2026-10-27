@@ -480,7 +480,6 @@ export function ActionCluster({ visible = true }: { visible?: boolean }) {
               <RecordingCard
                 key="card"
                 transcript={speech.text}
-                writtenLater={speech.recording}
                 levelNow={levelNow}
                 startedAt={recordingSince.current}
                 level={level}
@@ -886,7 +885,6 @@ const WAVE_SAMPLE_MS = 80;
 /** Live timer and waveform while recording, then the result after release. */
 function RecordingCard({
   transcript,
-  writtenLater,
   levelNow,
   startedAt,
   level,
@@ -896,8 +894,6 @@ function RecordingCard({
   reduceMotion,
 }: {
   transcript: string;
-  /** Recording for Gemini to write out, so no words show while talking. */
-  writtenLater: boolean;
   /** Latest microphone level (0..1), written by the speech hook. */
   levelNow: React.MutableRefObject<number>;
   startedAt: number;
@@ -1004,7 +1000,7 @@ function RecordingCard({
             numberOfLines={3}
             ellipsizeMode="head"
           >
-            {transcript || (writtenLater ? 'Listening… Bangla, English or both' : 'Listening…')}
+            {transcript || 'Listening…'}
           </Text>
 
           <Text className="font-sans text-sm" style={{ color: cancelling ? colors.error : colors.fgTertiary }}>

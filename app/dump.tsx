@@ -206,7 +206,7 @@ export default function DumpScreen() {
               <MotiView {...enter.rise(2)} className="mt-10 items-center">
                 <Text className="font-display text-title text-fg text-center">Talk it through</Text>
                 <Text className="font-sans text-body text-fg-secondary text-center mt-2 leading-relaxed px-6">
-                  In Bangla, English or both. Only the words are kept, never the audio.
+                  Speak in any language, or mix them. Only the words are kept, never the audio.
                 </Text>
               </MotiView>
             )}
