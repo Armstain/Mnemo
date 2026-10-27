@@ -96,18 +96,18 @@ function tabCenters(w: number): [number, number] {
 let lastTabIndex = 0;
 
 /** Which tab a pathname belongs to; for non-tab routes, the tab you were last on. */
+function onTab(item: (typeof TABS)[number], pathname: string): boolean {
+  return item.route === '/' ? pathname === '/' : pathname.includes(item.route.replace('/(tabs)/', ''));
+}
+
 export function activeTabIndex(pathname: string): number {
-  const found = TABS.findIndex(
-    (item) =>
-      (item.route === '/' && pathname === '/') ||
-      (item.route !== '/' && pathname.includes(item.route.replace('/(tabs)/', ''))),
-  );
+  const found = TABS.findIndex((item) => onTab(item, pathname));
   if (found !== -1) lastTabIndex = found;
   return lastTabIndex;
 }
 
 const DOT = 6;
-const DOT_STRETCH = 18;
+const DOT_STRETCH = 14;
 const ICON_Y = NAV_BAR_HEIGHT / 2 - 5;
 const DOT_Y = NAV_BAR_HEIGHT - 15;
 const TOUCH = 64;
@@ -142,10 +142,10 @@ export function FloatingTabBar() {
       placed.current = true;
       return;
     }
-    dotX.value = withSpring(dotTarget, { damping: 15, stiffness: 170, mass: 0.7 });
+    dotX.value = withSpring(dotTarget, { damping: 24, stiffness: 190, mass: 0.8 });
     dotW.value = withSequence(
       withTiming(DOT_STRETCH, { duration: 120 }),
-      withSpring(DOT, { damping: 11, stiffness: 240 }),
+      withSpring(DOT, { damping: 24, stiffness: 240 }),
     );
   }, [dotTarget, width]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -188,7 +188,7 @@ export function FloatingTabBar() {
             reduceMotion={reduceMotion}
             onPress={() => {
               if (captureActive) closeCapture();
-              if (index === activeIndex) return;
+              if (onTab(tab, pathname)) return;
               Haptics.selectionAsync();
               router.push(tab.route);
             }}
@@ -229,8 +229,8 @@ function TabButton({
   useEffect(() => {
     if (active && !wasActive.current && !reduceMotion) {
       scale.value = withSequence(
-        withTiming(0.78, { duration: 90 }),
-        withSpring(1, { damping: 7, stiffness: 260, mass: 0.6 }),
+        withTiming(0.9, { duration: 90 }),
+        withSpring(1, { damping: 16, stiffness: 260, mass: 0.6 }),
       );
     }
     lift.value = reduceMotion
@@ -250,7 +250,7 @@ function TabButton({
         if (!reduceMotion) scale.value = withSpring(0.86, { damping: 20, stiffness: 400 });
       }}
       onPressOut={() => {
-        if (!reduceMotion) scale.value = withSpring(1, { damping: 10, stiffness: 300 });
+        if (!reduceMotion) scale.value = withSpring(1, { damping: 18, stiffness: 300 });
       }}
       accessibilityRole="button"
       accessibilityState={{ selected: active }}
