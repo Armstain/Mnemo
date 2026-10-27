@@ -31,6 +31,7 @@ import { DetailSkeleton } from '@/components/ui/NoteListSkeleton';
 import { DueDatePicker, DueDateLabel } from '@/components/ui/DueDatePicker';
 import { ThreadRing } from '@/components/ui/ThreadRing';
 import { EntryCard } from '@/components/thread/EntryCard';
+import { ThreadMenu, type ThreadMenuItem } from '@/components/thread/ThreadMenu';
 import { OrganiseOffer, OverviewCard } from '@/components/thread/OverviewCard';
 import { NumbersSection, type MetricFix } from '@/components/thread/Measures';
 import { useMnemoStore } from '@/hooks/use-mnemo-store';
@@ -118,6 +119,9 @@ export default function ThreadScreen() {
       : undefined;
 
   const [isEditing, setIsEditing] = React.useState(false);
+  const [menuOpen, setMenuOpen] = React.useState(false);
+  // Height of the nav row, where the ⋯ menu drops from.
+  const [navBottom, setNavBottom] = React.useState(64);
   const [isGenerating, setIsGenerating] = React.useState(false);
   const [organising, setOrganising] = React.useState(false);
   const [editTitle, setEditTitle] = React.useState('');
@@ -351,6 +355,27 @@ export default function ThreadScreen() {
   const addUpdate = (mode: 'write' | 'record') =>
     router.push(`/${mode === 'write' ? 'capture' : 'dump'}?threadId=${thread.id}`);
 
+  // Now-and-then actions, out of the way in the ⋯ menu.
+  const open = thread.status === 'active' || thread.status === 'paused';
+  const menuItems: ThreadMenuItem[] = [
+    { icon: 'pencil', label: 'Edit thread', onPress: startEditing },
+    ...(shareText
+      ? [{ icon: 'share' as const, label: thread.overview ? 'Share overview' : "Share what's still open", onPress: onShare }]
+      : []),
+    ...(open
+      ? [
+          {
+            icon: 'pin' as const,
+            label: isFocus ? 'Stop sending captures here' : 'Send quick captures here',
+            onPress: () => setFocusThread(isFocus ? null : thread.id),
+          },
+        ]
+      : []),
+    ...(thread.status === 'active' ? [{ icon: 'pause' as const, label: 'Pause', onPress: () => pauseItem(thread.id) }] : []),
+    ...(thread.status !== 'archived' ? [{ icon: 'archive' as const, label: 'Archive', onPress: () => archiveItem(thread.id) }] : []),
+    { icon: 'trash', label: 'Delete thread', onPress: handleDelete, danger: true },
+  ];
+
   // ─── Render ────────────────────────────────────────────────
 
   return (
@@ -360,6 +385,7 @@ export default function ThreadScreen() {
         <View
           className="flex-row justify-between items-center px-5 pb-2"
           style={{ paddingTop: Math.max(insets.top, 12) + 4 }}
+          onLayout={(e) => setNavBottom(e.nativeEvent.layout.height)}
         >
           <IconButton
             icon={isEditing ? 'x' : 'chevronLeft'}
@@ -382,9 +408,16 @@ export default function ThreadScreen() {
                   updateItem(thread.id, { starred: !thread.starred });
                 }}
               />
-              {shareText ? <IconButton icon="share" label={thread.overview ? 'Share overview' : 'Share what\'s still open'} variant="bare" onPress={onShare} /> : null}
-              <IconButton icon="pencil" label="Edit thread" variant="bare" onPress={startEditing} />
-              <IconButton icon="trash" label="Delete thread" variant="bare" onPress={handleDelete} />
+              <IconButton
+                icon="more"
+                label="Thread options"
+                variant="bare"
+                active={menuOpen}
+                onPress={() => {
+                  Haptics.selectionAsync();
+                  setMenuOpen((v) => !v);
+                }}
+              />
             </View>
           )}
         </View>
@@ -595,11 +628,17 @@ export default function ThreadScreen() {
                 </MotiView>
               ) : null}
 
-              {/* ─── Status actions ─────────────────────── */}
+              {/* ─── What to do now: one row, the rest is in the ⋯ menu ─── */}
               <MotiView {...enter.fade(1)} className="px-6 mt-5 flex-row gap-2">
                 {thread.status === 'active' ? (
-                  <Button variant="quiet" size="sm" icon="pause" className="flex-1" onPress={() => pauseItem(thread.id)}>
-                    Pause
+                  <Button
+                    variant="quiet"
+                    size="sm"
+                    icon={rebrief.state === 'idle' ? 'volume' : 'x'}
+                    className="flex-1"
+                    onPress={() => (rebrief.state === 'idle' ? rebrief.start(thread) : rebrief.stop())}
+                  >
+                    {rebrief.state === 'idle' ? 'Listen back' : 'Stop'}
                   </Button>
                 ) : thread.status === 'paused' ? (
                   <Button
@@ -632,15 +671,6 @@ export default function ThreadScreen() {
                     Summary card
                   </Button>
                 ) : null}
-                <IconButton
-                  icon={rebrief.state === 'idle' ? 'volume' : 'x'}
-                  label={rebrief.state === 'idle' ? 'Play spoken re-brief' : 'Stop re-brief'}
-                  size={36}
-                  onPress={() => (rebrief.state === 'idle' ? rebrief.start(thread) : rebrief.stop())}
-                />
-                {thread.status !== 'archived' && (
-                  <IconButton icon="archive" label="Archive" size={36} onPress={() => archiveItem(thread.id)} />
-                )}
               </MotiView>
 
               {/* Re-brief player */}
@@ -669,45 +699,31 @@ export default function ThreadScreen() {
                 </View>
               )}
 
-              {/* ─── Focus: quick captures land here ───── */}
-              {(thread.status === 'active' || thread.status === 'paused') && (
-                <View className="px-6 mt-3">
-                  <Pressable
-                    onPress={() => setFocusThread(isFocus ? null : thread.id)}
-                    accessibilityRole="switch"
-                    accessibilityState={{ checked: isFocus }}
-                    className="flex-row items-center rounded-md px-4 py-3 active:opacity-80"
-                    style={{
-                      backgroundColor: isFocus ? colors.accentSoft : colors.surface,
-                      borderWidth: 1,
-                      borderColor: isFocus ? colors.accent : colors.border,
-                    }}
+              {/* ─── Focus: quick captures land here (switched on from the ⋯ menu) ─── */}
+              {isFocus && (thread.status === 'active' || thread.status === 'paused') && (
+                <MotiView {...enter.fade(1)} className="px-6 mt-3">
+                  <View
+                    className="flex-row items-center self-start rounded-full pl-3 pr-1.5 h-10"
+                    style={{ backgroundColor: colors.accentSoft, maxWidth: '100%' }}
                   >
-                    <Icon name="pin" size={18} color={isFocus ? colors.accent : colors.fgTertiary} stroke={2} />
-                    <View className="flex-1 mx-3">
-                      <Text className="font-sans-semi text-body" style={{ color: colors.fg }}>
-                        {isFocus ? 'Quick captures go here' : 'Send quick captures here'}
-                      </Text>
-                      <Text className="font-sans text-sm" style={{ color: colors.fgTertiary }}>
-                        {isFocus
-                          ? 'Anything you record or write from Home joins this thread.'
-                          : 'For a trip or project: no need to open it each time.'}
-                      </Text>
-                    </View>
-                    <MotiView
-                      className="w-11 h-6 rounded-full p-0.5"
-                      animate={{ backgroundColor: isFocus ? colors.accent : colors.outline }}
-                      transition={{ type: 'timing', duration: 180 }}
+                    <Icon name="pin" size={15} color={colors.accent} stroke={2.2} />
+                    <Text className="font-sans-medium text-sm ml-2 mr-2 shrink" style={{ color: colors.fg }} numberOfLines={1}>
+                      Quick captures land here
+                    </Text>
+                    <Pressable
+                      onPress={() => setFocusThread(null)}
+                      hitSlop={8}
+                      accessibilityRole="button"
+                      accessibilityLabel="Stop sending quick captures here"
+                      className="rounded-full px-3 h-7 items-center justify-center active:opacity-70"
+                      style={{ backgroundColor: colors.surfaceLowest }}
                     >
-                      <MotiView
-                        className="w-5 h-5 rounded-full"
-                        style={{ backgroundColor: colors.surfaceLowest }}
-                        animate={{ translateX: isFocus ? 20 : 0 }}
-                        transition={{ type: 'spring', damping: 15, stiffness: 260, mass: 0.6 }}
-                      />
-                    </MotiView>
-                  </Pressable>
-                </View>
+                      <Text className="font-sans-semi text-sm" style={{ color: colors.accent }}>
+                        Stop
+                      </Text>
+                    </Pressable>
+                  </View>
+                </MotiView>
               )}
 
               {/* ─── Numbers it tracks ──────────────────── */}
@@ -768,13 +784,30 @@ export default function ThreadScreen() {
                   </View>
                 ) : null}
 
-                <View className="flex-row gap-2 mb-4">
-                  <Button variant="quiet" size="sm" icon="pencil" className="flex-1" onPress={() => addUpdate('write')}>
-                    Write an update
-                  </Button>
-                  <Button variant="quiet" size="sm" icon="mic" className="flex-1" onPress={() => addUpdate('record')}>
-                    Record one
-                  </Button>
+                {/* One way in: tap to write, or the mic to say it. */}
+                <View
+                  className="flex-row items-center rounded-full mb-4 pl-5 pr-1.5 h-14"
+                  style={{ backgroundColor: colors.surfaceLowest, borderWidth: 1, borderColor: colors.border }}
+                >
+                  <Pressable
+                    onPress={() => addUpdate('write')}
+                    accessibilityRole="button"
+                    accessibilityLabel="Write an update to this thread"
+                    className="flex-1 h-full justify-center active:opacity-60"
+                  >
+                    <Text className="font-sans text-body" style={{ color: colors.fgTertiary }}>
+                      Add to this thread…
+                    </Text>
+                  </Pressable>
+                  <Pressable
+                    onPress={() => addUpdate('record')}
+                    accessibilityRole="button"
+                    accessibilityLabel="Record an update to this thread"
+                    className="w-11 h-11 rounded-full items-center justify-center active:opacity-80"
+                    style={{ backgroundColor: colors.accent }}
+                  >
+                    <Icon name="mic" size={18} color={colors.accentInk} stroke={2.2} />
+                  </Pressable>
                 </View>
 
                 <View className="gap-3">
@@ -841,6 +874,8 @@ export default function ThreadScreen() {
             </>
           )}
         </ScrollView>
+
+        <ThreadMenu open={menuOpen && !isEditing} onClose={() => setMenuOpen(false)} items={menuItems} top={navBottom} />
       </View>
     </KeyboardAvoidingView>
   );
