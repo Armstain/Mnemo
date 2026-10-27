@@ -20,6 +20,7 @@ import { useThemeColors } from '@/hooks/use-theme';
 import { useAiProblem, type AiProblem } from '@/lib/ai-mode';
 import { usePreferences } from '@/lib/preferences';
 import { formatCompactDistance, DAY_MS } from '@/utils/time';
+import { sameWords } from '@/utils/text';
 import { CATEGORY_LIST, useCategories } from '@/utils/categories';
 import { useEnter } from '@/utils/motion';
 import type { MnemoItem } from '@/types/mnemo';
@@ -65,6 +66,9 @@ function ResumeCard({ item, reason }: { item: MnemoItem; reason: ResumeReason })
   const checklist = item.type === 'checklist' ? item.checklistItems ?? [] : [];
   const done = checklist.filter((c) => c.checked).length;
   const chip = reason ? reasonChip(reason, !!item.repeat) : null;
+  // Under the title, only what adds to it.
+  const nextStep = item.nextStep && !sameWords(item.nextStep, item.title) ? item.nextStep : undefined;
+  const whereLeftOff = item.whereLeftOff && !sameWords(item.whereLeftOff, item.title) ? item.whereLeftOff : undefined;
   const chipTone = reason?.kind === 'missed' ? colors.onHero : colors.heroAccent;
   // A reminder further off than the chip covers still shows, in place of the age.
   const dueAt = item.dueDate ? nextOccurrence(item.dueDate, item.repeat) : undefined;
@@ -109,13 +113,13 @@ function ResumeCard({ item, reason }: { item: MnemoItem; reason: ResumeReason })
 
         <View className="flex-row items-center pt-3.5 mt-4" style={{ borderTopWidth: 1, borderTopColor: colors.heroSoft, gap: 12 }}>
           <View className="flex-1" style={{ minWidth: 0 }}>
-            {item.nextStep ? (
+            {nextStep ? (
               <>
                 <Text className="font-sans-semi text-xs uppercase tracking-caps mb-0.5" style={{ color: colors.heroAccent }}>
                   Next
                 </Text>
                 <Text className="font-sans-medium text-body leading-snug" style={{ color: colors.onHero }} numberOfLines={2}>
-                  {item.nextStep}
+                  {nextStep}
                 </Text>
               </>
             ) : checklist.length > 0 ? (
@@ -127,9 +131,9 @@ function ResumeCard({ item, reason }: { item: MnemoItem; reason: ResumeReason })
                   {done} of {checklist.length} done
                 </Text>
               </>
-            ) : item.whereLeftOff ? (
+            ) : whereLeftOff ? (
               <Text className="font-quote text-body leading-snug" style={{ color: colors.onHeroMuted }} numberOfLines={2}>
-                “{item.whereLeftOff}”
+                “{whereLeftOff}”
               </Text>
             ) : (
               <Text className="font-sans-semi text-body" style={{ color: colors.onHero }}>
@@ -334,7 +338,7 @@ export function PulseHome() {
 
         {/* Up next: the rest of the same ranking */}
         {upNext.length > 0 && (
-          <MotiView {...enter.rise(2)} className="mb-7">
+          <MotiView {...enter.rise(2)} {...enter.reflow()} className="mb-7">
             <Eyebrow
               action={openCount > 1 + upNext.length ? `See all ${openCount}` : undefined}
               onAction={() => router.push('/(tabs)/library')}
@@ -359,7 +363,7 @@ export function PulseHome() {
 
         {/* Coming up: dates not already shown above */}
         {comingUp.length > 0 && (
-          <MotiView {...enter.rise(3)} className="mb-8">
+          <MotiView {...enter.rise(3)} {...enter.reflow()} className="mb-8">
             <Eyebrow
               action={comingUp.length > COMING_UP_LIMIT ? `All ${comingUp.length}` : undefined}
               onAction={() => router.push('/(tabs)/library')}
@@ -385,7 +389,7 @@ export function PulseHome() {
 
         {/* Browse — only categories that hold something */}
         {categoryCounts.length > 0 && (
-          <MotiView {...enter.rise(4)}>
+          <MotiView {...enter.rise(4)} {...enter.reflow()}>
             <Eyebrow action="Library" onAction={() => router.push('/(tabs)/library')}>
               Browse
             </Eyebrow>

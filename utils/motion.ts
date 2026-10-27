@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { Easing } from 'react-native-reanimated';
+import { Easing, LinearTransition } from 'react-native-reanimated';
 
 import { useReduceMotion } from '@/hooks/use-accessibility-motion';
 
@@ -112,6 +112,12 @@ function stepDelay(step: number) {
 const ROW_STAGGER_MS = 40;
 const ROW_STAGGER_CAP = 6;
 
+/** Rows sliding to a new place: the nav spring's feel, as a layout transition. */
+const ROW_REFLOW = LinearTransition.springify()
+  .damping(SPRING_NAV.damping)
+  .stiffness(SPRING_NAV.stiffness)
+  .mass(SPRING_NAV.mass);
+
 type EnterProps = {
   from: Record<string, number>;
   animate: Record<string, number>;
@@ -201,6 +207,15 @@ export function useEnter() {
         return reduceMotion
           ? { exit: { opacity: 0 }, exitTransition: REDUCED }
           : { exit: { opacity: 0, translateX: 32 }, exitTransition: EXIT_QUICK };
+      },
+
+      /**
+       * How a row moves when the list around it changes: it slides to its
+       * new place instead of jumping there. Under Reduce Motion it just
+       * appears there.
+       */
+      reflow() {
+        return reduceMotion ? {} : { layout: ROW_REFLOW };
       },
     }),
     [reduceMotion],

@@ -1,7 +1,7 @@
 import React from 'react';
 import { PanResponder, Pressable, StyleSheet, View } from 'react-native';
 import { Text } from '@/components/ui/Text';
-import { MotiView } from 'moti';
+import { AnimatePresence, MotiView } from 'moti';
 import * as Haptics from 'expo-haptics';
 import { Extrapolation, interpolate, useAnimatedStyle, useSharedValue, withSpring, withTiming } from 'react-native-reanimated';
 import { Animated, usePressScale } from '@/hooks/use-press-scale';
@@ -11,19 +11,25 @@ import { ThreadRing } from '@/components/ui/ThreadRing';
 import { useThemeColors } from '@/hooks/use-theme';
 import { useCategories, useStatusConfig } from '@/utils/categories';
 import { formatCompactDistance, freshness } from '@/utils/time';
+import { sameWords, withoutLead } from '@/utils/text';
 import { EASE_OUT, useEnter } from '@/utils/motion';
 import type { MnemoItem } from '@/types/mnemo';
 
-/** One line of preview: the next step, else the note text, else checklist progress. */
+/**
+ * One line of preview: the next step, else the note text, else checklist
+ * progress. Never the title again: a next step that only repeats it is
+ * skipped, and the note loses a leading copy of it.
+ */
 export function threadPreview(item: MnemoItem): string {
-  if (item.nextStep) return item.nextStep;
+  if (item.nextStep && !sameWords(item.nextStep, item.title)) return item.nextStep;
   // Notes are markdown; a one-line preview shows the words, not the markup.
-  const body = item.content
+  const text = item.content
     ?.replace(/\[([^\]]*)\]\([^)]*\)/g, '$1')
     .replace(/^\s*(?:[-*+]|\d+\.|#{1,6}|>)\s+/gm, '')
     .replace(/[*_`~]/g, '')
     .replace(/\s+/g, ' ')
     .trim();
+  const body = text && withoutLead(text, item.title);
   if (body) return body;
   const checklist = item.checklistItems ?? [];
   if (checklist.length > 0) {
@@ -142,6 +148,8 @@ function ThreadRowImpl({ item, onPress, detail, trailing, trailingTone, last = f
     <MotiView
       {...(cell && !cell.animate ? {} : enter.row(index))}
       {...enter.rowExit()}
+      // Virtualized rows (cell) are placed by their list, not animated.
+      {...(cell ? {} : enter.reflow())}
       style={
         cell
           ? {
@@ -233,12 +241,20 @@ const styles = StyleSheet.create({
   bin: { alignItems: 'flex-end', justifyContent: 'center', paddingRight: 28 },
 });
 
-/** The grouped surface every list of ThreadRows sits in. */
+/**
+ * The grouped surface every list of ThreadRows sits in. A row that leaves
+ * plays its exit, and the rest slide up to close the gap.
+ */
 export function ThreadList({ children }: { children: React.ReactNode }) {
   const colors = useThemeColors();
+  const enter = useEnter();
   return (
-    <View className="rounded-lg overflow-hidden" style={{ backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border }}>
-      {children}
-    </View>
+    <MotiView
+      {...enter.reflow()}
+      className="rounded-lg overflow-hidden"
+      style={{ backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border }}
+    >
+      <AnimatePresence>{children}</AnimatePresence>
+    </MotiView>
   );
 }

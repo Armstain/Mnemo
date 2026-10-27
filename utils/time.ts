@@ -8,7 +8,10 @@ export function formatDuration(ms: number): string {
   return `${minutes}:${seconds.toString().padStart(2, '0')}`;
 }
 
-export function formatCompactDistance(date: Date | string | number): string {
+/** How long ago, in a few characters: "now", "5m", "3h", "2d". */
+export function formatCompactDistance(date: Date | string | number, now = Date.now()): string {
+  // Seconds are noise in a list; under a minute is just "now".
+  if (now - new Date(date).getTime() < 60_000) return 'now';
   const distance = formatDistanceToNowStrict(new Date(date));
 
   return distance
