@@ -33,15 +33,25 @@ export const NAV_BAR_HEIGHT = 64;
 export const CAPTURE_BUTTON_SIZE = 56;
 /** Diameter of the brand ring around it; the notch is shaped for this. */
 export const CAPTURE_RING_SIZE = CAPTURE_BUTTON_SIZE + 14;
-const CORNER = 28;
-/** Half the notch's opening along the bar's top edge. */
-const NOTCH_HALF = 62;
-/** How deep the notch dips below the top edge. */
-const NOTCH_DEPTH = 34;
-/** Space between the ring and the bottom of the notch. */
-const NOTCH_GAP = 4;
+/** Fully round ends: the bar is a capsule. */
+const CORNER = 32;
 /** Centre of the button, measured down from the bar's top edge (negative: above it). */
-const BUTTON_CENTER_Y = NOTCH_DEPTH - NOTCH_GAP - CAPTURE_RING_SIZE / 2;
+const BUTTON_CENTER_Y = -5;
+
+// The notch is a circle around the button, the same gap all the way round
+// the ring, eased into the top edge by two small round shoulders. Even
+// spacing is what makes it read as cradling the button rather than as a
+// dent in the bar.
+/** Space between the ring and the notch, everywhere along it. */
+const NOTCH_GAP = 6;
+/** Radius of the notch: the ring plus its gap. */
+const NOTCH_R = CAPTURE_RING_SIZE / 2 + NOTCH_GAP;
+/** Radius of the shoulders where the notch meets the top edge. */
+const SHOULDER_R = 14;
+/** Shoulder centres sit SHOULDER_R below the top edge, touching the notch circle. */
+const SHOULDER_DX = Math.sqrt((NOTCH_R + SHOULDER_R) ** 2 - (SHOULDER_R - BUTTON_CENTER_Y) ** 2);
+/** Half the notch's opening along the bar's top edge. */
+const NOTCH_HALF = SHOULDER_DX;
 /** How far the capture button rises above the bar's top edge. */
 export const CENTER_BUTTON_RISE = CAPTURE_BUTTON_SIZE / 2 - BUTTON_CENTER_Y;
 
@@ -61,18 +71,21 @@ export const NAV_CLEARANCE = NAV_BAR_HEIGHT + CENTER_BUTTON_RISE + 12 + 16;
 // Kept as its own name for Home.
 export const CONTENT_BOTTOM_CLEARANCE = NAV_CLEARANCE;
 
-/** The bar's outline: a rounded rectangle with a smooth bowl in the middle of the top edge. */
+/** The bar's outline: a capsule with a notch cradling the capture button. */
 function barPath(w: number, h: number): string {
   const cx = w / 2;
-  const x1 = cx - NOTCH_HALF;
-  const x2 = cx + NOTCH_HALF;
-  const bowl = CAPTURE_RING_SIZE / 2 + 2;
+  const cy = BUTTON_CENTER_Y;
   const r = CORNER;
+  // Where each shoulder meets the notch: on the line between their centres.
+  const toShoulder = NOTCH_R / (NOTCH_R + SHOULDER_R);
+  const tx = SHOULDER_DX * toShoulder;
+  const ty = cy + (SHOULDER_R - cy) * toShoulder;
   return [
     `M ${r} 0`,
-    `L ${x1} 0`,
-    `C ${x1 + 14} 0, ${cx - bowl} ${NOTCH_DEPTH}, ${cx} ${NOTCH_DEPTH}`,
-    `C ${cx + bowl} ${NOTCH_DEPTH}, ${x2 - 14} 0, ${x2} 0`,
+    `L ${cx - SHOULDER_DX} 0`,
+    `A ${SHOULDER_R} ${SHOULDER_R} 0 0 1 ${cx - tx} ${ty}`,
+    `A ${NOTCH_R} ${NOTCH_R} 0 0 0 ${cx + tx} ${ty}`,
+    `A ${SHOULDER_R} ${SHOULDER_R} 0 0 1 ${cx + SHOULDER_DX} 0`,
     `L ${w - r} 0`,
     `A ${r} ${r} 0 0 1 ${w} ${r}`,
     `L ${w} ${h - r}`,

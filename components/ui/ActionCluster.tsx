@@ -20,6 +20,7 @@ import Animated, {
   type SharedValue,
 } from 'react-native-reanimated';
 import * as Haptics from 'expo-haptics';
+import Svg, { Circle } from 'react-native-svg';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router, useGlobalSearchParams, usePathname } from 'expo-router';
 
@@ -66,6 +67,8 @@ const FAB_SIZE = CAPTURE_BUTTON_SIZE;
 const ORBIT_SIZE = CAPTURE_RING_SIZE;
 /** The ring's stroke as a share of its size: about 3.5px. */
 const ORBIT_WEIGHT = 0.05;
+/** The closed ring at rest: a hairline under the open ring's weight. */
+const REST_RING_STROKE = 2;
 const BIN_SIZE = 56;
 const FAB_CENTER = FAB_SIZE / 2;
 
@@ -510,15 +513,35 @@ export function ActionCluster({ visible = true }: { visible?: boolean }) {
               />
             )}
             <Animated.View pointerEvents="box-none" style={[styles.fabSlotInner, puckStyle]}>
-              {/* The brand's open ring. It draws in once, sits still at rest,
-                  turns red when held and spins while recording. */}
+              {/* At rest, a closed ring, even all round like the notch it
+                  sits in. Held, it gives way to the brand's open ring, red,
+                  spinning while it records: the loop that isn't closed yet. */}
+              <MotiView
+                pointerEvents="none"
+                style={styles.orbit}
+                from={{ opacity: 0, scale: reduceMotion ? 1 : 0.92 }}
+                animate={{ opacity: expanded || live || holdPhase === 'charging' ? 0 : 1, scale: 1 }}
+                transition={{ type: 'timing', duration: DUR_BASE, easing: EASE_OUT }}
+              >
+                <Svg width={ORBIT_SIZE} height={ORBIT_SIZE}>
+                  <Circle
+                    cx={ORBIT_SIZE / 2}
+                    cy={ORBIT_SIZE / 2}
+                    r={ORBIT_SIZE / 2 - REST_RING_STROKE}
+                    stroke={colors.accent}
+                    strokeOpacity={0.4}
+                    strokeWidth={REST_RING_STROKE}
+                    fill="none"
+                  />
+                </Svg>
+              </MotiView>
               <MotiView
                 pointerEvents="none"
                 style={styles.orbit}
                 from={{ rotate: reduceMotion ? '0deg' : '-120deg', opacity: 0 }}
                 animate={{
                   rotate: live && !reduceMotion ? '360deg' : '0deg',
-                  opacity: expanded ? 0 : live || holdPhase === 'charging' ? 1 : 0.6,
+                  opacity: !expanded && (live || holdPhase === 'charging') ? 1 : 0,
                   scale: holdPhase === 'charging' && !reduceMotion ? 1.06 : 1,
                 }}
                 // Only rotate loops: a shared looping transition would also
