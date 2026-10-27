@@ -26,27 +26,26 @@ Local-first: no account, server, analytics or telemetry. What leaves the phone, 
 
 ## Brand Personality
 
-Calm, nocturnal, luminous. The app is a quiet dark room where your thoughts glow softly — not a productivity dashboard shouting metrics. It follows the system theme: the light theme keeps the same softly-lit glass, never a flat white page. Three words: **ambient, focused, weightless**. The signature visual language is **liquid glass**: translucent surfaces floating over a deep, softly-lit color field.
+Calm, warm, unhurried. The app is a quiet notebook that remembers for you, not a productivity dashboard shouting metrics. Three words: **warm, focused, weightless**. The visual language is **Paper / Ink**: ivory paper and deep emerald in light, warm black ink and a raised emerald in dark. Surfaces are solid tones, not translucency, so text contrast is the same wherever a card lands. A serif (Literata) carries titles and what you said; a sans (Instrument Sans) carries everything else. The signature mark is the **open ring**: the logo, and on every thread a ring whose length shows how warm it still is.
 
 ## Anti-references
 
 - SaaS dashboard aesthetics: stat tiles, KPI rows, dense chrome.
-- Sterile flat-gray dark modes (pure #111 cards on #000, no light in the scene).
-- Skeuomorphic "notebook" apps with paper textures and serif body copy.
-- Glassmorphism-as-decoration: blur slapped on opaque backgrounds where nothing shows through. Glass here is the committed material system, and every glass surface must have visible color behind it to refract.
+- Sterile flat-gray dark modes (pure #111 cards on #000). Dark mode is warm ink, not gray.
+- Skeuomorphic "notebook" apps with paper textures. Paper here is a colour, never a texture.
+- Glass, blur and glow as decoration. Depth is kept for the one thing that matters most on a screen.
 
 ## Design Principles
 
-1. **Glass is a material, not a filter.** Every translucent surface sits over the ambient color field; if nothing shows through it, it isn't glass.
-2. **One capture gesture from anywhere.** The mic is the hero of the home screen; nothing competes with it.
-3. **Re-entry over browsing.** Surfaces optimize for "what was I doing?" — the resume card, next steps, and where-you-left-off always outrank archives.
-4. **Motion conveys state.** Pulses mean "listening", drifts mean "ambient"; nothing animates for decoration on task surfaces.
-5. **Native where it counts.** Real iOS 26 Liquid Glass when available; the fallback must be indistinguishable in spirit on Android/web.
-6. **Local first, AI optional.** Capture never waits on a network or a key; AI makes a capture better afterwards, and the phone's own reading is always the floor.
+1. **One lit surface per screen.** The Resume card is the only inverted, lit surface on Home; everything else stays quiet so it reads first.
+2. **One capture gesture from anywhere.** The capture button is the hero; nothing competes with it.
+3. **Re-entry over browsing.** Surfaces optimize for "what was I doing?": the resume card, next steps and where-you-left-off always outrank archives. On a thread, the thread comes first and occasional actions live in its ⋯ menu.
+4. **Motion conveys state.** Rings fill as threads warm up, rows slide when a list changes, pulses mean "listening". Nothing animates for decoration, and Reduce Motion turns travel into a short fade.
+5. **Never say the same thing twice.** A preview, next step or label that repeats the title is left out.
 
 ## Accessibility & Inclusion
 
-- Text on glass must meet WCAG AA: ≥4.5:1 for body/secondary text against the darkest point of the ambient field (in practice: white at ≥60% opacity for body, ≥45% only for large/decorative labels).
+- Text must meet WCAG AA: ≥4.5:1 for body and secondary text on every surface it sits on, in both themes.
 - All interactive targets ≥44pt; icon-only buttons carry `accessibilityLabel`s.
-- Ambient background drift must respect reduced-motion (static field when enabled).
+- All motion respects Reduce Motion: no travel, just a short fade.
 - Voice capture is a first-class alternative to typing, and typing is always available as a fallback to voice.
