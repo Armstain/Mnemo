@@ -1,18 +1,27 @@
 import React from 'react';
 import { View } from 'react-native';
 import Svg, { Circle, Path } from 'react-native-svg';
+import Animated, { useAnimatedProps, useSharedValue, withDelay, withTiming } from 'react-native-reanimated';
+
+import { useReduceMotion } from '@/hooks/use-accessibility-motion';
+import { EASE_OUT } from '@/utils/motion';
+
+const AnimatedPath = Animated.createAnimatedComponent(Path);
+const AnimatedCircle = Animated.createAnimatedComponent(Circle);
 
 // ─── Geometry ───────────────────────────────────────────────────
 // Angles are in degrees, 0 = 3 o'clock, increasing clockwise (SVG's y
 // axis points down).
 
 function point(cx: number, cy: number, r: number, deg: number) {
+  'worklet';
   const rad = (deg * Math.PI) / 180;
   return { x: cx + r * Math.cos(rad), y: cy + r * Math.sin(rad) };
 }
 
 /** SVG path for a clockwise arc from `startDeg` sweeping `sweepDeg`. */
 function arcPath(cx: number, cy: number, r: number, startDeg: number, sweepDeg: number): string {
+  'worklet';
   const sweep = Math.min(Math.max(sweepDeg, 0.01), 359.99);
   const a = point(cx, cy, r, startDeg);
   const b = point(cx, cy, r, startDeg + sweep);
@@ -30,8 +39,19 @@ interface ThreadRingProps {
   color: string;
   trackColor: string;
   strokeWidth?: number;
+  /**
+   * Draw the arc in on first show, and grow or shrink it when `progress`
+   * changes (a thread you just added to fills back up). Off for rows a
+   * long list scrolls into view.
+   */
+  animate?: boolean;
+  /** Wait before drawing in, to land with a staggered row. */
+  delay?: number;
   children?: React.ReactNode;
 }
+
+/** Long enough to watch the ring fill; it's the one thing moving in the row. */
+const DRAW_MS = 700;
 
 /**
  * The logo's open ring, used as data: an arc from 12 o'clock whose length
@@ -40,21 +60,46 @@ interface ThreadRingProps {
  * stub with its dot drifting free. Content (usually a category icon) sits
  * in the middle.
  */
-export function ThreadRing({ size, progress, color, trackColor, strokeWidth = 2.5, children }: ThreadRingProps) {
+export function ThreadRing({
+  size,
+  progress,
+  color,
+  trackColor,
+  strokeWidth = 2.5,
+  animate = true,
+  delay = 0,
+  children,
+}: ThreadRingProps) {
+  const reduceMotion = useReduceMotion();
   const c = size / 2;
   const dotR = strokeWidth * 1.1;
   const r = c - dotR - 0.5;
   // Never fully closed (the logo's ring never is) and never invisible.
-  const sweep = 24 + Math.min(Math.max(progress, 0), 1) * 300;
+  const MIN_SWEEP = 24;
+  const target = MIN_SWEEP + Math.min(Math.max(progress, 0), 1) * 300;
   const start = -90;
-  const end = point(c, c, r, start + sweep);
+  const moving = animate && !reduceMotion;
+
+  const sweep = useSharedValue(moving ? MIN_SWEEP : target);
+  const first = React.useRef(true);
+  React.useEffect(() => {
+    const wait = first.current ? delay : 0;
+    first.current = false;
+    sweep.value = moving ? withDelay(wait, withTiming(target, { duration: DRAW_MS, easing: EASE_OUT })) : target;
+  }, [target, moving, delay, sweep]);
+
+  const arcProps = useAnimatedProps(() => ({ d: arcPath(c, c, r, start, sweep.value) }));
+  const dotProps = useAnimatedProps(() => {
+    const end = point(c, c, r, start + sweep.value);
+    return { cx: end.x, cy: end.y };
+  });
 
   return (
     <View style={{ width: size, height: size, alignItems: 'center', justifyContent: 'center' }}>
       <Svg width={size} height={size} style={{ position: 'absolute' }}>
         <Circle cx={c} cy={c} r={r} stroke={trackColor} strokeWidth={strokeWidth} fill="none" />
-        <Path d={arcPath(c, c, r, start, sweep)} stroke={color} strokeWidth={strokeWidth} strokeLinecap="round" fill="none" />
-        <Circle cx={end.x} cy={end.y} r={dotR} fill={color} />
+        <AnimatedPath animatedProps={arcProps} stroke={color} strokeWidth={strokeWidth} strokeLinecap="round" fill="none" />
+        <AnimatedCircle animatedProps={dotProps} r={dotR} fill={color} />
       </Svg>
       {children}
     </View>

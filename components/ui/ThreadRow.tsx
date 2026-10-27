@@ -194,7 +194,14 @@ function ThreadRowImpl({ item, onPress, detail, trailing, trailingTone, last = f
       >
         <Animated.View style={[{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 14 }, press.style]}>
           <View className="mr-3.5">
-            <ThreadRing size={40} progress={freshness(item.updatedAt)} color={category.color} trackColor={category.bgTint}>
+            <ThreadRing
+              size={40}
+              progress={freshness(item.updatedAt)}
+              color={category.color}
+              trackColor={category.bgTint}
+              animate={!cell || cell.animate}
+              delay={Math.min(index, 6) * 40 + 120}
+            >
               <CategoryIcon size={15} color={category.color} strokeWidth={2} />
             </ThreadRing>
           </View>

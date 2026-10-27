@@ -4,6 +4,7 @@ import { Text } from '@/components/ui/Text';
 import { MotiView } from 'moti';
 import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import Svg, { Defs, RadialGradient, Rect, Stop } from 'react-native-svg';
 
 import { Card } from '@/components/ui/Card';
 import { ReminderSetupPrompt } from '@/components/ReminderSetupPrompt';
@@ -78,75 +79,103 @@ function ResumeCard({ item, reason }: { item: MnemoItem; reason: ResumeReason })
       : `${item.status === 'paused' ? 'Paused' : category.label} · ${formatCompactDistance(item.updatedAt)}`;
 
   return (
-    <Pressable
-      onPress={() => openItem(item.id)}
-      accessibilityRole="button"
-      accessibilityLabel={`Resume ${item.title}${chip ? `. ${chip.label}` : ''}`}
-      className="overflow-hidden mb-7 active:opacity-95"
-      style={{ backgroundColor: colors.hero, borderRadius: 30 }}
+    // Lifted off the page by a shadow in its own colour; the card inside clips.
+    <View
+      className="mb-7"
+      style={{
+        borderRadius: 30,
+        // Android draws elevation only under a filled view.
+        backgroundColor: colors.hero,
+        shadowColor: colors.hero,
+        shadowOpacity: 0.35,
+        shadowRadius: 22,
+        shadowOffset: { width: 0, height: 12 },
+        elevation: 10,
+      }}
     >
-      {/* The mark, oversized and cropped off the corner. */}
-      <View pointerEvents="none" style={{ position: 'absolute', top: -40, right: -36, opacity: 0.1 }}>
-        <OpenRing size={160} color={colors.onHero} core={false} weight={0.11} />
-      </View>
+      <Pressable
+        onPress={() => openItem(item.id)}
+        accessibilityRole="button"
+        accessibilityLabel={`Resume ${item.title}${chip ? `. ${chip.label}` : ''}`}
+        className="overflow-hidden active:opacity-95"
+        style={{ backgroundColor: colors.hero, borderRadius: 30, borderWidth: 1, borderColor: colors.heroSoft }}
+      >
+        {/* Light in the room: a soft glow from the top left, so the card
+            reads as lit rather than as a flat slab. */}
+        <Svg pointerEvents="none" width="100%" height="100%" style={{ position: 'absolute' }}>
+          <Defs>
+            <RadialGradient id="resume-glow" cx="12%" cy="0%" rx="95%" ry="110%">
+              <Stop offset="0" stopColor={colors.heroAccent} stopOpacity={0.22} />
+              <Stop offset="0.55" stopColor={colors.heroAccent} stopOpacity={0.05} />
+              <Stop offset="1" stopColor={colors.heroAccent} stopOpacity={0} />
+            </RadialGradient>
+          </Defs>
+          <Rect width="100%" height="100%" fill="url(#resume-glow)" />
+        </Svg>
 
-      <View className="p-5">
-        <View className="flex-row items-center justify-between" style={{ gap: 8 }}>
-          {chip ? (
-            <View className="flex-row items-center rounded-full px-3 h-7 shrink" style={{ backgroundColor: colors.heroSoft }}>
-              <Icon name={chip.icon} size={13} color={chipTone} stroke={2} />
-              <Text className="font-sans-semi text-sm ml-1.5" style={{ color: chipTone }} numberOfLines={1}>
-                {chip.label}
-              </Text>
-            </View>
-          ) : (
-            <View />
-          )}
-          <Text className="font-sans text-sm shrink" style={{ color: colors.onHeroMuted }} numberOfLines={1}>
-            {aside}
-          </Text>
+        {/* The mark, oversized and cropped off the corner. */}
+        <View pointerEvents="none" style={{ position: 'absolute', top: -40, right: -36, opacity: 0.1 }}>
+          <OpenRing size={160} color={colors.onHero} core={false} weight={0.11} />
         </View>
 
-        <Text className="font-display leading-tight mt-3.5" style={{ color: colors.onHero, fontSize: 24 }} numberOfLines={2}>
-          {item.title}
-        </Text>
-
-        <View className="flex-row items-center pt-3.5 mt-4" style={{ borderTopWidth: 1, borderTopColor: colors.heroSoft, gap: 12 }}>
-          <View className="flex-1" style={{ minWidth: 0 }}>
-            {nextStep ? (
-              <>
-                <Text className="font-sans-semi text-xs uppercase tracking-caps mb-0.5" style={{ color: colors.heroAccent }}>
-                  Next
+        <View className="p-5">
+          <View className="flex-row items-center justify-between" style={{ gap: 8 }}>
+            {chip ? (
+              <View className="flex-row items-center rounded-full px-3 h-7 shrink" style={{ backgroundColor: colors.heroSoft }}>
+                <Icon name={chip.icon} size={13} color={chipTone} stroke={2} />
+                <Text className="font-sans-semi text-sm ml-1.5" style={{ color: chipTone }} numberOfLines={1}>
+                  {chip.label}
                 </Text>
-                <Text className="font-sans-medium text-body leading-snug" style={{ color: colors.onHero }} numberOfLines={2}>
-                  {nextStep}
-                </Text>
-              </>
-            ) : checklist.length > 0 ? (
-              <>
-                <View className="h-1.5 rounded-full overflow-hidden mb-2" style={{ backgroundColor: colors.heroSoft }}>
-                  <View className="h-full rounded-full" style={{ width: `${(done / checklist.length) * 100}%`, backgroundColor: colors.heroAccent }} />
-                </View>
-                <Text className="font-sans text-xs" style={{ color: colors.onHeroMuted }}>
-                  {done} of {checklist.length} done
-                </Text>
-              </>
-            ) : whereLeftOff ? (
-              <Text className="font-quote text-body leading-snug" style={{ color: colors.onHeroMuted }} numberOfLines={2}>
-                “{whereLeftOff}”
-              </Text>
+              </View>
             ) : (
-              <Text className="font-sans-semi text-body" style={{ color: colors.onHero }}>
-                Resume
-              </Text>
+              <View />
             )}
+            <Text className="font-sans text-sm shrink" style={{ color: colors.onHeroMuted }} numberOfLines={1}>
+              {aside}
+            </Text>
           </View>
-          <View className="w-12 h-12 rounded-full items-center justify-center" style={{ backgroundColor: colors.onHero }}>
-            <Icon name="play" size={18} stroke={2.2} color={colors.hero} />
+
+          <Text className="font-display leading-tight mt-3.5" style={{ color: colors.onHero, fontSize: 24 }} numberOfLines={2}>
+            {item.title}
+          </Text>
+
+          <View className="flex-row items-center pt-3.5 mt-4" style={{ borderTopWidth: 1, borderTopColor: colors.heroSoft, gap: 12 }}>
+            <View className="flex-1" style={{ minWidth: 0 }}>
+              {nextStep ? (
+                <>
+                  <Text className="font-sans-semi text-xs uppercase tracking-caps mb-0.5" style={{ color: colors.heroAccent }}>
+                    Next
+                  </Text>
+                  <Text className="font-sans-medium text-body leading-snug" style={{ color: colors.onHero }} numberOfLines={2}>
+                    {nextStep}
+                  </Text>
+                </>
+              ) : checklist.length > 0 ? (
+                <>
+                  <View className="h-1.5 rounded-full overflow-hidden mb-2" style={{ backgroundColor: colors.heroSoft }}>
+                    <View className="h-full rounded-full" style={{ width: `${(done / checklist.length) * 100}%`, backgroundColor: colors.heroAccent }} />
+                  </View>
+                  <Text className="font-sans text-xs" style={{ color: colors.onHeroMuted }}>
+                    {done} of {checklist.length} done
+                  </Text>
+                </>
+              ) : whereLeftOff ? (
+                <Text className="font-quote text-body leading-snug" style={{ color: colors.onHeroMuted }} numberOfLines={2}>
+                  “{whereLeftOff}”
+                </Text>
+              ) : (
+                <Text className="font-sans-semi text-body" style={{ color: colors.onHero }}>
+                  Resume
+                </Text>
+              )}
+            </View>
+            <View className="w-12 h-12 rounded-full items-center justify-center" style={{ backgroundColor: colors.onHero }}>
+              <Icon name="play" size={18} stroke={2.2} color={colors.hero} />
+            </View>
           </View>
         </View>
-      </View>
-    </Pressable>
+      </Pressable>
+    </View>
   );
 }
 
