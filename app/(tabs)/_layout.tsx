@@ -1,4 +1,4 @@
-import { FloatingTabBar } from '@/components/ui/FloatingTabBar';
+import { BottomFade, FloatingTabBar } from '@/components/ui/FloatingTabBar';
 import { ActionCluster } from '@/components/ui/ActionCluster';
 import { Tabs } from 'expo-router';
 import * as QuickActions from 'expo-quick-actions';
@@ -93,6 +93,8 @@ export default function TabLayout() {
         <Tabs.Screen name="context" options={{ title: 'Detail', href: null }} />
       </Tabs>
 
+      {/* Content fades out behind the bar instead of showing through its notch. */}
+      <BottomFade />
       <FloatingTabBar />
       {/* The capture button sits in the middle of the tab bar on every tab. */}
       <ActionCluster />

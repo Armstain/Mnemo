@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Pressable, StyleSheet, View, type LayoutChangeEvent } from 'react-native';
-import Svg, { Path } from 'react-native-svg';
+import Svg, { Defs, LinearGradient, Path, Rect, Stop } from 'react-native-svg';
 import Animated, {
   useAnimatedStyle,
   useSharedValue,
@@ -113,6 +113,35 @@ const DOT_Y = NAV_BAR_HEIGHT - 15;
 const TOUCH = 64;
 
 /**
+ * BottomFade: the page dissolving into its own colour behind the bar, so
+ * content scrolling under it fades out instead of showing through the
+ * notch around the capture button. Under the capture menu's scrim (40).
+ */
+export function BottomFade() {
+  const insets = useSafeAreaInsets();
+  const colors = useThemeColors();
+  const above = CENTER_BUTTON_RISE + 24;
+  const height = navBottom(insets.bottom) + NAV_BAR_HEIGHT + above;
+  // Solid from the bar's top edge down, so nothing shows in the notch.
+  const solidAt = above / height;
+  return (
+    <View pointerEvents="none" style={[styles.fade, { height }]}>
+      <Svg width="100%" height="100%">
+        <Defs>
+          <LinearGradient id="bottom-fade" x1="0" y1="0" x2="0" y2="1">
+            <Stop offset="0" stopColor={colors.bg} stopOpacity={0} />
+            <Stop offset={solidAt * 0.55} stopColor={colors.bg} stopOpacity={0.7} />
+            <Stop offset={solidAt} stopColor={colors.bg} stopOpacity={1} />
+            <Stop offset="1" stopColor={colors.bg} stopOpacity={1} />
+          </LinearGradient>
+        </Defs>
+        <Rect width="100%" height="100%" fill="url(#bottom-fade)" />
+      </Svg>
+    </View>
+  );
+}
+
+/**
  * FloatingTabBar: a floating bar with a notch the capture button sits in.
  * The active tab is its accent colour and a dot underneath; the dot is one
  * element that springs between tabs (stretching as it travels), and slides
@@ -171,9 +200,11 @@ export function FloatingTabBar() {
           pointerEvents="none"
         >
           {/* A soft shadow that follows the notch (a platform shadow would be a plain rectangle). */}
-          <Path d={path} fill="#000" opacity={dark ? 0.4 : 0.05} transform="translate(0 3)" />
-          <Path d={path} fill="#000" opacity={dark ? 0.25 : 0.04} transform="translate(0 1.5)" />
-          <Path d={path} fill={colors.surfaceLowest} stroke={colors.border} strokeWidth={1} />
+          <Path d={path} fill="#000" opacity={dark ? 0.4 : 0.07} transform="translate(0 3)" />
+          <Path d={path} fill="#000" opacity={dark ? 0.25 : 0.05} transform="translate(0 1.5)" />
+          {/* Light: the page's own paper, lifted by its shadow, rather than
+              the one stark white surface in a warm palette. */}
+          <Path d={path} fill={dark ? colors.surfaceLowest : colors.bg} stroke={colors.border} strokeWidth={1} />
         </Svg>
       )}
 
@@ -270,6 +301,13 @@ function TabButton({
 }
 
 const styles = StyleSheet.create({
+  fade: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    zIndex: 30,
+  },
   bar: {
     position: 'absolute',
     left: 16,
