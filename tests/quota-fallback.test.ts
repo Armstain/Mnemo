@@ -3,6 +3,7 @@ import { askNotes } from '@/lib/gemini';
 
 // A pretend Google: three flash models; each answers or fails as `behaviour` says.
 const calls = vi.hoisted(() => [] as string[]);
+const timeouts = vi.hoisted(() => [] as (number | undefined)[]);
 const behaviour = vi.hoisted(() => new Map<string, () => unknown>());
 
 vi.mock('@google/genai', () => ({
@@ -15,8 +16,9 @@ vi.mock('@google/genai', () => ({
           for (const name of ['gemini-3-flash-preview', 'gemini-2.5-flash', 'gemini-2.5-flash-lite'])
             yield { name: `models/${name}`, supportedActions: ['generateContent'] };
         })(),
-      generateContent: async ({ model }: { model: string }) => {
+      generateContent: async ({ model, config }: { model: string; config?: { httpOptions?: { timeout?: number } } }) => {
         calls.push(model);
+        timeouts.push(config?.httpOptions?.timeout);
         return (behaviour.get(model) ?? (() => ({ text: JSON.stringify({ answer: `from ${model}`, sourceIds: [] }) })))();
       },
     };
@@ -34,7 +36,14 @@ const dailyQuota = () => {
 describe('one model out of quota', () => {
   beforeEach(() => {
     calls.length = 0;
+    timeouts.length = 0;
     behaviour.clear();
+  });
+
+  it('every request has a time limit, so a note can never hang on one', async () => {
+    await askNotes('q', []);
+    expect(timeouts.length).toBeGreaterThan(0);
+    expect(timeouts.every((t) => typeof t === 'number' && t > 0)).toBe(true);
   });
 
   it('the next model answers, and the spent one is left alone after', async () => {

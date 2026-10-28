@@ -78,6 +78,13 @@ function isResting(model: string, now = Date.now()): boolean {
 }
 
 const OVERLOAD_PAUSE_MS = 1500;
+/**
+ * Longest one request may take, a recording's upload included. Without a
+ * limit, a request that never came back (a bad connection, Google holding
+ * it) kept its note "in progress" and skipped by every retry, and by Groq,
+ * until the app was closed.
+ */
+const REQUEST_TIMEOUT_MS = 90_000;
 
 async function generateText(params: Omit<GenerateContentParameters, 'model'>) {
   const client = getAIClient();
@@ -92,7 +99,11 @@ async function generateText(params: Omit<GenerateContentParameters, 'model'>) {
       if (isResting(model)) continue;
       tried = true;
       try {
-        return await client.models.generateContent({ model, ...params });
+        return await client.models.generateContent({
+          model,
+          ...params,
+          config: { ...params.config, httpOptions: { ...params.config?.httpOptions, timeout: REQUEST_TIMEOUT_MS } },
+        });
       } catch (e) {
         lastError = e;
         // A missing model, a busy one or one out of quota is worth trying

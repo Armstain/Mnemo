@@ -9,6 +9,8 @@ import type { Audio } from '@/lib/voice-audio';
 // or refusing the recording. Optional: only with the person's own key.
 const MODEL = 'whisper-large-v3-turbo';
 const URL_ = 'https://api.groq.com/openai/v1/audio/transcriptions';
+/** Longest one recording may take to write out, upload included. */
+const TIMEOUT_MS = 60_000;
 
 export function hasGroq(): boolean {
   return getActiveGroqApiKey().length > 0;
@@ -25,11 +27,21 @@ async function once(audio: Audio, language?: string): Promise<string> {
     // React Native's FormData sends a local file from its uri.
     form.append('file', { uri: audio.uri, name: audio.name, type: audio.mimeType } as unknown as Blob);
   }
-  const res = await fetch(URL_, {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${getActiveGroqApiKey()}` },
-    body: form,
-  });
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
+  let res: Response;
+  try {
+    res = await fetch(URL_, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${getActiveGroqApiKey()}` },
+      body: form,
+      signal: controller.signal,
+    });
+  } catch (e) {
+    throw controller.signal.aborted ? new Error(`Groq timed out after ${TIMEOUT_MS / 1000}s`) : e;
+  } finally {
+    clearTimeout(timer);
+  }
   if (!res.ok) {
     // Groq says why (a bad key, its own rate limit, a file it won't take):
     // keep that, for the problem report.
