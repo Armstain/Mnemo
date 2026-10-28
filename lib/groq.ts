@@ -30,7 +30,12 @@ async function once(audio: Audio, language?: string): Promise<string> {
     headers: { Authorization: `Bearer ${getActiveGroqApiKey()}` },
     body: form,
   });
-  if (!res.ok) throw new Error(`Groq transcription failed (${res.status})`);
+  if (!res.ok) {
+    // Groq says why (a bad key, its own rate limit, a file it won't take):
+    // keep that, for the problem report.
+    const why = await res.text().catch(() => '');
+    throw new Error(`Groq transcription failed (${res.status}) ${why.slice(0, 200)}`.trim());
+  }
   const data = await res.json();
   return typeof data.text === 'string' ? data.text.trim() : '';
 }

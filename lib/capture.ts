@@ -491,7 +491,14 @@ async function structure(entry: PendingEntry, store: CaptureStore): Promise<void
       // Gemini can't (down, out of quota, won't take it): Groq's Whisper
       // writes it out, if the person added a Groq key. Otherwise it's tried
       // again later, recording and all.
-      const words = hasGroq() ? await transcribeAudio(sound).catch(() => '') : '';
+      const words = hasGroq()
+        ? await transcribeAudio(sound).catch((groqError) => {
+            // Shown in Settings → Copy problem report, so a Groq key that
+            // doesn't help can be told apart from one that isn't tried.
+            logError('groq', groqError);
+            return '';
+          })
+        : '';
       if (!words) throw e;
       said = words;
       // Readable straight away, even if Gemini can't tidy it up yet.
