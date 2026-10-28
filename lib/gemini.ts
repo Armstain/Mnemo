@@ -1,6 +1,6 @@
 import { GoogleGenAI, Modality, Type, type GenerateContentParameters } from '@google/genai';
 import { getActiveApiKey, onApiKeyChanged } from './api-key';
-import { isMissingModel, isOverloaded, pickTextModels, pickTtsModel, type ModelInfo } from './model-pick';
+import { isMissingModel, isOverloaded, pickTextModels, pickTtsModel, quotaPause, type ModelInfo } from './model-pick';
 import { aiEnabled } from './ai-mode';
 import { describePages, type PageContext } from './link-preview';
 
@@ -63,24 +63,43 @@ async function textModels(): Promise<string[]> {
   return picked.length > 0 ? picked : FALLBACK_TEXT;
 }
 
+// Models out of quota, and until when to leave them alone. The free tier
+// counts each model on its own: the newest model running out (a preview's
+// allowance can be small) mustn't stop notes while older ones still answer.
+const resting = new Map<string, number>();
+onApiKeyChanged(() => resting.clear());
+
+function isResting(model: string, now = Date.now()): boolean {
+  const until = resting.get(model);
+  if (until === undefined) return false;
+  if (until > now) return true;
+  resting.delete(model);
+  return false;
+}
+
 const OVERLOAD_PAUSE_MS = 1500;
 
 async function generateText(params: Omit<GenerateContentParameters, 'model'>) {
   const client = getAIClient();
   let lastError: unknown;
   let sawMissing = false;
+  let tried = false;
   // Two passes: when every model says "high demand" (it comes in spikes),
   // one short pause and a second go beats failing the note.
   for (let pass = 0; pass < 2; pass++) {
     let overloaded = false;
     for (const model of await textModels()) {
+      if (isResting(model)) continue;
+      tried = true;
       try {
         return await client.models.generateContent({ model, ...params });
       } catch (e) {
         lastError = e;
-        // A missing model or a busy one is worth trying another for. A bad
-        // key, a used-up quota or no signal would fail the same way on each.
-        if (isMissingModel(e)) sawMissing = true;
+        // A missing model, a busy one or one out of quota is worth trying
+        // another for. A bad key or no signal would fail the same way on each.
+        const pause = quotaPause(e);
+        if (pause !== undefined) resting.set(model, Date.now() + pause);
+        else if (isMissingModel(e)) sawMissing = true;
         else if (isOverloaded(e)) overloaded = true;
         else throw e;
       }
@@ -89,6 +108,8 @@ async function generateText(params: Omit<GenerateContentParameters, 'model'>) {
     if (pass === 0) await new Promise((resolve) => setTimeout(resolve, OVERLOAD_PAUSE_MS));
   }
   if (sawMissing) refreshModels();
+  // Every model is sitting out its quota: say so, without spending a request.
+  if (!tried) throw new Error('RESOURCE_EXHAUSTED: every model is out of quota for now');
   throw lastError;
 }
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { isMissingModel, isOverloaded, pickEmbeddingModel, pickTextModels, pickTtsModel, type ModelInfo } from '@/lib/model-pick';
+import { DAILY_QUOTA_PAUSE_MS, isMissingModel, isOverloaded, pickEmbeddingModel, pickTextModels, pickTtsModel, quotaPause, type ModelInfo } from '@/lib/model-pick';
 
 const m = (name: string, ...actions: string[]): ModelInfo => ({ name, actions: actions.length ? actions : ['generateContent'] });
 const list = [
@@ -47,6 +47,19 @@ describe('choosing models from what the key can use', () => {
     expect(isMissingModel(new Error('{"error":{"code":404,"message":"models/gemini-3.1-flash is not found for API version v1beta","status":"NOT_FOUND"}}'))).toBe(true);
     expect(isMissingModel(new Error('{"error":{"code":429,"status":"RESOURCE_EXHAUSTED"}}'))).toBe(false);
     expect(isMissingModel(new Error('API key not valid'))).toBe(false);
+  });
+  it("a model out of quota sits out: a day's allowance for an hour, a minute's for the wait Google names", () => {
+    const daily = new Error(
+      '{"error":{"code":429,"message":"You exceeded your current quota. Quota exceeded for metric: generativelanguage.googleapis.com/generate_content_free_tier_requests, limit: 20, model: gemini-3-flash\\nPlease retry in 41.2s.","status":"RESOURCE_EXHAUSTED","details":[{"violations":[{"quotaId":"GenerateRequestsPerDayPerProjectPerModel-FreeTier"}]}]}}',
+    );
+    const perMinute = new Error(
+      '{"error":{"code":429,"message":"Quota exceeded for metric: generate_content_free_tier_requests, limit: 10. Please retry in 37.5s.","status":"RESOURCE_EXHAUSTED","details":[{"violations":[{"quotaId":"GenerateRequestsPerMinutePerProjectPerModel-FreeTier"}]},{"retryDelay":"37s"}]}}',
+    );
+    expect(quotaPause(daily)).toBe(DAILY_QUOTA_PAUSE_MS);
+    expect(quotaPause(perMinute)).toBe(37_500);
+    expect(quotaPause(new Error('{"error":{"code":429,"status":"RESOURCE_EXHAUSTED"}}'))).toBe(60_000);
+    expect(quotaPause(new Error('API key not valid'))).toBeUndefined();
+    expect(quotaPause(new Error('{"error":{"code":503,"status":"UNAVAILABLE"}}'))).toBeUndefined();
   });
   it('a busy model is worth another try, a spent quota is not', () => {
     expect(isOverloaded(new Error('{"error":{"code":503,"message":"This model is currently experiencing high demand.","status":"UNAVAILABLE"}}'))).toBe(true);

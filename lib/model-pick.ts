@@ -81,3 +81,23 @@ export function isOverloaded(e: unknown): boolean {
   const text = e instanceof Error ? e.message : String(e);
   return /\b503\b|UNAVAILABLE|high demand|overloaded/i.test(text);
 }
+
+/** How long a model sits out after its day's allowance runs out, before it's tried again. */
+export const DAILY_QUOTA_PAUSE_MS = 60 * 60_000;
+/** When Google doesn't say how long to wait. */
+const DEFAULT_QUOTA_PAUSE_MS = 60_000;
+
+/**
+ * A model out of quota (429), and how long to leave it alone; undefined for
+ * any other error. Google's free tier counts each model separately, so
+ * another model usually still answers. A day's allowance gets an hour's
+ * rest (it's checked again cheaply after); a per-minute one, the wait
+ * Google names ("Please retry in 37.5s").
+ */
+export function quotaPause(e: unknown): number | undefined {
+  const text = e instanceof Error ? e.message : String(e);
+  if (!/\b429\b|RESOURCE_EXHAUSTED|quota/i.test(text)) return undefined;
+  if (/PerDay|per day|daily/i.test(text)) return DAILY_QUOTA_PAUSE_MS;
+  const wait = text.match(/retry in (\d+(?:\.\d+)?)\s*s/i) ?? text.match(/"retryDelay"\s*:\s*"(\d+(?:\.\d+)?)s"/);
+  return wait ? Math.ceil(Number(wait[1]) * 1000) : DEFAULT_QUOTA_PAUSE_MS;
+}
