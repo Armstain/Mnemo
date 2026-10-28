@@ -55,7 +55,10 @@
         "expo-build-properties",
         {
           "android": {
-            "enableOnBackInvokedCallback": true
+            "enableOnBackInvokedCallback": true,
+            "buildArchs": ["arm64-v8a"],
+            "enableMinifyInReleaseBuilds": true,
+            "enableShrinkResourcesInReleaseBuilds": true
           }
         }
       ],
