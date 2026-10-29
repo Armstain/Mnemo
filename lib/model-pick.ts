@@ -91,6 +91,33 @@ export function isOverloaded(e: unknown): boolean {
   return OVERLOADED_PATTERN.test(text);
 }
 
+/** The nth (1-based) Sunday of a month, as a UTC day of month. */
+function nthSunday(year: number, month: number, n: number): number {
+  const firstDow = new Date(Date.UTC(year, month, 1)).getUTCDay();
+  return 1 + ((7 - firstDow) % 7) + (n - 1) * 7;
+}
+
+/** US Pacific offset from UTC in hours at `at`: -7 on daylight time (2nd Sunday of March to 1st Sunday of November), else -8. */
+function pacificOffsetHours(at: number): number {
+  const y = new Date(at).getUTCFullYear();
+  const start = Date.UTC(y, 2, nthSunday(y, 2, 2), 10); // 2:00 PST = 10:00 UTC
+  const end = Date.UTC(y, 10, nthSunday(y, 10, 1), 9); // 2:00 PDT = 09:00 UTC
+  return at >= start && at < end ? -7 : -8;
+}
+
+/**
+ * When Google's daily free quota next resets: midnight Pacific, as a
+ * timestamp (the caller shows it in the phone's own time zone).
+ */
+export function nextDailyReset(now = Date.now()): number {
+  const offset = pacificOffsetHours(now) * 3_600_000;
+  const pacificDay = Math.floor((now + offset) / 86_400_000);
+  const reset = (pacificDay + 1) * 86_400_000 - offset;
+  // Across a clock change the offset differs by an hour: use the one in force at the reset.
+  const exact = (pacificDay + 1) * 86_400_000 - pacificOffsetHours(reset) * 3_600_000;
+  return exact;
+}
+
 /** How long a model sits out after its day's allowance runs out, before it's tried again. */
 export const DAILY_QUOTA_PAUSE_MS = 60 * 60_000;
 /** When Google doesn't say how long to wait. */

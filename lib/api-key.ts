@@ -1,7 +1,7 @@
 import * as SecureStore from 'expo-secure-store';
 import { Platform } from 'react-native';
 import { GoogleGenAI } from '@google/genai';
-import { OVERLOADED_PATTERN, quotaInfo } from '@/lib/model-pick';
+import { nextDailyReset, OVERLOADED_PATTERN, quotaInfo } from '@/lib/model-pick';
 
 const GEMINI_KEY_STORAGE = 'mnemo_user_gemini_api_key';
 const GROQ_KEY_STORAGE = 'mnemo_user_groq_api_key';
@@ -83,8 +83,11 @@ export function classifyAiError(err: unknown): KeyProblem {
   return 'other';
 }
 
-/** Google resets its daily free quota at midnight Pacific: 13:00 in Dhaka while the US is on daylight time. */
-export const DAILY_RESET_TEXT = 'It resets at 13:00 Dhaka time.';
+/** Google resets its daily free quota at midnight Pacific; this says when, in the phone's own time. */
+export function dailyResetText(now = Date.now()): string {
+  const time = new Date(nextDailyReset(now)).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  return `It resets at ${time} your time.`;
+}
 
 /** The wait Google named, as the person reads it: "37 seconds", "2 minutes". */
 function waitText(ms: number): string {
@@ -103,7 +106,7 @@ export function aiErrorText(err: unknown): string {
   const problem = classifyAiError(err);
   if (problem !== 'quota') return KEY_PROBLEM_TEXT[problem];
   const info = quotaInfo(err);
-  if (info?.daily) return `Gemini's free daily limit is used up. ${DAILY_RESET_TEXT} Notes are saved and will be tidied up later.`;
+  if (info?.daily) return `Gemini's free daily limit is used up. ${dailyResetText()} Notes are saved and will be tidied up later.`;
   const retry = info?.retryMs ? `Try again in ${waitText(info.retryMs)}.` : 'Try again in a minute.';
   return `Gemini is getting too many requests this minute. ${retry} Notes are saved and will be tidied up later.`;
 }

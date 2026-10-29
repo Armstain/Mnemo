@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
-import { aiErrorText, classifyAiError } from '@/lib/api-key';
-import { DAILY_QUOTA_PAUSE_MS, isMissingModel, isOverloaded, pickEmbeddingModel, pickTextModels, pickTtsModel, quotaInfo, quotaPause, type ModelInfo } from '@/lib/model-pick';
+import { aiErrorText, classifyAiError, dailyResetText } from '@/lib/api-key';
+import { DAILY_QUOTA_PAUSE_MS, isMissingModel, isOverloaded, pickEmbeddingModel, pickTextModels, nextDailyReset, pickTtsModel, quotaInfo, quotaPause, type ModelInfo } from '@/lib/model-pick';
 
 vi.mock('expo-secure-store', () => ({}));
 vi.mock('@google/genai', () => ({ GoogleGenAI: class {} }));
@@ -82,6 +82,15 @@ describe('choosing models from what the key can use', () => {
   const minute429 = new Error(
     '{"error":{"code":429,"message":"Quota exceeded. Please retry in 37.5s.","status":"RESOURCE_EXHAUSTED","details":[{"violations":[{"quotaId":"GenerateRequestsPerMinutePerProjectPerModel-FreeTier"}]}]}}',
   );
+  it('the daily reset is midnight Pacific, whatever the phone\'s zone: 07:00 UTC in summer, 08:00 in winter', () => {
+    expect(nextDailyReset(Date.UTC(2026, 9, 29, 12))).toBe(Date.UTC(2026, 9, 30, 7)); // PDT
+    expect(nextDailyReset(Date.UTC(2026, 11, 15, 3))).toBe(Date.UTC(2026, 11, 15, 8)); // PST, evening before
+    expect(nextDailyReset(Date.UTC(2026, 11, 15, 9))).toBe(Date.UTC(2026, 11, 16, 8));
+    expect(nextDailyReset(Date.UTC(2026, 10, 1, 3))).toBe(Date.UTC(2026, 10, 1, 7)); // 31 Oct evening: that midnight is still PDT
+    expect(nextDailyReset(Date.UTC(2026, 10, 1, 10))).toBe(Date.UTC(2026, 10, 2, 8)); // after the clocks went back
+    expect(nextDailyReset(Date.UTC(2026, 2, 8, 12))).toBe(Date.UTC(2026, 2, 9, 7)); // after they went forward (8 Mar 2026)
+    expect(dailyResetText(Date.UTC(2026, 9, 29, 12))).toMatch(/^It resets at .+ your time\.$/);
+  });
   it('a 504 is busy: tried on another model and a second pass, not thrown at once', () => {
     expect(isOverloaded(e504)).toBe(true);
     expect(classifyAiError(e504)).toBe('busy');
@@ -93,7 +102,7 @@ describe('choosing models from what the key can use', () => {
     expect(quotaInfo(minute429)).toEqual({ daily: false, retryMs: 37_500 });
     expect(classifyAiError(daily429)).toBe('quota');
     expect(classifyAiError(minute429)).toBe('quota');
-    expect(aiErrorText(daily429)).toContain('daily limit is used up. It resets at 13:00 Dhaka time.');
+    expect(aiErrorText(daily429)).toMatch(/daily limit is used up\. It resets at .+ your time\./);
     const minuteText = aiErrorText(minute429);
     expect(minuteText).toContain('Try again in 38 seconds.');
     expect(minuteText).not.toMatch(/daily/i);
