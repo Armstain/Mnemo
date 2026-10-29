@@ -492,7 +492,7 @@ async function structure(entry: PendingEntry, store: CaptureStore): Promise<void
       // writes it out, if the person added a Groq key. Otherwise it's tried
       // again later, recording and all.
       const words = hasGroq()
-        ? await transcribeAudio(sound).catch((groqError) => {
+        ? await transcribeAudio(sound, { banglaSpeaker: getPreferences().speechLang === 'bn-BD' }).catch((groqError) => {
             // Shown in Settings → Copy problem report, so a Groq key that
             // doesn't help can be told apart from one that isn't tried.
             logError('groq', groqError);

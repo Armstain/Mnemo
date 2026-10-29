@@ -43,6 +43,21 @@ describe('sending a recording to Groq', () => {
     expect(fetchMock).toHaveBeenCalledOnce();
   });
 
+  it('Devanagari is asked again as Bangla only for a Bangla speaker; for anyone else it stays as written', async () => {
+    const languages = () => [] as (string | null)[];
+    const seen = languages();
+    vi.stubGlobal('fetch', vi.fn(async (_url: string, init: RequestInit) => {
+      const form = await parse(init.body as ArrayBuffer, (init.headers as Record<string, string>)['Content-Type']);
+      seen.push(form.get('language') as string | null);
+      return new Response(JSON.stringify({ text: form.get('language') ? 'কাল বাজারে যাব' : 'कल बाजार जाना है' }), { status: 200 });
+    }));
+    expect(await transcribeAudio([recording], { banglaSpeaker: true })).toBe('কাল বাজারে যাব');
+    expect(seen).toEqual([null, 'bn']);
+    seen.length = 0;
+    expect(await transcribeAudio([recording])).toBe('कल बाजार जाना है');
+    expect(seen).toEqual([null]);
+  });
+
   it("keeps Groq's reason when it says no", async () => {
     vi.stubGlobal('fetch', vi.fn(async () => new Response('{"error":{"message":"Invalid file format"}}', { status: 400 })));
     await expect(transcribeAudio([recording])).rejects.toThrow(/400.*Invalid file format/);

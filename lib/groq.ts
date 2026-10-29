@@ -75,15 +75,20 @@ async function once(audio: Audio, language?: string): Promise<string> {
   return typeof data.text === 'string' ? data.text.trim() : '';
 }
 
-/** Writes out recordings in order, as one note. '' when nothing was said. */
-export async function transcribeAudio(audio: Audio[]): Promise<string> {
+/**
+ * Writes out recordings in order, as one note. '' when nothing was said.
+ * `banglaSpeaker`: the person listens in Bangla, so Devanagari coming back
+ * is Bangla misheard as Hindi. For anyone else it may be real Hindi, which
+ * is left as written.
+ */
+export async function transcribeAudio(audio: Audio[], { banglaSpeaker = false } = {}): Promise<string> {
   if (!hasGroq()) throw new Error('No Groq key');
   const parts: string[] = [];
   for (const a of audio) {
     let text = await once(a);
     // Whisper guesses the language from the first seconds and sometimes
-    // takes Bangla for Hindi: asked again, as Bangla.
-    if (looksLikeHindi(text)) text = await once(a, 'bn');
+    // takes Bangla for Hindi: asked again, as Bangla, for a Bangla speaker.
+    if (banglaSpeaker && looksLikeHindi(text)) text = await once(a, 'bn');
     if (text) parts.push(text);
   }
   return parts.join(' ').trim();
