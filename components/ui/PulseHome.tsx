@@ -18,7 +18,7 @@ import { formatReminder, nextOccurrence, resumeOrder, resumeReason, type ResumeR
 import { CONTENT_BOTTOM_CLEARANCE } from '@/components/ui/FloatingTabBar';
 import { useMnemoStore } from '@/hooks/use-mnemo-store';
 import { useThemeColors } from '@/hooks/use-theme';
-import { useAiProblem, type AiProblem } from '@/lib/ai-mode';
+import { useAiNotice, useAiProblem, useAiProblemDetail, type AiProblem } from '@/lib/ai-mode';
 import { usePreferences } from '@/lib/preferences';
 import { formatCompactDistance, DAY_MS } from '@/utils/time';
 import { sameWords } from '@/utils/text';
@@ -210,12 +210,14 @@ function ResumeCard({ item, reason }: { item: MnemoItem; reason: ResumeReason })
 
 const AI_PROBLEM_TEXT: Record<AiProblem, string> = {
   invalid: "Gemini isn't accepting your key. Notes are saved as you wrote them.",
-  quota: "Your Gemini key's daily limit is used up. Notes are saved and tidied up later.",
+  quota: "Your Gemini key's limit is used up. Notes are saved and tidied up later.",
 };
 
 export function PulseHome() {
   const enter = useEnter();
   const aiProblem = useAiProblem();
+  const aiProblemText = useAiProblemDetail() ?? (aiProblem ? AI_PROBLEM_TEXT[aiProblem] : '');
+  const aiNotice = useAiNotice();
   const insets = useSafeAreaInsets();
   const { items, getActiveItems, focusThreadId, setFocusThread } = useMnemoStore();
   const focusThread = focusThreadId ? items.find((i) => i.id === focusThreadId) : undefined;
@@ -352,18 +354,31 @@ export function PulseHome() {
           <Pressable
             onPress={() => router.push('/modal')}
             accessibilityRole="button"
-            accessibilityLabel={`${AI_PROBLEM_TEXT[aiProblem]} Open settings.`}
+            accessibilityLabel={`${aiProblemText} Open settings.`}
             className="flex-row items-center rounded-lg px-4 py-3 mt-4 active:opacity-80"
             style={{ backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border }}
           >
             <Icon name="sparkles" size={16} color={colors.accentWarm} />
             <Text className="flex-1 font-sans text-sm leading-snug mx-3" style={{ color: colors.fgSecondary }}>
-              {AI_PROBLEM_TEXT[aiProblem]}
+              {aiProblemText}
             </Text>
             <Text className="font-sans-semi text-sm" style={{ color: colors.accent }}>
               Fix
             </Text>
           </Pressable>
+        ) : null}
+        {/* Every Flash model is resting: notes are being written by Flash-Lite. */}
+        {aiNotice && !aiProblem ? (
+          <View
+            accessibilityRole="alert"
+            className="flex-row items-center rounded-lg px-4 py-3 mt-4"
+            style={{ backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border }}
+          >
+            <Icon name="sparkles" size={16} color={colors.accentWarm} />
+            <Text className="flex-1 font-sans text-sm leading-snug ml-3" style={{ color: colors.fgSecondary }}>
+              {aiNotice}
+            </Text>
+          </View>
         ) : null}
       </MotiView>
 

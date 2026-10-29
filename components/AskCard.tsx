@@ -6,7 +6,7 @@ import { Icon } from '@/components/ui/Icon';
 import { Text } from '@/components/ui/Text';
 import { useMnemoStore } from '@/hooks/use-mnemo-store';
 import { useThemeColors } from '@/hooks/use-theme';
-import { classifyAiError, KEY_PROBLEM_TEXT } from '@/lib/api-key';
+import { aiErrorText } from '@/lib/api-key';
 import { askNotes, type NoteForQuestion } from '@/lib/gemini';
 import { entryText } from '@/lib/threads';
 import type { MnemoItem } from '@/types/mnemo';
@@ -49,7 +49,7 @@ export function AskCard({ question, ranked }: { question: string; ranked: MnemoI
       const { answer, sourceIds } = await askNotes(question, notes);
       setState({ kind: 'done', answer, sources: sourceIds });
     } catch (e) {
-      setState({ kind: 'error', message: KEY_PROBLEM_TEXT[classifyAiError(e)] });
+      setState({ kind: 'error', message: aiErrorText(e) });
     }
   };
 

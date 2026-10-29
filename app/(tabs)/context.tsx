@@ -41,7 +41,7 @@ import { useThemeColors } from '@/hooks/use-theme';
 import { organiseNotes } from '@/lib/gemini';
 import { canOrganise, cleanOverview, notesSince, notesToOrganise, overviewText } from '@/lib/overview';
 import { aiEnabled } from '@/lib/ai-mode';
-import { classifyAiError, KEY_PROBLEM_TEXT } from '@/lib/api-key';
+import { aiErrorText, classifyAiError } from '@/lib/api-key';
 import { usePreferences } from '@/lib/preferences';
 import { structurePendingEntry } from '@/lib/capture';
 import { relatedThreads, type RelatedThread } from '@/lib/search';
@@ -310,7 +310,7 @@ export default function ThreadScreen() {
       const problem = classifyAiError(e);
       Alert.alert(
         problem === 'offline' ? 'Still offline?' : 'Gemini had a problem',
-        `${KEY_PROBLEM_TEXT[problem]} It's tried again by itself.`,
+        `${aiErrorText(e)} It's tried again by itself.`,
       );
     } finally {
       setIsGenerating(false);
@@ -327,7 +327,7 @@ export default function ThreadScreen() {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       updateItem(thread.id, { overview });
     } catch (e) {
-      Alert.alert('Could not organise the notes', KEY_PROBLEM_TEXT[classifyAiError(e)]);
+      Alert.alert('Could not organise the notes', aiErrorText(e));
     } finally {
       setOrganising(false);
     }
