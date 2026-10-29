@@ -21,6 +21,8 @@ function version(name: string): number {
 const NOT_FOR_TEXT = /(tts|image|audio|live|embed|vision|robotics|computer|native|thinking|exp|aqa|learnlm|gemma)/;
 const unstable = (n: string) => /(preview|exp)/.test(n);
 const small = (n: string) => /(lite|8b)/.test(n);
+/** Flash-Lite and other small models: the last rung, after every full Flash is resting. */
+export const isLiteModel = small;
 
 function byQuality(a: string, b: string): number {
   return (
@@ -36,7 +38,9 @@ function byQuality(a: string, b: string): number {
  * call per note), newest first (a preview of a newer generation beats an
  * older stable one; at the same version stable goes first), "lite" last.
  * The older ones behind it are what a busy or retired newest falls back
- * to. Falls back to any general Gemini model when the key lists no flash.
+ * to. The best "lite" model always gets the last place (it has its own
+ * allowance, so it still answers when every Flash is out of quota).
+ * Falls back to any general Gemini model when the key lists no flash.
  */
 export function pickTextModels(models: ModelInfo[], limit = 3): string[] {
   const general = models
@@ -44,7 +48,9 @@ export function pickTextModels(models: ModelInfo[], limit = 3): string[] {
     .map((m) => m.name.toLowerCase())
     .filter((n) => n.startsWith('gemini') && !NOT_FOR_TEXT.test(n));
   const flash = general.filter((n) => n.includes('flash'));
-  return (flash.length > 0 ? flash : general).sort(byQuality).slice(0, limit);
+  const ranked = (flash.length > 0 ? flash : general).sort(byQuality);
+  const full = ranked.filter((n) => !small(n)).slice(0, limit);
+  return [...full, ...ranked.filter(small).slice(0, 1)];
 }
 
 /** A text-to-speech model, newest first, flash before pro. */
@@ -73,13 +79,16 @@ export function isMissingModel(e: unknown): boolean {
   return /\b404\b|NOT_FOUND|is not found|not supported for (generateContent|embedContent)/i.test(text);
 }
 
+/** Google's "busy" answers: 503 high demand, and 504 when it ran out of time on its side. */
+export const OVERLOADED_PATTERN = /\b50[34]\b|UNAVAILABLE|DEADLINE_EXCEEDED|high demand|overloaded/i;
+
 /**
- * Google answering "high demand" (503) for one model: another model, or the
- * same one a moment later, usually still works.
+ * Google answering "high demand" (503) or "deadline exceeded" (504) for one
+ * model: another model, or the same one a moment later, usually still works.
  */
 export function isOverloaded(e: unknown): boolean {
   const text = e instanceof Error ? e.message : String(e);
-  return /\b503\b|UNAVAILABLE|high demand|overloaded/i.test(text);
+  return OVERLOADED_PATTERN.test(text);
 }
 
 /** How long a model sits out after its day's allowance runs out, before it's tried again. */
@@ -88,16 +97,28 @@ export const DAILY_QUOTA_PAUSE_MS = 60 * 60_000;
 const DEFAULT_QUOTA_PAUSE_MS = 60_000;
 
 /**
+ * What a 429 is about, or undefined for any other error: `daily` when the
+ * day's allowance is spent (it resets at midnight Pacific), else a
+ * per-minute limit with the wait Google names ("Please retry in 37.5s"),
+ * if it names one.
+ */
+export function quotaInfo(e: unknown): { daily: boolean; retryMs?: number } | undefined {
+  const text = e instanceof Error ? e.message : String(e);
+  if (!/\b429\b|RESOURCE_EXHAUSTED|quota/i.test(text)) return undefined;
+  if (/PerDay|per day|daily/i.test(text)) return { daily: true };
+  const wait = text.match(/retry in (\d+(?:\.\d+)?)\s*s/i) ?? text.match(/"retryDelay"\s*:\s*"(\d+(?:\.\d+)?)s"/);
+  return { daily: false, retryMs: wait ? Math.ceil(Number(wait[1]) * 1000) : undefined };
+}
+
+/**
  * A model out of quota (429), and how long to leave it alone; undefined for
  * any other error. Google's free tier counts each model separately, so
  * another model usually still answers. A day's allowance gets an hour's
  * rest (it's checked again cheaply after); a per-minute one, the wait
- * Google names ("Please retry in 37.5s").
+ * Google names.
  */
 export function quotaPause(e: unknown): number | undefined {
-  const text = e instanceof Error ? e.message : String(e);
-  if (!/\b429\b|RESOURCE_EXHAUSTED|quota/i.test(text)) return undefined;
-  if (/PerDay|per day|daily/i.test(text)) return DAILY_QUOTA_PAUSE_MS;
-  const wait = text.match(/retry in (\d+(?:\.\d+)?)\s*s/i) ?? text.match(/"retryDelay"\s*:\s*"(\d+(?:\.\d+)?)s"/);
-  return wait ? Math.ceil(Number(wait[1]) * 1000) : DEFAULT_QUOTA_PAUSE_MS;
+  const info = quotaInfo(e);
+  if (!info) return undefined;
+  return info.daily ? DAILY_QUOTA_PAUSE_MS : (info.retryMs ?? DEFAULT_QUOTA_PAUSE_MS);
 }

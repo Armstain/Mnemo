@@ -37,6 +37,18 @@ export function logError(where: string, error: unknown): void {
   });
 }
 
+/** Empties the log (Settings → "Clear error log"). Waits for logs already on their way. */
+export async function clearErrors(): Promise<void> {
+  queue = queue.then(async () => {
+    try {
+      await AsyncStorage.removeItem(KEY);
+    } catch {
+      // Logging must never be the next problem.
+    }
+  });
+  await queue;
+}
+
 export async function readErrors(): Promise<LoggedError[]> {
   try {
     const raw = await AsyncStorage.getItem(KEY);

@@ -25,7 +25,7 @@ vi.mock('@google/genai', () => ({
   },
 }));
 vi.mock('@/lib/api-key', () => ({ getActiveApiKey: () => 'key', onApiKeyChanged: () => () => {} }));
-vi.mock('@/lib/ai-mode', () => ({ aiEnabled: () => true }));
+vi.mock('@/lib/ai-mode', () => ({ aiEnabled: () => true, setAiNotice: () => {} }));
 vi.mock('@/lib/link-preview', () => ({ describePages: () => '' }));
 
 

@@ -1,6 +1,7 @@
 import * as SecureStore from 'expo-secure-store';
 import { Platform } from 'react-native';
 import { GoogleGenAI } from '@google/genai';
+import { OVERLOADED_PATTERN, quotaInfo } from '@/lib/model-pick';
 
 const GEMINI_KEY_STORAGE = 'mnemo_user_gemini_api_key';
 const GROQ_KEY_STORAGE = 'mnemo_user_groq_api_key';
@@ -77,9 +78,34 @@ export function classifyAiError(err: unknown): KeyProblem {
   const msg = String((err as { message?: string })?.message ?? err);
   if (/API_KEY_INVALID|API key not valid|PERMISSION_DENIED|\b(401|403)\b/i.test(msg)) return 'invalid';
   if (/RESOURCE_EXHAUSTED|quota|rate limit|\b429\b/i.test(msg)) return 'quota';
+  if (OVERLOADED_PATTERN.test(msg)) return 'busy';
   if (/Network request failed|Failed to fetch|NetworkError|ENOTFOUND|timed? ?out|offline/i.test(msg)) return 'offline';
-  if (/\b503\b|UNAVAILABLE|high demand|overloaded/i.test(msg)) return 'busy';
   return 'other';
+}
+
+/** Google resets its daily free quota at midnight Pacific: 13:00 in Dhaka while the US is on daylight time. */
+export const DAILY_RESET_TEXT = 'It resets at 13:00 Dhaka time.';
+
+/** The wait Google named, as the person reads it: "37 seconds", "2 minutes". */
+function waitText(ms: number): string {
+  const s = Math.ceil(ms / 1000);
+  if (s < 90) return `${s} second${s === 1 ? '' : 's'}`;
+  const m = Math.ceil(s / 60);
+  return `${m} minutes`;
+}
+
+/**
+ * What to tell the person about an error: the fixed text for its kind,
+ * except a quota one, which says whether the day's allowance or only this
+ * minute's is spent (and when it is back).
+ */
+export function aiErrorText(err: unknown): string {
+  const problem = classifyAiError(err);
+  if (problem !== 'quota') return KEY_PROBLEM_TEXT[problem];
+  const info = quotaInfo(err);
+  if (info?.daily) return `Gemini's free daily limit is used up. ${DAILY_RESET_TEXT} Notes are saved and will be tidied up later.`;
+  const retry = info?.retryMs ? `Try again in ${waitText(info.retryMs)}.` : 'Try again in a minute.';
+  return `Gemini is getting too many requests this minute. ${retry} Notes are saved and will be tidied up later.`;
 }
 
 /**
@@ -92,7 +118,7 @@ export function isNoConnection(err: unknown): boolean {
 
 export const KEY_PROBLEM_TEXT: Record<KeyProblem, string> = {
   invalid: "Gemini didn't accept this key. Check you copied all of it.",
-  quota: "This key's free daily limit is used up. Notes are saved and will be tidied up later.",
+  quota: "This key's free limit is used up. Notes are saved and will be tidied up later.",
   offline: "Couldn't reach Gemini. Check your connection; notes are saved either way.",
   busy: 'Gemini is busy right now. Notes are saved and will be tidied up later.',
   other: 'Gemini returned an error. Notes are saved either way.',
@@ -111,7 +137,7 @@ export async function validateApiKey(keyToTest?: string): Promise<{ valid: boole
     return { valid: true };
   } catch (err) {
     const problem = classifyAiError(err);
-    return { valid: false, error: KEY_PROBLEM_TEXT[problem], problem };
+    return { valid: false, error: aiErrorText(err), problem };
   }
 }
 

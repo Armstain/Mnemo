@@ -6,7 +6,7 @@ import {
   type ProcessedCapture,
 } from '@/lib/gemini';
 import { aiEnabled, setAiProblem } from '@/lib/ai-mode';
-import { classifyAiError, isNoConnection, onApiKeyChanged } from '@/lib/api-key';
+import { aiErrorText, classifyAiError, isNoConnection, onApiKeyChanged } from '@/lib/api-key';
 import { logError } from '@/lib/errors';
 import {
   embedText,
@@ -753,8 +753,9 @@ export async function resolvePendingEntry(entry: PendingEntry, store: CaptureSto
     const count = (previous?.count ?? 0) + 1;
     attempts.set(entry.id, { count, nextAt: Date.now() + BACKOFF_MS[Math.min(count, BACKOFF_MS.length) - 1] });
     const problem = classifyAiError(e);
-    if (problem === 'invalid' || problem === 'quota') setAiProblem(problem);
-    if (problem === 'other') logError('ai', e);
+    if (problem === 'invalid' || problem === 'quota') setAiProblem(problem, problem === 'quota' ? aiErrorText(e) : null);
+    // Only a note's first failure is logged: its retries would fill the log with the same error.
+    if (problem === 'other' && !previous) logError('ai', e);
   }
 }
 

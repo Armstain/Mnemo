@@ -12,7 +12,7 @@ import { useState } from 'react';
 import { Eyebrow } from '@/components/ui/Eyebrow';
 import { AutoBackupCard, BackupCard } from '@/components/settings/BackupCard';
 import { AiModeCard } from '@/components/settings/AiModeCard';
-import { problemReport } from '@/lib/errors';
+import { clearErrors, problemReport } from '@/lib/errors';
 import * as Clipboard from 'expo-clipboard';
 import { Icon } from '@/components/ui/Icon';
 import { useThemeColors, useThemeName, useThemePreference, type ThemePreference } from '@/hooks/use-theme';
@@ -32,6 +32,7 @@ export default function ModalScreen() {
   const theme = useThemeName();
   const { preference, setPreference } = useThemePreference();
   const [reportCopied, setReportCopied] = useState(false);
+  const [logCleared, setLogCleared] = useState(false);
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.bg }}>
@@ -152,6 +153,7 @@ export default function ModalScreen() {
                 await Clipboard.setStringAsync(await problemReport());
                 Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
                 setReportCopied(true);
+                setLogCleared(false);
               }}
               accessibilityRole="button"
               className="bg-surface rounded-lg p-5 border border-border/50 flex-row items-center active:opacity-80"
@@ -163,6 +165,24 @@ export default function ModalScreen() {
                 </Text>
                 <Text className="font-sans text-sm text-fg-tertiary mt-0.5">
                   The app version and its recent error messages, to paste into a message. No notes.
+                </Text>
+              </View>
+            </Pressable>
+            <Pressable
+              onPress={async () => {
+                await clearErrors();
+                Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+                setLogCleared(true);
+                setReportCopied(false);
+              }}
+              accessibilityRole="button"
+              className="bg-surface rounded-lg p-5 border border-border/50 flex-row items-center active:opacity-80"
+            >
+              <Icon name="trash" size={15} color={colors.accent} />
+              <View className="ml-2 flex-1">
+                <Text className="font-sans-semi text-sm text-fg">{logCleared ? 'Error log cleared' : 'Clear error log'}</Text>
+                <Text className="font-sans text-sm text-fg-tertiary mt-0.5">
+                  Removes the saved error messages from this phone, so the next report starts fresh.
                 </Text>
               </View>
             </Pressable>

@@ -1,7 +1,7 @@
 import { GoogleGenAI, Modality, Type, type GenerateContentParameters } from '@google/genai';
 import { getActiveApiKey, onApiKeyChanged } from './api-key';
-import { isMissingModel, isOverloaded, pickTextModels, pickTtsModel, quotaPause, type ModelInfo } from './model-pick';
-import { aiEnabled } from './ai-mode';
+import { isLiteModel, isMissingModel, isOverloaded, pickTextModels, pickTtsModel, quotaInfo, quotaPause, type ModelInfo } from './model-pick';
+import { aiEnabled, setAiNotice } from './ai-mode';
 import { describePages, type PageContext } from './link-preview';
 
 /** Thrown instead of calling Google when the person chose offline. */
@@ -66,15 +66,36 @@ async function textModels(): Promise<string[]> {
 // Models out of quota, and until when to leave them alone. The free tier
 // counts each model on its own: the newest model running out (a preview's
 // allowance can be small) mustn't stop notes while older ones still answer.
-const resting = new Map<string, number>();
+const resting = new Map<string, { until: number; daily: boolean }>();
 onApiKeyChanged(() => resting.clear());
 
 function isResting(model: string, now = Date.now()): boolean {
-  const until = resting.get(model);
+  const until = resting.get(model)?.until;
   if (until === undefined) return false;
   if (until > now) return true;
   resting.delete(model);
   return false;
+}
+
+/** The error for "every model is resting", worded so it reads as the quota it is (daily, or a wait). */
+function allRestingError(): string {
+  const rests = [...resting.values()];
+  if (rests.length > 0 && rests.every((r) => r.daily)) return 'RESOURCE_EXHAUSTED: PerDay quota used up on every model';
+  const soonest = Math.min(...rests.map((r) => r.until));
+  const secs = Math.max(1, Math.ceil((soonest - Date.now()) / 1000));
+  return `RESOURCE_EXHAUSTED: every model is out of quota. Please retry in ${secs}s.`;
+}
+
+/**
+ * Flash-Lite writing a note means every full Flash model was resting or out
+ * of quota: say so, until a Flash model answers again.
+ */
+function noteModelUsed(model: string, models: string[]): void {
+  if (isLiteModel(model) && models.some((m) => !isLiteModel(m))) {
+    setAiNotice('Gemini Flash is out of quota for now, so Mnemo is using the lighter Flash-Lite. Notes may be a little less sharp.');
+  } else {
+    setAiNotice(null);
+  }
 }
 
 const OVERLOAD_PAUSE_MS = 1500;
@@ -95,21 +116,24 @@ async function generateText(params: Omit<GenerateContentParameters, 'model'>) {
   // one short pause and a second go beats failing the note.
   for (let pass = 0; pass < 2; pass++) {
     let overloaded = false;
-    for (const model of await textModels()) {
+    const models = await textModels();
+    for (const model of models) {
       if (isResting(model)) continue;
       tried = true;
       try {
-        return await client.models.generateContent({
+        const response = await client.models.generateContent({
           model,
           ...params,
           config: { ...params.config, httpOptions: { ...params.config?.httpOptions, timeout: REQUEST_TIMEOUT_MS } },
         });
+        noteModelUsed(model, models);
+        return response;
       } catch (e) {
         lastError = e;
         // A missing model, a busy one or one out of quota is worth trying
         // another for. A bad key or no signal would fail the same way on each.
         const pause = quotaPause(e);
-        if (pause !== undefined) resting.set(model, Date.now() + pause);
+        if (pause !== undefined) resting.set(model, { until: Date.now() + pause, daily: quotaInfo(e)?.daily ?? false });
         else if (isMissingModel(e)) sawMissing = true;
         else if (isOverloaded(e)) overloaded = true;
         else throw e;
@@ -120,7 +144,7 @@ async function generateText(params: Omit<GenerateContentParameters, 'model'>) {
   }
   if (sawMissing) refreshModels();
   // Every model is sitting out its quota: say so, without spending a request.
-  if (!tried) throw new Error('RESOURCE_EXHAUSTED: every model is out of quota for now');
+  if (!tried) throw new Error(allRestingError());
   throw lastError;
 }
 

@@ -1,5 +1,9 @@
-import { describe, expect, it } from 'vitest';
-import { DAILY_QUOTA_PAUSE_MS, isMissingModel, isOverloaded, pickEmbeddingModel, pickTextModels, pickTtsModel, quotaPause, type ModelInfo } from '@/lib/model-pick';
+import { describe, expect, it, vi } from 'vitest';
+import { aiErrorText, classifyAiError } from '@/lib/api-key';
+import { DAILY_QUOTA_PAUSE_MS, isMissingModel, isOverloaded, pickEmbeddingModel, pickTextModels, pickTtsModel, quotaInfo, quotaPause, type ModelInfo } from '@/lib/model-pick';
+
+vi.mock('expo-secure-store', () => ({}));
+vi.mock('@google/genai', () => ({ GoogleGenAI: class {} }));
 
 const m = (name: string, ...actions: string[]): ModelInfo => ({ name, actions: actions.length ? actions : ['generateContent'] });
 const list = [
@@ -22,7 +26,12 @@ describe('choosing models from what the key can use', () => {
   });
   it('text: a newer stable generation beats everything older', () => {
     const newer = [...list, m('gemini-3.5-flash'), m('gemini-3.5-flash-lite')];
-    expect(pickTextModels(newer)).toEqual(['gemini-3.5-flash', 'gemini-3-flash-preview', 'gemini-2.5-flash']);
+    // Three Flash models, then the best Flash-Lite as the last rung (it has its own quota).
+    expect(pickTextModels(newer)).toEqual(['gemini-3.5-flash', 'gemini-3-flash-preview', 'gemini-2.5-flash', 'gemini-3.5-flash-lite']);
+  });
+  it('text: Flash-Lite is kept even when more than three full Flash models are listed', () => {
+    const many = [m('gemini-3.5-flash'), m('gemini-3-flash'), m('gemini-2.5-flash'), m('gemini-2.0-flash'), m('gemini-2.5-flash-lite'), m('gemini-2.0-flash-lite')];
+    expect(pickTextModels(many)).toEqual(['gemini-3.5-flash', 'gemini-3-flash', 'gemini-2.5-flash', 'gemini-2.5-flash-lite']);
   });
   it('text: at the same version, stable goes before preview', () => {
     expect(pickTextModels([m('gemini-3-flash-preview'), m('gemini-3-flash')])).toEqual(['gemini-3-flash', 'gemini-3-flash-preview']);
@@ -65,5 +74,29 @@ describe('choosing models from what the key can use', () => {
     expect(isOverloaded(new Error('{"error":{"code":503,"message":"This model is currently experiencing high demand.","status":"UNAVAILABLE"}}'))).toBe(true);
     expect(isOverloaded(new Error('{"error":{"code":429,"status":"RESOURCE_EXHAUSTED"}}'))).toBe(false);
     expect(isOverloaded(new Error('API key not valid'))).toBe(false);
+  });
+  const e504 = new Error('{"error":{"code":504,"message":"Deadline expired before operation could complete.","status":"DEADLINE_EXCEEDED"}}');
+  const daily429 = new Error(
+    '{"error":{"code":429,"message":"Quota exceeded. Please retry in 41.2s.","status":"RESOURCE_EXHAUSTED","details":[{"violations":[{"quotaId":"GenerateRequestsPerDayPerProjectPerModel-FreeTier"}]}]}}',
+  );
+  const minute429 = new Error(
+    '{"error":{"code":429,"message":"Quota exceeded. Please retry in 37.5s.","status":"RESOURCE_EXHAUSTED","details":[{"violations":[{"quotaId":"GenerateRequestsPerMinutePerProjectPerModel-FreeTier"}]}]}}',
+  );
+  it('a 504 is busy: tried on another model and a second pass, not thrown at once', () => {
+    expect(isOverloaded(e504)).toBe(true);
+    expect(classifyAiError(e504)).toBe('busy');
+    expect(quotaPause(e504)).toBeUndefined();
+    expect(aiErrorText(e504)).toMatch(/busy/);
+  });
+  it('a 429 says whether the day or the minute ran out', () => {
+    expect(quotaInfo(daily429)).toEqual({ daily: true });
+    expect(quotaInfo(minute429)).toEqual({ daily: false, retryMs: 37_500 });
+    expect(classifyAiError(daily429)).toBe('quota');
+    expect(classifyAiError(minute429)).toBe('quota');
+    expect(aiErrorText(daily429)).toContain('daily limit is used up. It resets at 13:00 Dhaka time.');
+    const minuteText = aiErrorText(minute429);
+    expect(minuteText).toContain('Try again in 38 seconds.');
+    expect(minuteText).not.toMatch(/daily/i);
+    expect(aiErrorText(new Error('{"error":{"code":429,"status":"RESOURCE_EXHAUSTED"}}'))).toContain('Try again in a minute.');
   });
 });
