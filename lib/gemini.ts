@@ -108,7 +108,20 @@ const OVERLOAD_PAUSE_MS = 1500;
  */
 const REQUEST_TIMEOUT_MS = 90_000;
 
-async function generateText(params: Omit<GenerateContentParameters, 'model'>, input?: InputInfo) {
+/** For callers that asked for JSON: text that doesn't parse is no better than none. */
+const parsesAsJson = (text: string): void => {
+  JSON.parse(text);
+};
+
+async function generateText(
+  params: Omit<GenerateContentParameters, 'model'>,
+  opts: {
+    input?: InputInfo;
+    /** Throws when the text can't be used: that model's answer is then treated as a failure, so another is tried. */
+    validate?: (text: string) => void;
+  } = {},
+) {
+  const { input, validate } = opts;
   const client = getAIClient();
   let lastError: unknown;
   // Models that answered with no text (a block, a cut-off, nothing), and
@@ -131,11 +144,19 @@ async function generateText(params: Omit<GenerateContentParameters, 'model'>, in
           ...params,
           config: { ...params.config, httpOptions: { ...params.config?.httpOptions, timeout: REQUEST_TIMEOUT_MS } },
         });
-        if (!response.text) {
+        let unreadable = false;
+        if (response.text && validate) {
+          try {
+            validate(response.text);
+          } catch {
+            unreadable = true;
+          }
+        }
+        if (!response.text || unreadable) {
           // A reply with no text is no success: another model may answer. A
           // block (safety) is Google's decision about this note, so waiting
           // and asking again is pointless: it only gets the other models.
-          const empty = describeEmpty(response, model);
+          const empty = describeEmpty(response, model, unreadable);
           empties.push(empty);
           lastWasEmpty = true;
           if (!isBlocked(empty)) overloaded = true;
@@ -398,10 +419,13 @@ Question: "${question}"
 
 Notes:
 ${notes.map((n) => `--- id=${n.id} · "${n.title}"\n${n.text}`).join('\n')}`;
-  const response = await generateText({
-    contents: prompt,
-    config: { responseMimeType: 'application/json', responseSchema: ANSWER_SCHEMA },
-  });
+  const response = await generateText(
+    {
+      contents: prompt,
+      config: { responseMimeType: 'application/json', responseSchema: ANSWER_SCHEMA },
+    },
+    { validate: parsesAsJson },
+  );
   const text = response.text;
   if (!text) throw new Error('No answer');
   const parsed = JSON.parse(text) as { answer?: string; sourceIds?: string[] };
@@ -451,10 +475,13 @@ The person has jotted ${notes.length} notes into a thread called ${JSON.stringif
 Notes, oldest first:
 ${list}
 `;
-  const response = await generateText({
-    contents: prompt,
-    config: { responseMimeType: 'application/json', responseSchema: OVERVIEW_SCHEMA },
-  });
+  const response = await generateText(
+    {
+      contents: prompt,
+      config: { responseMimeType: 'application/json', responseSchema: OVERVIEW_SCHEMA },
+    },
+    { validate: parsesAsJson },
+  );
   if (!response.text) throw new Error('No response text');
   return JSON.parse(response.text);
 }
@@ -517,7 +544,7 @@ export async function processVoiceDump(
         responseSchema: dumpSchema({ threads: !!ctx?.candidates.length, transcript: images.length > 0 }),
       },
     },
-    input,
+    { input, validate: parsesAsJson },
   );
 
   const text = response.text;
@@ -609,7 +636,7 @@ export async function processAudioDump(
         responseSchema: dumpSchema({ threads: !!ctx?.candidates.length, transcript: true }),
       },
     },
-    input,
+    { input, validate: parsesAsJson },
   );
 
   const text = response.text;
