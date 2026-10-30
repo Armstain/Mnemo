@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react';
 import { AppState } from 'react-native';
 import { useMnemoStore } from '@/hooks/use-mnemo-store';
 import { finishOnDevice, resolvePendingEntry, retryWaitingNow } from '@/lib/capture';
+import { runInPool } from '@/lib/send-queue';
 import { deleteUnusedAudio } from '@/lib/voice-audio';
 import { getPreferences, setPreferences, usePreferences } from '@/lib/preferences';
 import { confirmAction } from '@/utils/confirm';
@@ -91,6 +92,29 @@ async function backfillEmbeddings(items: MnemoItem[]): Promise<void> {
 }
 
 const SWEEP_EVERY_MS = 60_000;
+/**
+ * Waiting notes sent at once. Every note walks the model ladder on its
+ * own, so sending them all together turned a short queue into a burst of
+ * requests: per-minute 429s, and a day's free quota spent on calls that
+ * were bound to fail.
+ */
+const SEND_AT_ONCE = 2;
+
+let sending = false;
+
+/** Sends waiting notes a couple at a time; stops at the first problem every note would share. */
+type Waiting = Parameters<typeof resolvePendingEntry>;
+
+/** Sends waiting notes a couple at a time; stops at the first problem every note would share. */
+async function sendWaiting(pending: Waiting[0][], store: Waiting[1]): Promise<void> {
+  if (sending) return;
+  sending = true;
+  try {
+    await runInPool(pending, SEND_AT_ONCE, (entry) => resolvePendingEntry(entry, store));
+  } finally {
+    sending = false;
+  }
+}
 
 /**
  * Invisible component mounted at the app root. It:
@@ -129,7 +153,7 @@ export function PendingProcessor() {
         }
         return;
       }
-      for (const entry of pending) resolvePendingEntry(entry, current);
+      void sendWaiting(pending, current);
       if (!backfilled) {
         backfilled = true;
         backfillEmbeddings(items);

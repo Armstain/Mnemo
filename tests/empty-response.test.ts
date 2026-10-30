@@ -38,6 +38,30 @@ const empty = () => ({ text: undefined, candidates: [{ finishReason: 'STOP' }] }
 const truncated = () => ({ text: '', candidates: [{ finishReason: 'MAX_TOKENS' }] });
 const safety = () => ({ text: undefined, candidates: [{ finishReason: 'SAFETY' }], promptFeedback: { blockReason: 'PROHIBITED_CONTENT' } });
 
+const cutOff = () => ({ text: '{"title":"Plumber","notes":"Call the', candidates: [{ finishReason: 'MAX_TOKENS' }] });
+
+describe('an answer that has text but not the JSON asked for', () => {
+  beforeEach(() => {
+    calls.length = 0;
+    behaviour.clear();
+  });
+
+  it('is no success either: the next model answers (it used to throw at JSON.parse, with no fallback)', async () => {
+    behaviour.set('gemini-3-flash-preview', cutOff);
+    const note = await processVoiceDump('call the plumber');
+    expect(note.title).toBe('Plumber');
+    expect(calls).toEqual(['gemini-3-flash-preview', 'gemini-2.5-flash']);
+  });
+
+  it('cut off everywhere: says it was cut off, with the finishReason', async () => {
+    for (const m of ['gemini-3-flash-preview', 'gemini-2.5-flash', 'gemini-2.5-flash-lite']) behaviour.set(m, cutOff);
+    const error = await processVoiceDump('call the plumber').catch((e) => e);
+    expect(error.message).toContain('MAX_TOKENS');
+    expect(error.message).toContain('unreadable');
+    expect(classifyAiError(error)).toBe('truncated');
+  });
+});
+
 describe('an answer with no text', () => {
   beforeEach(() => {
     calls.length = 0;

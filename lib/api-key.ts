@@ -79,7 +79,7 @@ export function classifyAiError(err: unknown): KeyProblem {
   const msg = String((err as { message?: string })?.message ?? err);
   // First: its text carries counts ("transcript 401 chars") that the checks below would take for status codes.
   const empty = emptyKindOf(msg);
-  if (empty) return empty === 'blocked' ? 'blocked' : empty === 'truncated' ? 'truncated' : 'empty';
+  if (empty) return empty === 'blocked' ? 'blocked' : empty === 'truncated' ? 'truncated' : empty === 'unreadable' ? 'other' : 'empty';
   if (/API_KEY_INVALID|API key not valid|PERMISSION_DENIED|\b(401|403)\b/i.test(msg)) return 'invalid';
   if (/RESOURCE_EXHAUSTED|quota|rate limit|\b429\b/i.test(msg)) return 'quota';
   if (OVERLOADED_PATTERN.test(msg)) return 'busy';

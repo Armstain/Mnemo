@@ -10,13 +10,15 @@ export interface ResponseFacts {
   promptFeedback?: { blockReason?: unknown };
 }
 
-export type EmptyKind = 'blocked' | 'truncated' | 'empty-input' | 'empty';
+export type EmptyKind = 'blocked' | 'truncated' | 'empty-input' | 'unreadable' | 'empty';
 
 export interface EmptyAttempt {
   model: string;
   finishReason?: string;
   blockReason?: string;
   candidates: number;
+  /** There was text, but not the JSON that was asked for. */
+  unreadable?: boolean;
 }
 
 /** What went in: shown in the error, and tells "nothing to process" from "wouldn't process it". */
@@ -30,7 +32,7 @@ export interface InputInfo {
 /** Finish reasons that mean Google's filters declined to answer. */
 const BLOCKED_FINISH = /^(SAFETY|PROHIBITED_CONTENT|BLOCKLIST|SPII|RECITATION|IMAGE_SAFETY|IMAGE_PROHIBITED_CONTENT|IMAGE_RECITATION)$/;
 
-export function describeEmpty(response: ResponseFacts, model: string): EmptyAttempt {
+export function describeEmpty(response: ResponseFacts, model: string, unreadable = false): EmptyAttempt {
   const finish = response.candidates?.[0]?.finishReason;
   const block = response.promptFeedback?.blockReason;
   return {
@@ -38,6 +40,7 @@ export function describeEmpty(response: ResponseFacts, model: string): EmptyAtte
     finishReason: finish ? String(finish) : undefined,
     blockReason: block ? String(block) : undefined,
     candidates: response.candidates?.length ?? 0,
+    ...(unreadable ? { unreadable } : {}),
   };
 }
 
@@ -47,6 +50,7 @@ export function emptyKind(attempts: EmptyAttempt[], input?: InputInfo): EmptyKin
   if (input?.none) return 'empty-input';
   if (attempts.some(isBlocked)) return 'blocked';
   if (attempts.some((a) => a.finishReason === 'MAX_TOKENS')) return 'truncated';
+  if (attempts.some((a) => a.unreadable)) return 'unreadable';
   return 'empty';
 }
 
@@ -56,10 +60,10 @@ export class EmptyResponseError extends Error {
   constructor(readonly attempts: EmptyAttempt[], input?: InputInfo) {
     const kind = emptyKind(attempts, input);
     const tried = attempts
-      .map((a) => `${a.model} finish=${a.finishReason ?? '-'}${a.blockReason ? ` block=${a.blockReason}` : ''} candidates=${a.candidates}`)
+      .map((a) => `${a.model} finish=${a.finishReason ?? '-'}${a.blockReason ? ` block=${a.blockReason}` : ''} candidates=${a.candidates}${a.unreadable ? ' unreadable' : ''}`)
       .join('; ');
     // The cause and the input first: the log cuts long messages short.
-    super(`Gemini returned no text (${kind}) · input: ${input?.label ?? 'unknown'} · ${tried}`);
+    super(`Gemini returned ${kind === 'unreadable' ? 'unreadable text' : 'no text'} (${kind}) · input: ${input?.label ?? 'unknown'} · ${tried}`);
     this.name = 'EmptyResponseError';
     this.kind = kind;
   }
@@ -68,6 +72,6 @@ export class EmptyResponseError extends Error {
 /** The kind named in an error's text (it survives being logged and re-thrown), or null. */
 export function emptyKindOf(err: unknown): EmptyKind | null {
   const msg = String((err as { message?: string })?.message ?? err);
-  const m = msg.match(/Gemini returned no text \((blocked|truncated|empty-input|empty)\)/);
+  const m = msg.match(/Gemini returned (?:no|unreadable) (?:text) \((blocked|truncated|empty-input|unreadable|empty)\)/);
   return (m?.[1] as EmptyKind | undefined) ?? null;
 }
