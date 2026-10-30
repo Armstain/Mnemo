@@ -733,29 +733,37 @@ const attempts = new Map<string, { count: number; nextAt: number }>();
  * (freshly saved entries, PendingProcessor's sweeps). Never throws. On
  * failure the entry stays pending (it already shows the phone's reading)
  * and is tried again later, backing off; a problem the person can fix
- * (bad key, quota) is reported through `setAiProblem`.
+ * (bad key, quota) is reported through `setAiProblem`. Resolves true when
+ * every other waiting note would fail the same way (bad key, no quota,
+ * Gemini busy, no signal): a sweep stops there instead of trying them all.
  */
-export async function resolvePendingEntry(entry: PendingEntry, store: CaptureStore): Promise<void> {
+export async function resolvePendingEntry(entry: PendingEntry, store: CaptureStore): Promise<boolean> {
   const previous = attempts.get(entry.id);
-  if (previous && Date.now() < previous.nextAt) return;
+  if (previous && Date.now() < previous.nextAt) return false;
   try {
     await structurePendingEntry(entry, store);
     attempts.delete(entry.id);
     setAiProblem(null);
+    return false;
   } catch (e) {
-    if (e instanceof AiOffError) return;
+    if (e instanceof AiOffError) return true;
     // No connection: nothing reached Gemini, so no reason to wait longer
     // each time. The next sweep (within a minute) tries again.
     if (isNoConnection(e)) {
       attempts.delete(entry.id);
-      return;
+      return true;
     }
     const count = (previous?.count ?? 0) + 1;
     attempts.set(entry.id, { count, nextAt: Date.now() + BACKOFF_MS[Math.min(count, BACKOFF_MS.length) - 1] });
     const problem = classifyAiError(e);
     if (problem === 'invalid' || problem === 'quota') setAiProblem(problem, problem === 'quota' ? aiErrorText(e) : null);
     // Only a note's first failure is logged: its retries would fill the log with the same error.
-    if (problem === 'other' && !previous) logError('ai', e);
+    // (An empty answer is logged with its cause, see lib/empty-response.ts.)
+    const worthLogging = problem === 'other' || problem === 'blocked' || problem === 'truncated' || problem === 'empty';
+    if (worthLogging && !previous) logError('ai', e);
+    // A bad key, a spent quota, a busy Gemini or no signal would fail the
+    // same way for every other waiting note: the sweep stops here.
+    return problem === 'invalid' || problem === 'quota' || problem === 'busy' || problem === 'offline';
   }
 }
 

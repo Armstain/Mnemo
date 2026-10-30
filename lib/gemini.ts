@@ -2,6 +2,7 @@ import { GoogleGenAI, Modality, Type, type GenerateContentParameters } from '@go
 import { getActiveApiKey, onApiKeyChanged } from './api-key';
 import { isLiteModel, isMissingModel, isOverloaded, pickTextModels, pickTtsModel, quotaInfo, quotaPause, type ModelInfo } from './model-pick';
 import { aiEnabled, setAiNotice } from './ai-mode';
+import { describeEmpty, EmptyResponseError, isBlocked, type EmptyAttempt, type InputInfo } from './empty-response';
 import { describePages, type PageContext } from './link-preview';
 
 /** Thrown instead of calling Google when the person chose offline. */
@@ -107,9 +108,26 @@ const OVERLOAD_PAUSE_MS = 1500;
  */
 const REQUEST_TIMEOUT_MS = 90_000;
 
-async function generateText(params: Omit<GenerateContentParameters, 'model'>) {
+/** For callers that asked for JSON: text that doesn't parse is no better than none. */
+const parsesAsJson = (text: string): void => {
+  JSON.parse(text);
+};
+
+async function generateText(
+  params: Omit<GenerateContentParameters, 'model'>,
+  opts: {
+    input?: InputInfo;
+    /** Throws when the text can't be used: that model's answer is then treated as a failure, so another is tried. */
+    validate?: (text: string) => void;
+  } = {},
+) {
+  const { input, validate } = opts;
   const client = getAIClient();
   let lastError: unknown;
+  // Models that answered with no text (a block, a cut-off, nothing), and
+  // whether that was the latest failure: then it's the one to report.
+  const empties: EmptyAttempt[] = [];
+  let lastWasEmpty = false;
   let sawMissing = false;
   let tried = false;
   // Two passes: when every model says "high demand" (it comes in spikes),
@@ -126,10 +144,29 @@ async function generateText(params: Omit<GenerateContentParameters, 'model'>) {
           ...params,
           config: { ...params.config, httpOptions: { ...params.config?.httpOptions, timeout: REQUEST_TIMEOUT_MS } },
         });
+        let unreadable = false;
+        if (response.text && validate) {
+          try {
+            validate(response.text);
+          } catch {
+            unreadable = true;
+          }
+        }
+        if (!response.text || unreadable) {
+          // A reply with no text is no success: another model may answer. A
+          // block (safety) is Google's decision about this note, so waiting
+          // and asking again is pointless: it only gets the other models.
+          const empty = describeEmpty(response, model, unreadable);
+          empties.push(empty);
+          lastWasEmpty = true;
+          if (!isBlocked(empty)) overloaded = true;
+          continue;
+        }
         noteModelUsed(model, models);
         return response;
       } catch (e) {
         lastError = e;
+        lastWasEmpty = false;
         // A missing model, a busy one or one out of quota is worth trying
         // another for. A bad key or no signal would fail the same way on each.
         const pause = quotaPause(e);
@@ -145,6 +182,7 @@ async function generateText(params: Omit<GenerateContentParameters, 'model'>) {
   if (sawMissing) refreshModels();
   // Every model is sitting out its quota: say so, without spending a request.
   if (!tried) throw new Error(allRestingError());
+  if (lastWasEmpty) throw new EmptyResponseError(empties, input);
   throw lastError;
 }
 
@@ -381,10 +419,13 @@ Question: "${question}"
 
 Notes:
 ${notes.map((n) => `--- id=${n.id} · "${n.title}"\n${n.text}`).join('\n')}`;
-  const response = await generateText({
-    contents: prompt,
-    config: { responseMimeType: 'application/json', responseSchema: ANSWER_SCHEMA },
-  });
+  const response = await generateText(
+    {
+      contents: prompt,
+      config: { responseMimeType: 'application/json', responseSchema: ANSWER_SCHEMA },
+    },
+    { validate: parsesAsJson },
+  );
   const text = response.text;
   if (!text) throw new Error('No answer');
   const parsed = JSON.parse(text) as { answer?: string; sourceIds?: string[] };
@@ -434,10 +475,13 @@ The person has jotted ${notes.length} notes into a thread called ${JSON.stringif
 Notes, oldest first:
 ${list}
 `;
-  const response = await generateText({
-    contents: prompt,
-    config: { responseMimeType: 'application/json', responseSchema: OVERVIEW_SCHEMA },
-  });
+  const response = await generateText(
+    {
+      contents: prompt,
+      config: { responseMimeType: 'application/json', responseSchema: OVERVIEW_SCHEMA },
+    },
+    { validate: parsesAsJson },
+  );
   if (!response.text) throw new Error('No response text');
   return JSON.parse(response.text);
 }
@@ -486,18 +530,26 @@ export async function processVoiceDump(
     ${threadRules(ctx)}
   `;
 
-  const response = await generateText({
-    contents: images.length
-      ? [{ role: 'user', parts: [...images.map((data) => ({ inlineData: { mimeType: 'image/jpeg', data } })), { text: prompt }] }]
-      : prompt,
-    config: {
-      responseMimeType: 'application/json',
-      responseSchema: dumpSchema({ threads: !!ctx?.candidates.length, transcript: images.length > 0 }),
+  const input: InputInfo = {
+    label: `transcript ${transcript.length} chars${images.length ? `, ${images.length} photo${images.length === 1 ? '' : 's'}` : ''}`,
+    none: transcript.trim() === '' && images.length === 0,
+  };
+  const response = await generateText(
+    {
+      contents: images.length
+        ? [{ role: 'user', parts: [...images.map((data) => ({ inlineData: { mimeType: 'image/jpeg', data } })), { text: prompt }] }]
+        : prompt,
+      config: {
+        responseMimeType: 'application/json',
+        responseSchema: dumpSchema({ threads: !!ctx?.candidates.length, transcript: images.length > 0 }),
+      },
     },
-  });
+    { input, validate: parsesAsJson },
+  );
 
   const text = response.text;
-  if (!text) throw new Error('Failed to process voice dump');
+  // generateText already treats no text as a failure; this is for the types.
+  if (!text) throw new EmptyResponseError([describeEmpty(response, response.modelVersion ?? 'unknown')], input);
   return JSON.parse(text);
 }
 
@@ -567,20 +619,29 @@ export async function processAudioDump(
     ${threadRules(ctx)}
   `;
 
-  const response = await generateText({
-    contents: [
-      {
-        parts: [{ text: prompt }, ...audio.map((a) => ({ inlineData: { mimeType: a.mimeType, data: a.data } }))],
-      }
-    ],
-    config: {
-      responseMimeType: 'application/json',
-      responseSchema: dumpSchema({ threads: !!ctx?.candidates.length, transcript: true }),
+  const bytes = audio.reduce((n, a) => n + Math.floor((a.data.length * 3) / 4), 0);
+  const input: InputInfo = {
+    label: `audio ${audio.length} recording${audio.length === 1 ? '' : 's'}, ${Math.round(bytes / 1024)} KB`,
+    none: bytes === 0,
+  };
+  const response = await generateText(
+    {
+      contents: [
+        {
+          parts: [{ text: prompt }, ...audio.map((a) => ({ inlineData: { mimeType: a.mimeType, data: a.data } }))],
+        }
+      ],
+      config: {
+        responseMimeType: 'application/json',
+        responseSchema: dumpSchema({ threads: !!ctx?.candidates.length, transcript: true }),
+      },
     },
-  });
+    { input, validate: parsesAsJson },
+  );
 
   const text = response.text;
-  if (!text) throw new Error('Failed to process audio dump');
+  // generateText already treats no text as a failure; this is for the types.
+  if (!text) throw new EmptyResponseError([describeEmpty(response, response.modelVersion ?? 'unknown')], input);
   return JSON.parse(text);
 }
 

@@ -1,6 +1,7 @@
 import * as SecureStore from 'expo-secure-store';
 import { Platform } from 'react-native';
 import { GoogleGenAI } from '@google/genai';
+import { emptyKindOf } from '@/lib/empty-response';
 import { nextDailyReset, OVERLOADED_PATTERN, quotaInfo } from '@/lib/model-pick';
 
 const GEMINI_KEY_STORAGE = 'mnemo_user_gemini_api_key';
@@ -71,11 +72,14 @@ export async function saveApiKey(key: string): Promise<void> {
   }
 }
 
-export type KeyProblem = 'invalid' | 'quota' | 'offline' | 'busy' | 'other';
+export type KeyProblem = 'invalid' | 'quota' | 'offline' | 'busy' | 'blocked' | 'truncated' | 'empty' | 'other';
 
 /** Sorts a Gemini error into something the person can act on. */
 export function classifyAiError(err: unknown): KeyProblem {
   const msg = String((err as { message?: string })?.message ?? err);
+  // First: its text carries counts ("transcript 401 chars") that the checks below would take for status codes.
+  const empty = emptyKindOf(msg);
+  if (empty) return empty === 'blocked' ? 'blocked' : empty === 'truncated' ? 'truncated' : empty === 'unreadable' ? 'other' : 'empty';
   if (/API_KEY_INVALID|API key not valid|PERMISSION_DENIED|\b(401|403)\b/i.test(msg)) return 'invalid';
   if (/RESOURCE_EXHAUSTED|quota|rate limit|\b429\b/i.test(msg)) return 'quota';
   if (OVERLOADED_PATTERN.test(msg)) return 'busy';
@@ -124,6 +128,9 @@ export const KEY_PROBLEM_TEXT: Record<KeyProblem, string> = {
   quota: "This key's free limit is used up. Notes are saved and will be tidied up later.",
   offline: "Couldn't reach Gemini. Check your connection; notes are saved either way.",
   busy: 'Gemini is busy right now. Notes are saved and will be tidied up later.',
+  blocked: "Gemini's safety filter declined to process this note. It's saved as you wrote it.",
+  truncated: "Gemini's answer for this note was cut off. It's saved as you wrote it.",
+  empty: 'Gemini sent back nothing for this note (it may have had nothing to process). It\'s saved as you wrote it.',
   other: 'Gemini returned an error. Notes are saved either way.',
 };
 
