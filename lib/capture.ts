@@ -755,7 +755,9 @@ export async function resolvePendingEntry(entry: PendingEntry, store: CaptureSto
     const problem = classifyAiError(e);
     if (problem === 'invalid' || problem === 'quota') setAiProblem(problem, problem === 'quota' ? aiErrorText(e) : null);
     // Only a note's first failure is logged: its retries would fill the log with the same error.
-    if (problem === 'other' && !previous) logError('ai', e);
+    // (An empty answer is logged with its cause, see lib/empty-response.ts.)
+    const worthLogging = problem === 'other' || problem === 'blocked' || problem === 'truncated' || problem === 'empty';
+    if (worthLogging && !previous) logError('ai', e);
   }
 }
 
