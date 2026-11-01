@@ -1,9 +1,10 @@
 import { numberTokens, scanNumbers, metricKey, type NumberSpan } from '@/lib/measures';
-import type { Category, ChecklistItem, LaterStep, Measure, Rollup } from '@/types/mnemo';
+import type { Category, ChecklistItem, LaterStep, Measure, Rollup, ThreadKind } from '@/types/mnemo';
 import { capitalize, hostOf, nfc } from '@/utils/text';
 import { DAY_MS } from '@/utils/time';
 import { queueSteps } from '@/lib/when';
 import { isPlan, MONTH_WORDS, opensInPast, readWhenFull, withoutWhen, type Repeat } from '@/lib/when-read';
+import { readKind } from '@/lib/kind';
 
 // Reading a note on the phone, with no AI: a title, lists, links, the
 // numbers worth adding up, the next step and when it's due, a category
@@ -27,6 +28,8 @@ export interface Reading {
   repeat?: Repeat;
   later: LaterStep[];
   category?: Category;
+  /** Project, task or idea, when the words make it clear (lib/kind.ts). */
+  kind?: ThreadKind;
   tags: string[];
 }
 
@@ -632,6 +635,7 @@ export function understand(
     timed = queueSteps(timed);
   }
   const later = timed.slice(1);
+  const firstStep = timed.length > 0 ? timed[0].step : upperI(nextStep);
   return {
     text,
     title: upperI(readTitle(said, list.items, due !== undefined)) || (due ? 'Reminder' : ''),
@@ -639,12 +643,13 @@ export function understand(
     links: readLinks(raw),
     measures: readMeasures(text || raw, options.known, options.currency),
     // The time lives in the reminder; the step says what to do.
-    nextStep: timed.length > 0 ? timed[0].step : upperI(nextStep),
+    nextStep: firstStep,
     leftOff: upperI(readLeftOff(text ? said : '', sentence)),
     due: timed[0]?.at,
     repeat: due ? when?.repeat : undefined,
     later,
     category: readCategory(words),
+    kind: readKind(raw, { due: timed[0]?.at, nextStep: firstStep, checklist: list.items.length }),
     tags: readTags(raw),
   };
 }

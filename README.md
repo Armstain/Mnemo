@@ -26,6 +26,15 @@ standing in a shop. Mnemo optimises for two moments:
 - 🧵 **Threads, not notes** — captures are organised into threads with an AI-written
   title, summary, *where you left off*, and *next step*. Auto-filing suggests where
   things belong; you stay in control.
+- 🏷️ **Projects, tasks and ideas** — each thread is told apart by what it *is*,
+  not just what it's about. Gemini says so in the same call that writes the note
+  (no extra request); offline, the phone guesses from the words. A thread that
+  keeps growing becomes a project; set it yourself and it stays. Filter by it in
+  the Library.
+- 👋 **Welcome back** — open the app after a few days away and Home says how long
+  it's been, which reminders passed, what's still to do across every thread, and
+  which projects went quiet, before you've tapped anything. Worked out on the
+  phone, so it's instant and works offline.
 - ⏰ **Reminders that actually fire** — natural language ("remind me in 20 mins"),
   repeats, several timed steps in one note ("bring the file at 10, send it at 11"),
   and serious reliability engineering for Android's battery-saving habits.

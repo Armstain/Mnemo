@@ -151,6 +151,11 @@ async function generateText(params: Omit<GenerateContentParameters, 'model'>) {
 /** Category list for AI suggestion. */
 const VALID_CATEGORIES = ['work', 'personal', 'study', 'shopping', 'health', 'ideas', 'errands', 'general'];
 
+/** What the note is (lib/kind.ts); "note" when it's none of the three clearly. */
+const VALID_KINDS = ['project', 'task', 'idea', 'note'];
+const KIND_RULE =
+  'What this is: "project" (something ongoing with several steps: a portfolio, a trip, a renovation), "task" (one thing to get done, or a list to work through), "idea" (a thought worth keeping, not yet something to do), or "note" (information to keep: a number, an address, a receipt). When unsure, "note".';
+
 // ─── Response schemas ───────────────────────────────────────────
 // Every structured call declares a schema so a malformed model
 // response fails at the API layer instead of at JSON.parse.
@@ -199,6 +204,11 @@ const DUMP_PROPERTIES = {
     description: '2-5 short lowercase keyword tags capturing the topic (e.g. "passport", "travel", "recipe"). No hashtags, no categories already covered by suggestedCategory.',
   },
   suggestedCategory: { type: Type.STRING, enum: VALID_CATEGORIES },
+  kind: {
+    type: Type.STRING,
+    enum: VALID_KINDS,
+    description: KIND_RULE,
+  },
   summary: SUMMARY_SCHEMA,
   measures: {
     type: Type.ARRAY,
@@ -229,7 +239,7 @@ const THREAD_MATCH_SCHEMA = {
   required: ['match', 'threadId', 'confidence', 'reason'],
 };
 
-const DUMP_REQUIRED = ['title', 'notes', 'links', 'tags', 'suggestedCategory', 'summary', 'measures'];
+const DUMP_REQUIRED = ['title', 'notes', 'links', 'tags', 'suggestedCategory', 'kind', 'summary', 'measures'];
 
 /** The capture schema; thread matching and a transcript only when asked for. */
 function dumpSchema(opts: { threads: boolean; transcript: boolean }) {
@@ -286,6 +296,8 @@ export interface ProcessedCapture {
   links: string[];
   tags?: string[];
   suggestedCategory?: string;
+  /** project, task, idea or note: see KIND_RULE. */
+  kind?: string;
   summary?: { leftOff: string; nextSteps: string[]; resources: { name: string; url: string }[] };
   measures?: unknown[];
   transcript?: string;
@@ -466,6 +478,7 @@ export async function processVoiceDump(
     ${describePages(pages)}
     
     Also suggest the best category from this list: ${VALID_CATEGORIES.join(', ')}
+    And say what it is ("kind"): ${KIND_RULE}
     
     Format:
     {
@@ -474,6 +487,7 @@ export async function processVoiceDump(
       "links": ["Extract any URLs or links mentioned. If none, empty array."],
       "tags": ["2-5 short lowercase keyword tags for the topic, e.g. passport, travel"],
       "suggestedCategory": "one of: ${VALID_CATEGORIES.join(', ')}",
+      "kind": "one of: ${VALID_KINDS.join(', ')}",
       "summary": {
         "leftOff": "1-2 sentences on exactly where they left off",
         "nextSteps": ["Actionable step 1", "Actionable step 2"],
@@ -546,6 +560,7 @@ export async function processAudioDump(
     ${LANGUAGE_RULES}
     ${describePages(pages)}
     4. Suggest the best category from this list: ${VALID_CATEGORIES.join(', ')}
+    5. Say what it is ("kind"): ${KIND_RULE}
     
     Return a clean JSON object:
     {
@@ -554,6 +569,7 @@ export async function processAudioDump(
       "links": ["Extract any URLs or links mentioned. If none, empty array."],
       "tags": ["2-5 short lowercase keyword tags for the topic, in the speaker's language"],
       "suggestedCategory": "one of: ${VALID_CATEGORIES.join(', ')}",
+      "kind": "one of: ${VALID_KINDS.join(', ')}",
       "summary": {
         "leftOff": "1-2 sentences on exactly where they left off in the speaker's language",
         "nextSteps": ["Actionable steps in the speaker's language"],

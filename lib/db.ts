@@ -1,6 +1,7 @@
 import * as SQLite from 'expo-sqlite';
 import type { Entry, MnemoItem } from '@/types/mnemo';
 import { entryFromLegacyItem } from '@/lib/threads';
+import { asKind } from '@/lib/kind';
 
 // Opened lazily and asynchronously. On web, expo-sqlite runs in a worker,
 // and a synchronous open at import time times out waiting on it ("Sync
@@ -79,14 +80,16 @@ export function initDb(): Promise<void> {
 //   2 — reminders: items gain `repeat` and `starred`, entries `stepDone`.
 //   3 — reviews: items gain `completedAt` and `quietUntil`.
 //   4 — overviews: items gain `overview`.
-const SCHEMA_VERSION = 5;
+//   5 — timed steps: items gain `laterSteps`.
+//   6 — kinds: items gain `kind` (project, task or idea).
+const SCHEMA_VERSION = 6;
 
 // Every column, in one place, for the INSERT statements below.
 const ITEM_COLUMNS = [
   'id', 'type', 'title', 'content', 'checklistItems', 'links', 'category', 'tags', 'status',
   'nextStep', 'whereLeftOff', 'dueDate', 'createdAt', 'updatedAt', 'lastResumedAt',
   'aiSummary', 'pending', 'pendingRawText', 'pendingAudioUri', 'pinned', 'repeat', 'starred',
-  'completedAt', 'quietUntil', 'overview', 'laterSteps',
+  'completedAt', 'quietUntil', 'overview', 'laterSteps', 'kind',
 ];
 const ENTRY_COLUMNS = [
   'id', 'threadId', 'createdAt', 'updatedAt', 'source', 'transcript', 'blocks', 'leftOff', 'nextStep',
@@ -127,6 +130,9 @@ async function runMigrations(db: SQLite.SQLiteDatabase): Promise<void> {
   }
   if (version < 5) {
     await addColumn(db, 'items', 'laterSteps', 'TEXT');
+  }
+  if (version < 6) {
+    await addColumn(db, 'items', 'kind', 'TEXT');
   }
   await db.execAsync(`PRAGMA user_version = ${SCHEMA_VERSION}`);
 }
@@ -185,6 +191,7 @@ interface ItemRow {
   quietUntil: number | null;
   overview: string | null;
   laterSteps: string | null;
+  kind: string | null;
 }
 
 function rowToItem(row: ItemRow): MnemoItem {
@@ -215,6 +222,7 @@ function rowToItem(row: ItemRow): MnemoItem {
     quietUntil: row.quietUntil ?? undefined,
     overview: row.overview ? JSON.parse(row.overview) : undefined,
     laterSteps: row.laterSteps ? JSON.parse(row.laterSteps) : undefined,
+    kind: asKind(row.kind),
   };
 }
 
@@ -246,6 +254,7 @@ function itemToParams(item: MnemoItem) {
     $quietUntil: item.quietUntil ?? null,
     $overview: item.overview ? JSON.stringify(item.overview) : null,
     $laterSteps: item.laterSteps?.length ? JSON.stringify(item.laterSteps) : null,
+    $kind: item.kind ?? null,
   };
 }
 
@@ -286,7 +295,7 @@ const COLUMN_KEYS = new Set([
   'type', 'title', 'content', 'checklistItems', 'links', 'category', 'tags', 'status',
   'nextStep', 'whereLeftOff', 'dueDate', 'createdAt', 'updatedAt', 'lastResumedAt',
   'aiSummary', 'pending', 'pendingRawText', 'pendingAudioUri', 'pinned', 'repeat', 'starred',
-  'completedAt', 'quietUntil', 'overview', 'laterSteps',
+  'completedAt', 'quietUntil', 'overview', 'laterSteps', 'kind',
 ]);
 
 function serializeColumnValue(key: string, value: unknown): string | number | null {

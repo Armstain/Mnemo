@@ -22,6 +22,7 @@ import type { CaptureStore } from '@/hooks/use-mnemo-store';
 import { buildBlocks } from '@/lib/threads';
 import { summarizeMeasures, trackedMetrics, verifyMeasures } from '@/lib/measures';
 import { understand, type KnownMetric } from '@/lib/understand';
+import { asKind } from '@/lib/kind';
 import { imageBase64, imagesOf } from '@/lib/images';
 import { fetchLinkPreview, type LinkPreview, type PageContext } from '@/lib/link-preview';
 import { languageOf } from '@/lib/language';
@@ -198,6 +199,8 @@ function saveNote(source: Entry['source'], params: NoteInput): { threadId: strin
           category === 'general' && !ai
             ? reading.category ?? (words || !params.title ? undefined : understand(params.title, { monthFirst: monthFirst() }).category) ?? 'general'
             : category,
+        // The phone's guess; with AI on, Gemini's replaces it (resolvePendingEntry).
+        kind: reading.kind,
         tags: reading.tags,
         status: 'active',
         dueDate: due,
@@ -355,6 +358,7 @@ export function finishOnDevice(entry: Entry, store: CaptureStore): void {
     store.updateItem(thread.id, {
       title: thread.pinned?.title ? thread.title : reading.title || thread.title,
       category: thread.category === 'general' ? reading.category ?? 'general' : thread.category,
+      kind: thread.kind ?? reading.kind,
       pending: false,
     });
   }
@@ -587,6 +591,8 @@ async function structure(entry: PendingEntry, store: CaptureStore): Promise<void
 
   const tags = processed.tags ?? [];
   const aiCategory = asCategory(processed.suggestedCategory);
+  // "note" (none of the three) comes back as no kind, and that's an answer too.
+  const aiKind = asKind(processed.kind);
 
   // A recording had no words for the phone to find a reminder in when it
   // was saved: the written-out words do ("remind me at 7" said in Bangla).
@@ -664,7 +670,7 @@ async function structure(entry: PendingEntry, store: CaptureStore): Promise<void
       tags,
     });
     if (!created) return;
-    if (processed.summary) store.updateItem(created.id, { aiSummary: processed.summary });
+    store.updateItem(created.id, { kind: aiKind, ...(processed.summary ? { aiSummary: processed.summary } : {}) });
     remindFromSound(created.id);
     emitFiling({
       type: 'released',
@@ -685,6 +691,8 @@ async function structure(entry: PendingEntry, store: CaptureStore): Promise<void
       tags: [...new Set([...thread.tags, ...tags])].slice(0, 8),
       // The category picker defaults to General; a better guess wins.
       ...(thread.category === 'general' && aiCategory ? { category: aiCategory } : {}),
+      // Gemini read the whole note; its kind beats the phone's first guess.
+      ...(thread.pinned?.kind || processed.kind === undefined ? {} : { kind: aiKind }),
       aiSummary: processed.summary,
       pending: false,
       pendingAudioUri: undefined,

@@ -16,6 +16,14 @@ export type Category =
 
 export type ItemStatus = 'active' | 'paused' | 'completed' | 'archived';
 
+/**
+ * What a thread is, as opposed to what it's about (its category): something
+ * ongoing with several steps, one thing to get done, or a thought worth
+ * keeping. Unset when it's none of these clearly (a phone number, a receipt).
+ * See lib/kind.ts for how it's read and how it changes as a thread grows.
+ */
+export type ThreadKind = 'project' | 'task' | 'idea';
+
 export interface ChecklistItem {
   id: string;
   text: string;
@@ -64,6 +72,12 @@ export interface MnemoItem {
   checklistItems?: ChecklistItem[];
   links: string[];
   category: Category;
+  /**
+   * Project, task or idea, as guessed when the thread began (by Gemini, or
+   * the phone offline), or as set by the person (`pinned.kind`). Read it
+   * through `kindOf` (lib/kind.ts), which also lets a thread grow into a project.
+   */
+  kind?: ThreadKind;
   tags: string[];
   status: ItemStatus;
 
@@ -74,7 +88,7 @@ export interface MnemoItem {
   whereLeftOff?: string;
 
   /** Fields the user edited on the thread, which new entries must not overwrite. */
-  pinned?: { nextStep?: boolean; whereLeftOff?: boolean; title?: boolean };
+  pinned?: { nextStep?: boolean; whereLeftOff?: boolean; title?: boolean; kind?: boolean };
   /** The reminder (dueDate) comes back: every day, week or month at that time. */
   repeat?: 'daily' | 'weekly' | 'monthly';
   /** Kept at the top of Home's "pick up where you left off". */
