@@ -33,8 +33,10 @@ standing in a shop. Mnemo optimises for two moments:
   the Library.
 - 👋 **Welcome back** — open the app after a few days away and Home says how long
   it's been, which reminders passed, what's still to do across every thread, and
-  which projects went quiet, before you've tapped anything. Worked out on the
-  phone, so it's instant and works offline.
+  which projects went quiet. A full welcome page opens once on return: where
+  to start, what's coming up, next steps to tick off right there, where each
+  quiet project was left, and ideas kept for later. Worked out on the phone,
+  so it's instant and works offline.
 - ⏰ **Reminders that actually fire** — natural language ("remind me in 20 mins"),
   repeats, several timed steps in one note ("bring the file at 10, send it at 11"),
   and serious reliability engineering for Android's battery-saving habits.

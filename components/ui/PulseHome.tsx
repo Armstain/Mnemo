@@ -26,7 +26,7 @@ import { CATEGORY_LIST, useCategories } from '@/utils/categories';
 import { useEnter } from '@/utils/motion';
 import { useReduceMotion } from '@/hooks/use-accessibility-motion';
 import { flightsEnabled, launchFlight } from '@/lib/card-flight';
-import { awayDigest, awayFor, type AwayRow } from '@/lib/away';
+import { awayDigest, awayFor, shortWhen, type AwayRow } from '@/lib/away';
 import { useAwaySince } from '@/hooks/use-away';
 import { KIND_LABEL, kindOf } from '@/lib/kind';
 import type { MnemoItem, ThreadKind } from '@/types/mnemo';
@@ -214,10 +214,11 @@ function ResumeCard({ item, reason, kind }: { item: MnemoItem; reason: ResumeRea
 /** The right-hand word on a "while you were away" row: why it's listed. */
 function awayTrailing(row: AwayRow): { label: string; tone?: 'error' | 'accent' } {
   switch (row.reason.kind) {
+    // Short, so the title and step beside it keep their room.
     case 'missed':
-      return { label: formatReminder(row.reason.at), tone: 'error' };
+      return { label: shortWhen(row.reason.at), tone: 'error' };
     case 'due':
-      return { label: formatReminder(row.reason.at), tone: 'accent' };
+      return { label: shortWhen(row.reason.at), tone: 'accent' };
     case 'step':
       return { label: row.kind ? KIND_LABEL[row.kind].one : 'Next' };
     case 'leftOff':
@@ -247,12 +248,17 @@ export function PulseHome() {
 
   const now = Date.now();
   // Back after days away: what came and went, and what's waiting (lib/away.ts).
-  const { since: awaySince, dismiss: dismissAway } = useAwaySince();
-  const latestId = latestItem?.id;
-  const away = React.useMemo(
-    () => (awaySince !== null && items.length > 0 ? awayDigest(items, entries, awaySince, Date.now(), latestId) : null),
-    [awaySince, items, entries, latestId],
-  );
+  const { since: awaySince, presented: awayPresented, markPresented, dismiss: dismissAway } = useAwaySince();
+  // Cheap (a pass over the threads); the React Compiler memoizes it.
+  const away = awaySince !== null && items.length > 0 ? awayDigest(items, entries, awaySince, now, latestItem?.id) : null;
+  // The first time Home shows after a return, the full welcome page opens
+  // over it, once. Closing it leaves the short version here.
+  const hasAway = away !== null;
+  React.useEffect(() => {
+    if (!hasAway || awayPresented) return;
+    markPresented();
+    router.push('/welcome');
+  }, [hasAway, awayPresented, markPresented]);
   // The next few of the same ranking, so the order is visible, not just its
   // winner. While "while you were away" lists what's waiting, it takes their place.
   const upNext = away ? [] : activeItems.slice(1, 1 + UP_NEXT_LIMIT);
@@ -281,12 +287,12 @@ export function PulseHome() {
 
   const { name } = usePreferences();
   const greeting = React.useMemo(() => {
-    if (away) return name ? `Welcome back, ${name}` : 'Welcome back';
+    if (hasAway) return name ? `Welcome back, ${name}` : 'Welcome back';
     const hour = new Date().getHours();
     if (hour < 5) return name ? `Still up, ${name}?` : 'Still up?';
     const part = hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening';
     return name ? `${part}, ${name}` : part;
-  }, [name, away]);
+  }, [name, hasAway]);
   const today = React.useMemo(
     () => new Date().toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' }),
     [],
@@ -442,7 +448,10 @@ export function PulseHome() {
         {/* While you were away: what's waiting, across everything */}
         {away && (away.rows.length > 0 || away.ideas > 0) ? (
           <MotiView {...enter.rise(2)} {...enter.reflow()} className="mb-7">
-            <Eyebrow action="Got it" onAction={dismissAway}>
+            <Eyebrow
+              action={away.total > away.rows.length ? `All ${away.total + (away.ideas > 0 ? away.ideas : 0)}` : 'See all'}
+              onAction={() => router.push('/welcome')}
+            >
               While you were away
             </Eyebrow>
             {away.rows.length > 0 ? (
@@ -478,6 +487,18 @@ export function PulseHome() {
                 <Icon name="chevronRight" size={14} color={colors.accent} stroke={2} />
               </Pressable>
             ) : null}
+            <Pressable
+              onPress={dismissAway}
+              accessibilityRole="button"
+              accessibilityLabel="Got it. Put away what's waiting until next time."
+              hitSlop={8}
+              className="self-start flex-row items-center h-11 active:opacity-70"
+            >
+              <Icon name="check" size={15} color={colors.accent} stroke={2.2} />
+              <Text className="font-sans-semi text-sm ml-1.5" style={{ color: colors.accent }}>
+                Got it
+              </Text>
+            </Pressable>
           </MotiView>
         ) : null}
 

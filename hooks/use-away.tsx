@@ -16,7 +16,7 @@ function parse(raw: string | null): AwayState {
     const v = raw ? JSON.parse(raw) : null;
     if (!v || typeof v !== 'object') return {};
     const num = (x: unknown) => (typeof x === 'number' && Number.isFinite(x) ? x : undefined);
-    return { lastSeenAt: num(v.lastSeenAt), since: num(v.since), returnedAt: num(v.returnedAt) };
+    return { lastSeenAt: num(v.lastSeenAt), since: num(v.since), returnedAt: num(v.returnedAt), presentedFor: num(v.presentedFor) };
   } catch {
     return {};
   }
@@ -51,7 +51,13 @@ function start(): Promise<void> {
  * "welcome back" (lib/away.ts); null otherwise. `dismiss` puts it away
  * until the next time they're gone a while.
  */
-export function useAwaySince(): { since: number | null; dismiss: () => void } {
+export function useAwaySince(): {
+  since: number | null;
+  /** The full welcome page has been opened for this return already. */
+  presented: boolean;
+  markPresented: () => void;
+  dismiss: () => void;
+} {
   const [current, setCurrent] = useState<AwayState | null>(state);
 
   useEffect(() => {
@@ -63,5 +69,9 @@ export function useAwaySince(): { since: number | null; dismiss: () => void } {
   }, []);
 
   const dismiss = useCallback(() => commit({ lastSeenAt: Date.now() }), []);
-  return { since: current?.since ?? null, dismiss };
+  const markPresented = useCallback(() => {
+    if (state?.since !== undefined) commit({ ...state, presentedFor: state.since });
+  }, []);
+  const since = current?.since ?? null;
+  return { since, presented: since !== null && current?.presentedFor === since, markPresented, dismiss };
 }

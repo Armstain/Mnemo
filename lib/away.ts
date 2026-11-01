@@ -30,6 +30,8 @@ export interface AwayState {
   since?: number;
   /** When they came back: the card keeps showing for a while after. */
   returnedAt?: number;
+  /** The `since` the full welcome page was already opened for, so it opens once per return. */
+  presentedFor?: number;
 }
 
 /**
@@ -82,8 +84,18 @@ export interface AwayDigest {
   ideas: number;
   /** Notes that arrived while away (share, widget). */
   added: number;
-  /** The few things to look at first. */
+  /** Home's few rows: everything below in order, minus the Resume card's thread. */
   rows: AwayRow[];
+  /** How many rows there are in all (minus the Resume card's), for "See all". */
+  total: number;
+  /** The welcome page's sections, each minus the Resume card's thread. */
+  groups: {
+    missed: AwayRow[];
+    due: AwayRow[];
+    steps: AwayRow[];
+    leftOff: AwayRow[];
+    ideas: MnemoItem[];
+  };
   /** "2 reminders passed, 3 things to do, and a project has gone quiet." */
   line: string;
 }
@@ -157,7 +169,11 @@ export function awayDigest(
   steps.sort(byStarThenRecent);
   leftOff.sort(byStarThenRecent);
 
-  const all = [...missed, ...due, ...steps, ...leftOff];
+  const shown = (r: AwayRow) => r.item.id !== exclude;
+  const all = [...missed, ...due, ...steps, ...leftOff].filter(shown);
+  const ideaItems = open
+    .filter((t) => kinds.get(t.id) === 'idea' && t.id !== exclude)
+    .sort((a, b) => lastActivity(b, of(b)) - lastActivity(a, of(a)));
   const quietProjects = open.filter((t) => kinds.get(t.id) === 'project' && quietDays(t, of(t), now) !== null).length;
   const ideas = open.filter((t) => kinds.get(t.id) === 'idea').length;
   const added = entries.filter((e) => e.createdAt > since && e.createdAt <= now).length;
@@ -184,7 +200,39 @@ export function awayDigest(
     quietProjects,
     ideas,
     added,
-    rows: all.filter((r) => r.item.id !== exclude).slice(0, AWAY_ROWS),
+    rows: all.slice(0, AWAY_ROWS),
+    total: all.length,
+    groups: {
+      missed: missed.filter(shown),
+      due: due.filter(shown),
+      steps: steps.filter(shown),
+      leftOff: leftOff.filter(shown),
+      ideas: ideaItems,
+    },
     line,
   };
+}
+
+/**
+ * A reminder's time, short enough to sit beside a title on one row:
+ * "4:26 PM" today, "Tmrw" / "Yesterday", a weekday within the week, else a date.
+ */
+export function shortWhen(at: number, now = Date.now()): string {
+  const day = (ts: number) => {
+    const d = new Date(ts);
+    d.setHours(0, 0, 0, 0);
+    return d.getTime();
+  };
+  const days = Math.round((day(at) - day(now)) / DAY_MS);
+  const date = new Date(at);
+  if (days === 0) return date.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+  if (days === 1) return 'Tmrw';
+  if (days === -1) return 'Yesterday';
+  if (Math.abs(days) < 7) return date.toLocaleDateString('en-US', { weekday: 'short' });
+  return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+}
+
+/** "Saturday, Oct 24": when they left. */
+export function leftOn(since: number): string {
+  return new Date(since).toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' });
 }
