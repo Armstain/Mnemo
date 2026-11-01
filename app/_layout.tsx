@@ -26,6 +26,7 @@ import "../global.css";
 
 import { ONBOARDING_KEY } from '@/app/onboarding';
 import { NudgeScheduler } from '@/components/NudgeScheduler';
+import { PlaceReminderSync } from '@/components/PlaceReminderSync';
 import { AutoBackup } from '@/components/AutoBackup';
 import { ReminderActions } from '@/components/ReminderActions';
 import { installGlobalErrorLog } from '@/lib/errors';
@@ -221,6 +222,7 @@ function RootLayoutNav() {
           <ShareIntake />
           <WidgetSync />
           <NudgeScheduler />
+          <PlaceReminderSync />
           {/* The daily backup into the person's chosen folder, when it's on. */}
           <AutoBackup />
           <UndoToastHost />

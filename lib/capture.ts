@@ -23,6 +23,8 @@ import { buildBlocks } from '@/lib/threads';
 import { summarizeMeasures, trackedMetrics, verifyMeasures } from '@/lib/measures';
 import { understand, type KnownMetric } from '@/lib/understand';
 import { asKind } from '@/lib/kind';
+import { getPlaces } from '@/lib/place-store';
+import { readPlaceReminder } from '@/lib/places';
 import { imageBase64, imagesOf } from '@/lib/images';
 import { fetchLinkPreview, type LinkPreview, type PageContext } from '@/lib/link-preview';
 import { languageOf } from '@/lib/language';
@@ -168,6 +170,9 @@ function saveNote(source: Entry['source'], params: NoteInput): { threadId: strin
     pendingAudioUri: joinAudio(audio),
   };
   const due = params.dueDate ?? reading.due;
+  // "when I get to the market": a saved place named with words that say when.
+  const placeHit = readPlaceReminder(words, getPlaces());
+  const place = placeHit ? { ...placeHit, step: reading.nextStep, setAt: Date.now() } : undefined;
 
   let saved: { threadId: string; entry: Entry };
   if (threadId) {
@@ -185,6 +190,7 @@ function saveNote(source: Entry['source'], params: NoteInput): { threadId: strin
           })
         : {};
       if (reading.tags.some((t) => !thread.tags.includes(t))) updates.tags = [...new Set([...thread.tags, ...reading.tags])].slice(0, 8);
+      if (place) updates.place = place;
       if (Object.keys(updates).length > 0) store.updateItem(threadId, updates);
       if (updates.dueDate) reminderSet({ threadId, at: updates.dueDate, previous: thread.dueDate });
     }
@@ -206,6 +212,7 @@ function saveNote(source: Entry['source'], params: NoteInput): { threadId: strin
         dueDate: due,
         laterSteps: later.length > 0 ? later : undefined,
         repeat: params.dueDate ? undefined : reading.repeat,
+        place,
         // A placeholder title the AI replaces, when AI is on.
         pending: ai,
       },
@@ -644,6 +651,10 @@ async function structure(entry: PendingEntry, store: CaptureStore): Promise<void
       });
       if (Object.keys(carried).length > 0) store.updateItem(target.id, carried);
       if (carried.dueDate) reminderSet({ threadId: target.id, at: carried.dueDate, previous: target.dueDate });
+    }
+    // A place reminder goes with the note, unless the thread already has one waiting.
+    if (emptied?.place && !emptied.place.firedAt && !(target.place && !target.place.firedAt)) {
+      store.updateItem(target.id, { place: emptied.place });
     }
     if (tags.length > 0) {
       store.updateItem(target.id, { tags: [...new Set([...target.tags, ...tags])].slice(0, 8) });

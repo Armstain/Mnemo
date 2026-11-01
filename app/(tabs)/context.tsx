@@ -30,6 +30,7 @@ import { LabeledInput } from '@/components/ui/LabeledInput';
 import { noFocusRing } from '@/utils/web';
 import { DetailSkeleton } from '@/components/ui/NoteListSkeleton';
 import { DueDatePicker, DueDateLabel } from '@/components/ui/DueDatePicker';
+import { PlaceReminderField, PlaceReminderLabel } from '@/components/thread/PlaceReminderField';
 import { ThreadRing } from '@/components/ui/ThreadRing';
 import { EntryCard } from '@/components/thread/EntryCard';
 import { ThreadMenu, type ThreadMenuItem } from '@/components/thread/ThreadMenu';
@@ -506,6 +507,10 @@ export default function ThreadScreen() {
                     onRepeatChange={(r) => updateItem(thread.id, { repeat: r })}
                   />
                 </View>
+                <View>
+                  <Eyebrow className="mb-2">Remind me at a place</Eyebrow>
+                  <PlaceReminderField thread={thread} onChange={(place) => updateItem(thread.id, { place })} />
+                </View>
                 <LabeledInput
                   label="Where you left off"
                   value={editWhereLeftOff}
@@ -556,6 +561,7 @@ export default function ThreadScreen() {
                     </Button>
                   </View>
                 ) : null}
+                <PlaceReminderLabel thread={thread} />
                 {showDue && waiting.length > 0 ? (
                   <View className="mt-2 gap-1">
                     {waiting.slice(0, 3).map((l) => (

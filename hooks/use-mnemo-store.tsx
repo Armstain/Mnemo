@@ -23,6 +23,7 @@ import { mergeBackup, type BackupPayload, type MergeResult } from '@/lib/backup'
 import { deriveThreadCache, generateEntryId, newestFirst } from '@/lib/threads';
 import { deleteAllRecordings } from '@/lib/capture';
 import { syncReminderForItem, cancelReminder, cancelAllReminders } from '@/lib/reminders';
+import { removeAllPlaces } from '@/lib/place-store';
 import { afterReminder, nextOccurrence } from '@/lib/when';
 import { deleteAllImages, forgetImages, restoreImage } from '@/lib/images';
 import { UNDO_WINDOW_MS } from '@/hooks/use-undo-toast';
@@ -685,6 +686,7 @@ export function MnemoStoreProvider({ children }: { children: React.ReactNode }) 
     deleteAllRecordings();
     deleteAllImages();
     await cancelAllReminders();
+    await removeAllPlaces();
     commitItems([]);
     commitEntries([]);
     setFocusThread(null);

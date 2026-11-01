@@ -40,6 +40,14 @@ standing in a shop. Mnemo optimises for two moments:
 - ⏰ **Reminders that actually fire** — natural language ("remind me in 20 mins"),
   repeats, several timed steps in one note ("bring the file at 10, send it at 11"),
   and serious reliability engineering for Android's battery-saving habits.
+- 📍 **Place reminders that admit their limits** — save Home or the market, then
+  "remind me to buy eggs when I get to the market" (or "bazare gele…"). Fires on
+  arriving or leaving, even with the app closed. Places are never watched as
+  circles smaller than 150 m or than the phone's fix; two places too close to
+  tell apart are flagged when you save them and on every reminder that uses
+  them; Home says when the phone won't let Mnemo watch places; and a reminder
+  the phone held back is caught when you open the app, and says it was late.
+  Locations stay on your phone (and aren't in backups yet).
 - 🔍 **Search that finds things** — hybrid keyword + semantic search.
   No connection? Keyword search still works.
 - 📓 **Reviews & overviews** — a thread's loose notes organised by theme when you

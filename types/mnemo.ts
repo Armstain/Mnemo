@@ -44,6 +44,45 @@ export interface ThreadOverview {
   open: string[];
 }
 
+/**
+ * A place someone saved ("Home", "Market"): where it is, how wide a circle
+ * counts as being there, and how sure the phone was when it was saved.
+ * Kept on the phone only (lib/place-store.ts). See lib/places.ts.
+ */
+export interface Place {
+  id: string;
+  name: string;
+  latitude: number;
+  longitude: number;
+  /** Metres. Never below MIN_RADIUS (lib/places.ts). */
+  radius: number;
+  /** How far off the phone said its fix could be, in metres, when saved. */
+  accuracy: number;
+  savedAt: number;
+}
+
+/**
+ * "When I get to the market": a reminder that fires on arriving at, or
+ * leaving, a saved place instead of at a time. One-shot: it fires once.
+ */
+export interface PlaceReminder {
+  placeId: string;
+  on: 'arrive' | 'leave';
+  /** What to do there; the thread's next step otherwise. */
+  step?: string;
+  setAt: number;
+  /**
+   * Whether the phone was already inside the place when the reminder was
+   * set (unknown until a position is read). Arriving only counts after
+   * leaving first; leaving only counts once inside.
+   */
+  insideAtSet?: boolean;
+  /** When it fired. Set: it's done. */
+  firedAt?: number;
+  /** It fired only when Mnemo was opened there: the phone never said. */
+  caughtLate?: boolean;
+}
+
 export interface LaterStep {
   at: number;
   step?: string;
@@ -102,6 +141,9 @@ export interface MnemoItem {
   dueDate?: number;
 
   laterSteps?: LaterStep[];
+
+  /** Remind on arriving at, or leaving, a saved place (lib/places.ts). */
+  place?: PlaceReminder;
 
   createdAt: number;
   updatedAt: number;

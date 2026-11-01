@@ -8,6 +8,7 @@ import Svg, { Defs, RadialGradient, Rect, Stop } from 'react-native-svg';
 
 import { Card } from '@/components/ui/Card';
 import { ReminderSetupPrompt } from '@/components/ReminderSetupPrompt';
+import { PlaceReminderPrompt } from '@/components/PlaceReminderPrompt';
 import { BackupPrompt } from '@/components/BackupPrompt';
 import { Button, IconButton } from '@/components/ui/Button';
 import { Icon, type IconName } from '@/components/ui/Icon';
@@ -383,6 +384,8 @@ export function PulseHome() {
         ) : null}
         {/* Strict phones: a one-time nudge to check reminders will arrive. */}
         <ReminderSetupPrompt />
+        {/* A place reminder waiting that may not go off, and why. */}
+        <PlaceReminderPrompt />
         {/* No backup in a while, or automatic backups stopped working. */}
         <BackupPrompt />
         {/* Gemini stopped answering for a reason the person can fix. */}
