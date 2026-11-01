@@ -100,7 +100,7 @@ export default function ThreadScreen() {
   const threadId = thread?.id;
   // getEntries is rebuilt whenever any entry changes, so this follows new notes.
   const entries = React.useMemo(() => (threadId ? getEntries(threadId) : []), [threadId, getEntries]);
-  usePreferences(); // re-render when AI is switched on or off
+  const { places: placesOn } = usePreferences(); // re-render when AI or place reminders are switched
   // Finding one note in a long thread.
   const [finding, setFinding] = React.useState(false);
   const [findQuery, setFindQuery] = React.useState('');
@@ -507,10 +507,12 @@ export default function ThreadScreen() {
                     onRepeatChange={(r) => updateItem(thread.id, { repeat: r })}
                   />
                 </View>
-                <View>
-                  <Eyebrow className="mb-2">Remind me at a place</Eyebrow>
-                  <PlaceReminderField thread={thread} onChange={(place) => updateItem(thread.id, { place })} />
-                </View>
+                {placesOn ? (
+                  <View>
+                    <Eyebrow className="mb-2">Remind me at a place</Eyebrow>
+                    <PlaceReminderField thread={thread} onChange={(place) => updateItem(thread.id, { place })} />
+                  </View>
+                ) : null}
                 <LabeledInput
                   label="Where you left off"
                   value={editWhereLeftOff}

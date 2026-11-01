@@ -5,7 +5,8 @@ import * as Location from 'expo-location';
 import { getAllItems, updatePartialItem } from '@/lib/db';
 import { Notifications, notificationsAvailable } from '@/lib/notifications';
 import { getPlaces, loadPlaces } from '@/lib/place-store';
-import { caughtLate, distance, isArmed, onPlaceEvent, placeLabel, watchedRadius, type PlaceEvent } from '@/lib/places';
+import { caughtLate, distance, isArmed, onPlaceEvent, pickWatched, placeLabel, watchedRadius, type PlaceEvent } from '@/lib/places';
+import { getPreferences } from '@/lib/preferences';
 import { ANDROID_CHANNEL_ID, ensureAndroidChannel, ensureReminderCategory, REMINDER_CATEGORY } from '@/lib/reminders';
 import { openSettings, reminderHealth, type CheckState } from '@/lib/reliability';
 import type { MnemoItem, Place, PlaceReminder } from '@/types/mnemo';
@@ -151,7 +152,7 @@ export function placeProblems(h: PlaceHealth): PlaceProblem[] {
   if (h.foreground === 'fix' || h.background === 'fix') {
     out.push({
       key: 'background',
-      text: "Mnemo can't see you arrive while it's closed. Allow location “All the time”.",
+      text: "Mnemo can't notice places while it's closed. Allow location “All the time”.",
       action: 'Allow',
       fix: () => void allowBackground(),
     });
@@ -192,23 +193,31 @@ async function loadWatch(): Promise<Watch> {
   }
 }
 
-/** The circles to watch: each saved place some open reminder is waiting on. */
+/** The circles to watch: places some open reminder is waiting on, at most MAX_WATCHED. */
 export function watchList(items: MnemoItem[], places: Place[]): Location.LocationRegion[] {
-  const wanted = new Set(items.filter(isArmed).map((t) => t.place!.placeId));
-  return places
-    .filter((p) => wanted.has(p.id))
-    .map((p) => ({ identifier: p.id, latitude: p.latitude, longitude: p.longitude, radius: watchedRadius(p), notifyOnEnter: true, notifyOnExit: true }));
+  return pickWatched(items, places).watched.map((p) => ({
+    identifier: p.id,
+    latitude: p.latitude,
+    longitude: p.longitude,
+    radius: watchedRadius(p),
+    notifyOnEnter: true,
+    notifyOnExit: true,
+  }));
 }
 
+/** Phones drop geofences on restart, so the list is set again once per launch. */
+let setThisLaunch = false;
+
 /**
- * Keeps Android's geofences in step with the reminders. Sets them only when
- * the list changes: every new list makes the phone report "inside" again.
- * Never asks for permission (setting a reminder does).
+ * Keeps the phone's geofences in step with the reminders: when the list
+ * changes, and once per launch. Not more often, since every new list makes
+ * the phone report "inside" again. Never asks for permission. Off in
+ * Settings: nothing is watched.
  */
 export async function syncGeofences(items: MnemoItem[], places: Place[]): Promise<void> {
   if (!geofencingAvailable) return;
   try {
-    const regions = watchList(items, places);
+    const regions = getPreferences().places ? watchList(items, places) : [];
     const signature = regions.map((r) => `${r.identifier}:${r.latitude.toFixed(5)},${r.longitude.toFixed(5)},${r.radius}`).sort().join('|');
     const started = await Location.hasStartedGeofencingAsync(GEOFENCE_TASK).catch(() => false);
     const watch = await loadWatch();
@@ -217,9 +226,10 @@ export async function syncGeofences(items: MnemoItem[], places: Place[]): Promis
       if (watch.signature) await AsyncStorage.setItem(WATCH_KEY, JSON.stringify({ signature: '', since: 0 }));
       return;
     }
-    if (started && watch.signature === signature) return;
+    if (started && watch.signature === signature && setThisLaunch) return;
     if (!(await Location.getBackgroundPermissionsAsync()).granted) return;
     await Location.startGeofencingAsync(GEOFENCE_TASK, regions);
+    setThisLaunch = true;
     await AsyncStorage.setItem(WATCH_KEY, JSON.stringify({ signature, since: Date.now() }));
   } catch {
     // Best-effort like every reminder; placeHealth says what's wrong.
@@ -284,6 +294,7 @@ export async function handleGeofenceEvent(event: PlaceEvent, placeId: string, no
  * or not), and fire any the phone plainly should have already, saying so.
  */
 export async function catchUp(items: MnemoItem[]): Promise<void> {
+  if (!getPreferences().places) return;
   const armed = items.filter(isArmed);
   if (armed.length === 0) return;
   const here = await lastFix();

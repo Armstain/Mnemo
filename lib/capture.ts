@@ -171,7 +171,7 @@ function saveNote(source: Entry['source'], params: NoteInput): { threadId: strin
   };
   const due = params.dueDate ?? reading.due;
   // "when I get to the market": a saved place named with words that say when.
-  const placeHit = readPlaceReminder(words, getPlaces());
+  const placeHit = getPreferences().places ? readPlaceReminder(words, getPlaces()) : undefined;
   const place = placeHit ? { ...placeHit, step: reading.nextStep, setAt: Date.now() } : undefined;
 
   let saved: { threadId: string; entry: Entry };

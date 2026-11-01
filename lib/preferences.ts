@@ -28,6 +28,8 @@ export interface Preferences {
   earlierNotesBefore?: number;
   /** Whether they've been asked about those earlier notes since the switch. */
   earlierNotesAsked?: boolean;
+  /** Place reminders (Settings → Location). Off until turned on: nothing is watched or asked for. */
+  places?: boolean;
 }
 
 /** Long enough for most first names, short enough for the greeting to fit. */

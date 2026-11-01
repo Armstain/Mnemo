@@ -33,6 +33,10 @@ const PRIVACY_FACTS = [
     title: 'Links',
     body: 'A link you save is opened by the phone, once, to show its title and picture. That page sees the request like any visit. With Gemini on, the title and description it gives are sent with your note; the page itself is not.',
   },
+  {
+    title: 'Location',
+    body: "Off unless you turn on place reminders. Then your saved places and where your phone is stay on the phone; nothing is sent anywhere. While you place a pin, the map's pictures load from OpenStreetMap, which sees which area you're looking at, like any map website.",
+  },
 ];
 
 export default function PrivacyScreen() {

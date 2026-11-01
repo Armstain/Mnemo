@@ -40,14 +40,17 @@ standing in a shop. Mnemo optimises for two moments:
 - ⏰ **Reminders that actually fire** — natural language ("remind me in 20 mins"),
   repeats, several timed steps in one note ("bring the file at 10, send it at 11"),
   and serious reliability engineering for Android's battery-saving habits.
-- 📍 **Place reminders that admit their limits** — save Home or the market, then
-  "remind me to buy eggs when I get to the market" (or "bazare gele…"). Fires on
-  arriving or leaving, even with the app closed. Places are never watched as
-  circles smaller than 150 m or than the phone's fix; two places too close to
-  tell apart are flagged when you save them and on every reminder that uses
-  them; Home says when the phone won't let Mnemo watch places; and a reminder
-  the phone held back is caught when you open the app, and says it was late.
-  Locations stay on your phone (and aren't in backups yet).
+- 📍 **Place reminders (optional)** — off until you turn them on in Settings →
+  Location. Save a place by dropping a pin on the map or using where you are,
+  then get reminded on arriving or leaving, even with the app closed ("when I
+  get to the gym", "dokane gele…", "বাসা থেকে বের হলে…"). A place is a circle,
+  at least 150 m across, and anywhere inside counts as being there; the map
+  shows exactly that, with your other places, so overlaps are visible. Mnemo
+  says when a reminder may not go off (circles overlapping, location not
+  allowed all the time, battery saver, more than 20 places waiting) instead of
+  failing silently, and catches one the phone held back when you open the app.
+  Every edge case is listed at the top of `lib/places.ts`. Locations stay on
+  the phone; map tiles come from OpenStreetMap while you place a pin.
 - 🔍 **Search that finds things** — hybrid keyword + semantic search.
   No connection? Keyword search still works.
 - 📓 **Reviews & overviews** — a thread's loose notes organised by theme when you

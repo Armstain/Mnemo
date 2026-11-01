@@ -189,6 +189,7 @@ function RootLayoutNav() {
             />
             <Stack.Screen name="review" options={{ presentation: 'modal', animation: 'slide_from_bottom' }} />
             <Stack.Screen name="welcome" options={{ presentation: 'modal', animation: 'slide_from_bottom' }} />
+            <Stack.Screen name="place" options={{ presentation: 'modal', animation: 'slide_from_bottom' }} />
             <Stack.Screen name="wrapup" options={{ presentation: 'modal', animation: 'slide_from_bottom' }} />
             <Stack.Screen name="reminders-check" options={{ presentation: 'modal', animation: 'slide_from_bottom' }} />
             <Stack.Screen

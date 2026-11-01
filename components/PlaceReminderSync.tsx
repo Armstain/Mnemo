@@ -5,6 +5,7 @@ import { useMnemoStore } from '@/hooks/use-mnemo-store';
 import { catchUp, onPlaceReminderChange, syncGeofences } from '@/lib/geofence';
 import { usePlaces } from '@/lib/place-store';
 import { isArmed } from '@/lib/places';
+import { usePreferences } from '@/lib/preferences';
 
 // Edits come in bursts; set the watch list once they settle.
 const SYNC_DEBOUNCE_MS = 1500;
@@ -18,6 +19,8 @@ const SYNC_DEBOUNCE_MS = 1500;
 export function PlaceReminderSync() {
   const { items, isLoaded, updateItem } = useMnemoStore();
   const places = usePlaces();
+  // Turning place reminders on or off sets (or clears) the watch list.
+  const { places: on } = usePreferences();
   const latest = useRef(items);
   latest.current = items;
 
@@ -32,7 +35,7 @@ export function PlaceReminderSync() {
       if (items.some((t) => isArmed(t) && t.place?.insideAtSet === undefined)) catchUp(items);
     }, SYNC_DEBOUNCE_MS);
     return () => clearTimeout(handle);
-  }, [items, places, isLoaded]);
+  }, [items, places, isLoaded, on]);
 
   useEffect(() => {
     if (!isLoaded) return;
