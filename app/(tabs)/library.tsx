@@ -7,6 +7,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ThreadRow } from '@/components/ui/ThreadRow';
 import { CategoryPicker } from '@/components/ui/CategoryPicker';
+import { KindPicker } from '@/components/ui/KindPicker';
 import { NoteListSkeleton } from '@/components/ui/NoteListSkeleton';
 import { SearchBar } from '@/components/SearchBar';
 import { Icon } from '@/components/ui/Icon';
@@ -22,8 +23,9 @@ import { aiEnabled } from '@/lib/ai-mode';
 import { usePreferences } from '@/lib/preferences';
 import { AskCard, isQuestion } from '@/components/AskCard';
 import { CATEGORY_LIST } from '@/utils/categories';
+import { asKind, kindOf } from '@/lib/kind';
 import { useEnter } from '@/utils/motion';
-import type { Category, ItemStatus, MnemoItem } from '@/types/mnemo';
+import type { Category, ItemStatus, MnemoItem, ThreadKind } from '@/types/mnemo';
 
 // Debounce before the semantic (network) half of search fires.
 const SEMANTIC_DEBOUNCE_MS = 300;
@@ -47,17 +49,29 @@ export default function LibraryScreen() {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<Category | 'all'>('all');
   const [selectedStatus, setSelectedStatus] = useState<FilterStatus>('all');
+  const [selectedKind, setSelectedKind] = useState<ThreadKind | undefined>(undefined);
   const insets = useSafeAreaInsets();
   const colors = useThemeColors();
 
-  // Allow other screens to open the library pre-filtered (?category=work).
-  const { category: categoryParam } = useLocalSearchParams<{ category?: string }>();
+  // Allow other screens to open the library pre-filtered (?category=work, ?kind=task).
+  const { category: categoryParam, kind: kindParam } = useLocalSearchParams<{ category?: string; kind?: string }>();
   useEffect(() => {
     const cat = Array.isArray(categoryParam) ? categoryParam[0] : categoryParam;
     if (cat && CATEGORY_LIST.includes(cat as Category)) {
       setSelectedCategory(cat as Category);
     }
   }, [categoryParam]);
+  useEffect(() => {
+    const kind = asKind(Array.isArray(kindParam) ? kindParam[0] : kindParam);
+    if (kind) setSelectedKind(kind);
+  }, [kindParam]);
+
+  // Each thread's kind as it is now (it can grow into a project).
+  const noteCounts = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const e of entries) counts.set(e.threadId, (counts.get(e.threadId) ?? 0) + 1);
+    return counts;
+  }, [entries]);
 
   // Category/status filters first; search (if any) ranks within them.
   const scopedItems = useMemo(
@@ -65,9 +79,10 @@ export default function LibraryScreen() {
       items.filter(
         (i) =>
           (selectedCategory === 'all' || i.category === selectedCategory) &&
-          (selectedStatus === 'all' || i.status === selectedStatus),
+          (selectedStatus === 'all' || i.status === selectedStatus) &&
+          (!selectedKind || kindOf(i, noteCounts.get(i.id) ?? 0) === selectedKind),
       ),
-    [items, selectedCategory, selectedStatus],
+    [items, selectedCategory, selectedStatus, selectedKind, noteCounts],
   );
 
   // Instant keyword results on every keystroke, so search never feels
@@ -243,6 +258,11 @@ export default function LibraryScreen() {
             );
           })}
         </View>
+      </MotiView>
+
+      {/* Kind: what a thread is, next to what it's about */}
+      <MotiView {...enter.fade(2)} className="mb-3">
+        <KindPicker value={selectedKind} onChange={setSelectedKind} plural inset={20} />
       </MotiView>
 
       {/* Category */}

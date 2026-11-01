@@ -24,11 +24,13 @@ import { Icon } from '@/components/ui/Icon';
 import { DoneCheck } from '@/components/ui/DoneCheck';
 import { ThreadList, ThreadRow } from '@/components/ui/ThreadRow';
 import { CategoryPicker } from '@/components/ui/CategoryPicker';
+import { KindPicker } from '@/components/ui/KindPicker';
 import { TagEditor } from '@/components/ui/TagEditor';
 import { LabeledInput } from '@/components/ui/LabeledInput';
 import { noFocusRing } from '@/utils/web';
 import { DetailSkeleton } from '@/components/ui/NoteListSkeleton';
 import { DueDatePicker, DueDateLabel } from '@/components/ui/DueDatePicker';
+import { PlaceReminderField, PlaceReminderLabel } from '@/components/thread/PlaceReminderField';
 import { ThreadRing } from '@/components/ui/ThreadRing';
 import { EntryCard } from '@/components/thread/EntryCard';
 import { ThreadMenu, type ThreadMenuItem } from '@/components/thread/ThreadMenu';
@@ -57,6 +59,7 @@ import { useCategories, useStatusConfig } from '@/utils/categories';
 import { DUR_BASE, EASE_IN_OUT, useEnter } from '@/utils/motion';
 import { freshness } from '@/utils/time';
 import { reportFlightTarget } from '@/lib/card-flight';
+import { KIND_LABEL, kindOf } from '@/lib/kind';
 
 /**
  * ThreadScreen — one thread: where you are (left off, next step), what to
@@ -97,7 +100,7 @@ export default function ThreadScreen() {
   const threadId = thread?.id;
   // getEntries is rebuilt whenever any entry changes, so this follows new notes.
   const entries = React.useMemo(() => (threadId ? getEntries(threadId) : []), [threadId, getEntries]);
-  usePreferences(); // re-render when AI is switched on or off
+  const { places: placesOn } = usePreferences(); // re-render when AI or place reminders are switched
   // Finding one note in a long thread.
   const [finding, setFinding] = React.useState(false);
   const [findQuery, setFindQuery] = React.useState('');
@@ -193,6 +196,7 @@ export default function ThreadScreen() {
   }
 
   const category = categories[thread.category];
+  const kind = kindOf(thread, entries.length);
   const CategoryIcon = category.icon;
   const status = statusColors[thread.status];
   const pendingEntries = entries.filter((e) => e.pending);
@@ -453,6 +457,7 @@ export default function ThreadScreen() {
               <View className="ml-3 flex-1">
                 <Text className="font-sans-semi text-sm" style={{ color: colors.fg }}>
                   {category.label}
+                  {kind ? `  ·  ${KIND_LABEL[kind].one}` : ''}
                   <Text className="font-sans-medium" style={{ color: status.color }}>
                     {'  ·  '}
                     {status.label}
@@ -482,6 +487,14 @@ export default function ThreadScreen() {
                   <CategoryPicker value={thread.category} onChange={(cat) => updateItem(thread.id, { category: cat })} />
                 </View>
                 <View>
+                  <Eyebrow className="mb-2">This is a</Eyebrow>
+                  {/* Set by hand, it stays: nothing re-guesses it. */}
+                  <KindPicker
+                    value={kind}
+                    onChange={(k) => updateItem(thread.id, { kind: k, pinned: { ...thread.pinned, kind: true } })}
+                  />
+                </View>
+                <View>
                   <Eyebrow className="mb-2">Tags</Eyebrow>
                   <TagEditor tags={thread.tags} onChange={(tags) => updateItem(thread.id, { tags })} />
                 </View>
@@ -494,6 +507,12 @@ export default function ThreadScreen() {
                     onRepeatChange={(r) => updateItem(thread.id, { repeat: r })}
                   />
                 </View>
+                {placesOn ? (
+                  <View>
+                    <Eyebrow className="mb-2">Remind me at a place</Eyebrow>
+                    <PlaceReminderField thread={thread} onChange={(place) => updateItem(thread.id, { place })} />
+                  </View>
+                ) : null}
                 <LabeledInput
                   label="Where you left off"
                   value={editWhereLeftOff}
@@ -544,6 +563,7 @@ export default function ThreadScreen() {
                     </Button>
                   </View>
                 ) : null}
+                <PlaceReminderLabel thread={thread} />
                 {showDue && waiting.length > 0 ? (
                   <View className="mt-2 gap-1">
                     {waiting.slice(0, 3).map((l) => (

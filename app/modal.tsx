@@ -17,6 +17,7 @@ import * as Clipboard from 'expo-clipboard';
 import { Icon } from '@/components/ui/Icon';
 import { useThemeColors, useThemeName, useThemePreference, type ThemePreference } from '@/hooks/use-theme';
 import { NudgeSettingsCard } from '@/components/settings/NudgeSettingsCard';
+import { LocationCard } from '@/components/settings/LocationCard';
 import { ApiKeyConfigCard, GROQ } from '@/components/settings/ApiKeyConfigCard';
 
 const THEME_OPTIONS: { key: ThemePreference; label: string; icon: typeof Sun }[] = [
@@ -103,6 +104,12 @@ export default function ModalScreen() {
               <NudgeSettingsCard />
             </MotiView>
           )}
+
+          {/* Location: optional place reminders, off until turned on. */}
+          <MotiView {...enter.rise(1)} className="gap-3 mb-10">
+            <Eyebrow className="mb-1">Location</Eyebrow>
+            <LocationCard />
+          </MotiView>
 
           {/* AI */}
           <MotiView {...enter.rise(1)}

@@ -59,7 +59,7 @@ export function CategoryPicker<T extends Category | 'all'>({
 }
 
 /** One chip: gives under the finger, and pops when it becomes the choice. */
-function Chip({
+export function Chip({
   label,
   dot,
   selected,

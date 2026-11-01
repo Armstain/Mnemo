@@ -16,6 +16,14 @@ export type Category =
 
 export type ItemStatus = 'active' | 'paused' | 'completed' | 'archived';
 
+/**
+ * What a thread is, as opposed to what it's about (its category): something
+ * ongoing with several steps, one thing to get done, or a thought worth
+ * keeping. Unset when it's none of these clearly (a phone number, a receipt).
+ * See lib/kind.ts for how it's read and how it changes as a thread grows.
+ */
+export type ThreadKind = 'project' | 'task' | 'idea';
+
 export interface ChecklistItem {
   id: string;
   text: string;
@@ -34,6 +42,45 @@ export interface ThreadOverview {
   themes: { title: string; points: string[]; notes: number }[];
   /** Questions or choices the notes leave open. */
   open: string[];
+}
+
+/**
+ * A place someone saved ("Home", "Market"): where it is, how wide a circle
+ * counts as being there, and how sure the phone was when it was saved.
+ * Kept on the phone only (lib/place-store.ts). See lib/places.ts.
+ */
+export interface Place {
+  id: string;
+  name: string;
+  latitude: number;
+  longitude: number;
+  /** Metres. Never below MIN_RADIUS (lib/places.ts). */
+  radius: number;
+  /** How far off the phone said its fix could be, in metres, when saved. */
+  accuracy: number;
+  savedAt: number;
+}
+
+/**
+ * "When I get to the market": a reminder that fires on arriving at, or
+ * leaving, a saved place instead of at a time. One-shot: it fires once.
+ */
+export interface PlaceReminder {
+  placeId: string;
+  on: 'arrive' | 'leave';
+  /** What to do there; the thread's next step otherwise. */
+  step?: string;
+  setAt: number;
+  /**
+   * Whether the phone was already inside the place when the reminder was
+   * set (unknown until a position is read). Arriving only counts after
+   * leaving first; leaving only counts once inside.
+   */
+  insideAtSet?: boolean;
+  /** When it fired. Set: it's done. */
+  firedAt?: number;
+  /** It fired only when Mnemo was opened there: the phone never said. */
+  caughtLate?: boolean;
 }
 
 export interface LaterStep {
@@ -64,6 +111,12 @@ export interface MnemoItem {
   checklistItems?: ChecklistItem[];
   links: string[];
   category: Category;
+  /**
+   * Project, task or idea, as guessed when the thread began (by Gemini, or
+   * the phone offline), or as set by the person (`pinned.kind`). Read it
+   * through `kindOf` (lib/kind.ts), which also lets a thread grow into a project.
+   */
+  kind?: ThreadKind;
   tags: string[];
   status: ItemStatus;
 
@@ -74,7 +127,7 @@ export interface MnemoItem {
   whereLeftOff?: string;
 
   /** Fields the user edited on the thread, which new entries must not overwrite. */
-  pinned?: { nextStep?: boolean; whereLeftOff?: boolean; title?: boolean };
+  pinned?: { nextStep?: boolean; whereLeftOff?: boolean; title?: boolean; kind?: boolean };
   /** The reminder (dueDate) comes back: every day, week or month at that time. */
   repeat?: 'daily' | 'weekly' | 'monthly';
   /** Kept at the top of Home's "pick up where you left off". */
@@ -88,6 +141,9 @@ export interface MnemoItem {
   dueDate?: number;
 
   laterSteps?: LaterStep[];
+
+  /** Remind on arriving at, or leaving, a saved place (lib/places.ts). */
+  place?: PlaceReminder;
 
   createdAt: number;
   updatedAt: number;

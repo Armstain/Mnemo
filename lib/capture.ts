@@ -22,6 +22,9 @@ import type { CaptureStore } from '@/hooks/use-mnemo-store';
 import { buildBlocks } from '@/lib/threads';
 import { summarizeMeasures, trackedMetrics, verifyMeasures } from '@/lib/measures';
 import { understand, type KnownMetric } from '@/lib/understand';
+import { asKind } from '@/lib/kind';
+import { getPlaces } from '@/lib/place-store';
+import { readPlaceReminder } from '@/lib/places';
 import { imageBase64, imagesOf } from '@/lib/images';
 import { fetchLinkPreview, type LinkPreview, type PageContext } from '@/lib/link-preview';
 import { languageOf } from '@/lib/language';
@@ -167,6 +170,9 @@ function saveNote(source: Entry['source'], params: NoteInput): { threadId: strin
     pendingAudioUri: joinAudio(audio),
   };
   const due = params.dueDate ?? reading.due;
+  // "when I get to the market": a saved place named with words that say when.
+  const placeHit = getPreferences().places ? readPlaceReminder(words, getPlaces()) : undefined;
+  const place = placeHit ? { ...placeHit, step: reading.nextStep, setAt: Date.now() } : undefined;
 
   let saved: { threadId: string; entry: Entry };
   if (threadId) {
@@ -184,6 +190,7 @@ function saveNote(source: Entry['source'], params: NoteInput): { threadId: strin
           })
         : {};
       if (reading.tags.some((t) => !thread.tags.includes(t))) updates.tags = [...new Set([...thread.tags, ...reading.tags])].slice(0, 8);
+      if (place) updates.place = place;
       if (Object.keys(updates).length > 0) store.updateItem(threadId, updates);
       if (updates.dueDate) reminderSet({ threadId, at: updates.dueDate, previous: thread.dueDate });
     }
@@ -198,11 +205,14 @@ function saveNote(source: Entry['source'], params: NoteInput): { threadId: strin
           category === 'general' && !ai
             ? reading.category ?? (words || !params.title ? undefined : understand(params.title, { monthFirst: monthFirst() }).category) ?? 'general'
             : category,
+        // The phone's guess; with AI on, Gemini's replaces it (resolvePendingEntry).
+        kind: reading.kind,
         tags: reading.tags,
         status: 'active',
         dueDate: due,
         laterSteps: later.length > 0 ? later : undefined,
         repeat: params.dueDate ? undefined : reading.repeat,
+        place,
         // A placeholder title the AI replaces, when AI is on.
         pending: ai,
       },
@@ -355,6 +365,7 @@ export function finishOnDevice(entry: Entry, store: CaptureStore): void {
     store.updateItem(thread.id, {
       title: thread.pinned?.title ? thread.title : reading.title || thread.title,
       category: thread.category === 'general' ? reading.category ?? 'general' : thread.category,
+      kind: thread.kind ?? reading.kind,
       pending: false,
     });
   }
@@ -587,6 +598,8 @@ async function structure(entry: PendingEntry, store: CaptureStore): Promise<void
 
   const tags = processed.tags ?? [];
   const aiCategory = asCategory(processed.suggestedCategory);
+  // "note" (none of the three) comes back as no kind, and that's an answer too.
+  const aiKind = asKind(processed.kind);
 
   // A recording had no words for the phone to find a reminder in when it
   // was saved: the written-out words do ("remind me at 7" said in Bangla).
@@ -639,6 +652,10 @@ async function structure(entry: PendingEntry, store: CaptureStore): Promise<void
       if (Object.keys(carried).length > 0) store.updateItem(target.id, carried);
       if (carried.dueDate) reminderSet({ threadId: target.id, at: carried.dueDate, previous: target.dueDate });
     }
+    // A place reminder goes with the note, unless the thread already has one waiting.
+    if (emptied?.place && !emptied.place.firedAt && !(target.place && !target.place.firedAt)) {
+      store.updateItem(target.id, { place: emptied.place });
+    }
     if (tags.length > 0) {
       store.updateItem(target.id, { tags: [...new Set([...target.tags, ...tags])].slice(0, 8) });
     }
@@ -664,7 +681,7 @@ async function structure(entry: PendingEntry, store: CaptureStore): Promise<void
       tags,
     });
     if (!created) return;
-    if (processed.summary) store.updateItem(created.id, { aiSummary: processed.summary });
+    store.updateItem(created.id, { kind: aiKind, ...(processed.summary ? { aiSummary: processed.summary } : {}) });
     remindFromSound(created.id);
     emitFiling({
       type: 'released',
@@ -685,6 +702,8 @@ async function structure(entry: PendingEntry, store: CaptureStore): Promise<void
       tags: [...new Set([...thread.tags, ...tags])].slice(0, 8),
       // The category picker defaults to General; a better guess wins.
       ...(thread.category === 'general' && aiCategory ? { category: aiCategory } : {}),
+      // Gemini read the whole note; its kind beats the phone's first guess.
+      ...(thread.pinned?.kind || processed.kind === undefined ? {} : { kind: aiKind }),
       aiSummary: processed.summary,
       pending: false,
       pendingAudioUri: undefined,

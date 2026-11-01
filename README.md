@@ -26,9 +26,31 @@ standing in a shop. Mnemo optimises for two moments:
 - 🧵 **Threads, not notes** — captures are organised into threads with an AI-written
   title, summary, *where you left off*, and *next step*. Auto-filing suggests where
   things belong; you stay in control.
+- 🏷️ **Projects, tasks and ideas** — each thread is told apart by what it *is*,
+  not just what it's about. Gemini says so in the same call that writes the note
+  (no extra request); offline, the phone guesses from the words. A thread that
+  keeps growing becomes a project; set it yourself and it stays. Filter by it in
+  the Library.
+- 👋 **Welcome back** — open the app after a few days away and Home says how long
+  it's been, which reminders passed, what's still to do across every thread, and
+  which projects went quiet. A full welcome page opens once on return: where
+  to start, what's coming up, next steps to tick off right there, where each
+  quiet project was left, and ideas kept for later. Worked out on the phone,
+  so it's instant and works offline.
 - ⏰ **Reminders that actually fire** — natural language ("remind me in 20 mins"),
   repeats, several timed steps in one note ("bring the file at 10, send it at 11"),
   and serious reliability engineering for Android's battery-saving habits.
+- 📍 **Place reminders (optional)** — off until you turn them on in Settings →
+  Location. Save a place by dropping a pin on the map or using where you are,
+  then get reminded on arriving or leaving, even with the app closed ("when I
+  get to the gym", "dokane gele…", "বাসা থেকে বের হলে…"). A place is a circle,
+  at least 150 m across, and anywhere inside counts as being there; the map
+  shows exactly that, with your other places, so overlaps are visible. Mnemo
+  says when a reminder may not go off (circles overlapping, location not
+  allowed all the time, battery saver, more than 20 places waiting) instead of
+  failing silently, and catches one the phone held back when you open the app.
+  Every edge case is listed at the top of `lib/places.ts`. Locations stay on
+  the phone; map tiles come from OpenStreetMap while you place a pin.
 - 🔍 **Search that finds things** — hybrid keyword + semantic search.
   No connection? Keyword search still works.
 - 📓 **Reviews & overviews** — a thread's loose notes organised by theme when you

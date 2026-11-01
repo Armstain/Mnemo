@@ -33,6 +33,9 @@ import {
   CircleCheck,
   Image as ImageIcon,
   Camera,
+  MapPin,
+  TriangleAlert,
+  LocateFixed,
 } from 'lucide-react-native';
 
 type IconComponent = typeof Home;
@@ -71,7 +74,10 @@ export type IconName =
   | 'star'
   | 'circleCheck'
   | 'image'
-  | 'camera';
+  | 'camera'
+  | 'mapPin'
+  | 'alert'
+  | 'locate';
 
 /**
  * Mnemo's interface-chrome icon vocabulary — a name-keyed wrapper over
@@ -115,6 +121,9 @@ const ICONS: Record<IconName, IconComponent> = {
   circleCheck: CircleCheck,
   image: ImageIcon,
   camera: Camera,
+  mapPin: MapPin,
+  alert: TriangleAlert,
+  locate: LocateFixed,
 };
 
 export interface IconProps {

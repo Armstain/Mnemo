@@ -8,6 +8,7 @@ import Svg, { Defs, RadialGradient, Rect, Stop } from 'react-native-svg';
 
 import { Card } from '@/components/ui/Card';
 import { ReminderSetupPrompt } from '@/components/ReminderSetupPrompt';
+import { PlaceReminderPrompt } from '@/components/PlaceReminderPrompt';
 import { BackupPrompt } from '@/components/BackupPrompt';
 import { Button, IconButton } from '@/components/ui/Button';
 import { Icon, type IconName } from '@/components/ui/Icon';
@@ -26,7 +27,10 @@ import { CATEGORY_LIST, useCategories } from '@/utils/categories';
 import { useEnter } from '@/utils/motion';
 import { useReduceMotion } from '@/hooks/use-accessibility-motion';
 import { flightsEnabled, launchFlight } from '@/lib/card-flight';
-import type { MnemoItem } from '@/types/mnemo';
+import { awayDigest, awayFor, shortWhen, type AwayRow } from '@/lib/away';
+import { useAwaySince } from '@/hooks/use-away';
+import { KIND_LABEL, kindOf } from '@/lib/kind';
+import type { MnemoItem, ThreadKind } from '@/types/mnemo';
 
 /** How far ahead "Coming up" looks for due dates. */
 const COMING_UP_DAYS = 7;
@@ -62,7 +66,7 @@ function reasonChip(reason: NonNullable<ResumeReason>, repeats: boolean): { icon
  * back up, why it's first, and its next step. Kept short so what's next
  * shows without scrolling.
  */
-function ResumeCard({ item, reason }: { item: MnemoItem; reason: ResumeReason }) {
+function ResumeCard({ item, reason, kind }: { item: MnemoItem; reason: ResumeReason; kind?: ThreadKind }) {
   const colors = useThemeColors();
   const categories = useCategories();
   const category = categories[item.category];
@@ -101,7 +105,7 @@ function ResumeCard({ item, reason }: { item: MnemoItem; reason: ResumeReason })
   const aside =
     dueAt !== undefined && reason?.kind !== 'due' && reason?.kind !== 'missed'
       ? formatReminder(dueAt)
-      : `${item.status === 'paused' ? 'Paused' : category.label} · ${formatCompactDistance(item.updatedAt)}`;
+      : `${item.status === 'paused' ? 'Paused' : kind ? `${KIND_LABEL[kind].one} · ${category.label}` : category.label} · ${formatCompactDistance(item.updatedAt)}`;
 
   return (
     // Lifted off the page by a shadow in its own colour; the card inside clips.
@@ -208,6 +212,21 @@ function ResumeCard({ item, reason }: { item: MnemoItem; reason: ResumeReason })
   );
 }
 
+/** The right-hand word on a "while you were away" row: why it's listed. */
+function awayTrailing(row: AwayRow): { label: string; tone?: 'error' | 'accent' } {
+  switch (row.reason.kind) {
+    // Short, so the title and step beside it keep their room.
+    case 'missed':
+      return { label: shortWhen(row.reason.at), tone: 'error' };
+    case 'due':
+      return { label: shortWhen(row.reason.at), tone: 'accent' };
+    case 'step':
+      return { label: row.kind ? KIND_LABEL[row.kind].one : 'Next' };
+    case 'leftOff':
+      return { label: 'Left off' };
+  }
+}
+
 const AI_PROBLEM_TEXT: Record<AiProblem, string> = {
   invalid: "Gemini isn't accepting your key. Notes are saved as you wrote them.",
   quota: "Your Gemini key's limit is used up. Notes are saved and tidied up later.",
@@ -219,7 +238,7 @@ export function PulseHome() {
   const aiProblemText = useAiProblemDetail() ?? (aiProblem ? AI_PROBLEM_TEXT[aiProblem] : '');
   const aiNotice = useAiNotice();
   const insets = useSafeAreaInsets();
-  const { items, getActiveItems, focusThreadId, setFocusThread } = useMnemoStore();
+  const { items, entries, getActiveItems, getEntries, focusThreadId, setFocusThread } = useMnemoStore();
   const focusThread = focusThreadId ? items.find((i) => i.id === focusThreadId) : undefined;
   const colors = useThemeColors();
   const categories = useCategories();
@@ -229,9 +248,22 @@ export function PulseHome() {
   const reason = latestItem ? resumeReason(latestItem, { focusId: focusThreadId }) : null;
 
   const now = Date.now();
-  // The next few of the same ranking, so the order is visible, not just its winner.
-  const upNext = activeItems.slice(1, 1 + UP_NEXT_LIMIT);
-  const shownIds = new Set([latestItem?.id, ...upNext.map((i) => i.id)]);
+  // Back after days away: what came and went, and what's waiting (lib/away.ts).
+  const { since: awaySince, presented: awayPresented, markPresented, dismiss: dismissAway } = useAwaySince();
+  // Cheap (a pass over the threads); the React Compiler memoizes it.
+  const away = awaySince !== null && items.length > 0 ? awayDigest(items, entries, awaySince, now, latestItem?.id) : null;
+  // The first time Home shows after a return, the full welcome page opens
+  // over it, once. Closing it leaves the short version here.
+  const hasAway = away !== null;
+  React.useEffect(() => {
+    if (!hasAway || awayPresented) return;
+    markPresented();
+    router.push('/welcome');
+  }, [hasAway, awayPresented, markPresented]);
+  // The next few of the same ranking, so the order is visible, not just its
+  // winner. While "while you were away" lists what's waiting, it takes their place.
+  const upNext = away ? [] : activeItems.slice(1, 1 + UP_NEXT_LIMIT);
+  const shownIds = new Set([latestItem?.id, ...upNext.map((i) => i.id), ...(away?.rows.map((r) => r.item.id) ?? [])]);
   const comingUp = activeItems
     .flatMap((i): { item: MnemoItem; at: number; step?: string }[] => [
       ...(!shownIds.has(i.id) && i.dueDate ? [{ item: i, at: i.dueDate }] : []),
@@ -256,11 +288,12 @@ export function PulseHome() {
 
   const { name } = usePreferences();
   const greeting = React.useMemo(() => {
+    if (hasAway) return name ? `Welcome back, ${name}` : 'Welcome back';
     const hour = new Date().getHours();
     if (hour < 5) return name ? `Still up, ${name}?` : 'Still up?';
     const part = hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening';
     return name ? `${part}, ${name}` : part;
-  }, [name]);
+  }, [name, hasAway]);
   const today = React.useMemo(
     () => new Date().toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' }),
     [],
@@ -295,8 +328,12 @@ export function PulseHome() {
         {/* How much is open, and one tap to the week. */}
         {summary || items.length > 0 ? (
           <View className="flex-row items-center justify-between mt-1" style={{ gap: 12 }}>
-            <Text className="font-quote text-body leading-relaxed shrink" style={{ color: colors.fgSecondary }} numberOfLines={1}>
-              {summary}
+            <Text
+              className="font-quote text-body leading-relaxed shrink"
+              style={{ color: colors.fgSecondary }}
+              numberOfLines={away ? 3 : 1}
+            >
+              {away ? `Away ${awayFor(away.days)}. ${away.line}` : summary}
             </Text>
             {items.length > 0 ? (
               <Pressable
@@ -347,6 +384,8 @@ export function PulseHome() {
         ) : null}
         {/* Strict phones: a one-time nudge to check reminders will arrive. */}
         <ReminderSetupPrompt />
+        {/* A place reminder waiting that may not go off, and why. */}
+        <PlaceReminderPrompt />
         {/* No backup in a while, or automatic backups stopped working. */}
         <BackupPrompt />
         {/* Gemini stopped answering for a reason the person can fix. */}
@@ -386,7 +425,7 @@ export function PulseHome() {
         {/* Hero */}
         {latestItem ? (
           <MotiView {...enter.rise(1)}>
-            <ResumeCard item={latestItem} reason={reason} />
+            <ResumeCard item={latestItem} reason={reason} kind={kindOf(latestItem, getEntries(latestItem.id).length)} />
           </MotiView>
         ) : (
           <MotiView {...enter.rise(1)}>
@@ -408,6 +447,63 @@ export function PulseHome() {
             </Card>
           </MotiView>
         )}
+
+        {/* While you were away: what's waiting, across everything */}
+        {away && (away.rows.length > 0 || away.ideas > 0) ? (
+          <MotiView {...enter.rise(2)} {...enter.reflow()} className="mb-7">
+            <Eyebrow
+              action={away.total > away.rows.length ? `All ${away.total + (away.ideas > 0 ? away.ideas : 0)}` : 'See all'}
+              onAction={() => router.push('/welcome')}
+            >
+              While you were away
+            </Eyebrow>
+            {away.rows.length > 0 ? (
+              <ThreadList>
+                {away.rows.map((row, i, shown) => {
+                  const t = awayTrailing(row);
+                  return (
+                    <ThreadRow
+                      key={row.item.id}
+                      item={row.item}
+                      index={i}
+                      onPress={() => openItem(row.item.id)}
+                      detail={row.text}
+                      trailing={t.label}
+                      trailingTone={t.tone === 'error' ? colors.error : t.tone === 'accent' ? colors.accent : undefined}
+                      last={i === shown.length - 1}
+                    />
+                  );
+                })}
+              </ThreadList>
+            ) : null}
+            {away.ideas > 0 ? (
+              <Pressable
+                onPress={() => router.push('/(tabs)/library?kind=idea')}
+                accessibilityRole="button"
+                accessibilityLabel={`${away.ideas} ${away.ideas === 1 ? 'idea' : 'ideas'} kept. Open them.`}
+                className="flex-row items-center h-11 mt-2 active:opacity-70"
+              >
+                <Icon name="sparkles" size={15} color={colors.accentWarm} />
+                <Text className="flex-1 font-sans text-sm ml-2" style={{ color: colors.fgSecondary }}>
+                  {away.ideas === 1 ? 'One idea' : `${numberWord(away.ideas)} ideas`} kept for later
+                </Text>
+                <Icon name="chevronRight" size={14} color={colors.accent} stroke={2} />
+              </Pressable>
+            ) : null}
+            <Pressable
+              onPress={dismissAway}
+              accessibilityRole="button"
+              accessibilityLabel="Got it. Put away what's waiting until next time."
+              hitSlop={8}
+              className="self-start flex-row items-center h-11 active:opacity-70"
+            >
+              <Icon name="check" size={15} color={colors.accent} stroke={2.2} />
+              <Text className="font-sans-semi text-sm ml-1.5" style={{ color: colors.accent }}>
+                Got it
+              </Text>
+            </Pressable>
+          </MotiView>
+        ) : null}
 
         {/* Up next: the rest of the same ranking */}
         {upNext.length > 0 && (
