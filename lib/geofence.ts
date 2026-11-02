@@ -3,11 +3,10 @@ import { Linking, Platform } from 'react-native';
 import * as Location from 'expo-location';
 
 import { getAllItems, updatePartialItem } from '@/lib/db';
-import { Notifications, notificationsAvailable } from '@/lib/notifications';
-import { getPlaces, loadPlaces } from '@/lib/place-store';
-import { caughtLate, distance, isArmed, onPlaceEvent, pickWatched, placeLabel, watchedRadius, type PlaceEvent } from '@/lib/places';
+import { loadPlaces } from '@/lib/place-store';
+import { isArmed, onFix, onPlaceEvent, pickWatched, placeLabel, watchedRadius, type PlaceEvent } from '@/lib/places';
+import { ringPlaceReminder } from '@/lib/place-sound';
 import { getPreferences } from '@/lib/preferences';
-import { ANDROID_CHANNEL_ID, ensureAndroidChannel, ensureReminderCategory, REMINDER_CATEGORY } from '@/lib/reminders';
 import { openSettings, reminderHealth, type CheckState } from '@/lib/reliability';
 import type { MnemoItem, Place, PlaceReminder } from '@/types/mnemo';
 
@@ -252,21 +251,25 @@ async function save(item: MnemoItem, place: PlaceReminder): Promise<void> {
   listeners.forEach((l) => l(item.id, place));
 }
 
-async function show(item: MnemoItem, placeName: string | undefined, late: boolean): Promise<void> {
-  if (!notificationsAvailable) return;
+async function show(item: MnemoItem, placeName: string | undefined, note?: string): Promise<void> {
   const step = item.place?.step || item.nextStep;
   const where = placeLabel(item.place!, placeName ? { name: placeName } : undefined);
-  await ensureAndroidChannel();
-  await ensureReminderCategory();
-  await Notifications.scheduleNotificationAsync({
-    content: {
-      title: item.title,
-      body: `${where}${late ? ' (late: your phone held it back)' : ''}${step ? `\nNext: ${step}` : ''}`,
-      data: { itemId: item.id },
-      categoryIdentifier: REMINDER_CATEGORY,
-    },
-    trigger: Platform.OS === 'android' ? { channelId: ANDROID_CHANNEL_ID } : null,
+  await ringPlaceReminder({
+    title: item.title,
+    body: `${where}${note ? ` (${note})` : ''}${step ? `\nNext: ${step}` : ''}`,
+    data: { itemId: item.id },
   });
+}
+
+/** Reminders already rung in this run, so two quick reports can't ring one twice. */
+const rung = new Set<string>();
+
+async function fire(item: MnemoItem, place: Place | undefined, note?: string, late = false): Promise<void> {
+  const key = `${item.id}:${item.place!.setAt}`;
+  if (rung.has(key)) return;
+  rung.add(key);
+  await show(item, place?.name, note);
+  await save(item, { ...item.place!, firedAt: Date.now(), ...(late ? { caughtLate: true } : {}) });
 }
 
 /**
@@ -280,8 +283,7 @@ export async function handleGeofenceEvent(event: PlaceEvent, placeId: string, no
     if (!isArmed(item) || item.place.placeId !== placeId) continue;
     const action = onPlaceEvent(item.place, event, now, watch.since);
     if (action === 'fire') {
-      await show(item, place?.name, false);
-      await save(item, { ...item.place, firedAt: now });
+      await fire(item, place);
     } else if (action === 'inside' || action === 'outside') {
       const inside = action === 'inside';
       if (item.place.insideAtSet !== inside) await save(item, { ...item.place, insideAtSet: inside });
@@ -290,32 +292,60 @@ export async function handleGeofenceEvent(event: PlaceEvent, placeId: string, no
 }
 
 /**
- * When Mnemo opens: note where newly set reminders started (inside the place
- * or not), and fire any the phone plainly should have already, saying so.
+ * A position the app read itself, applied to every waiting reminder: notes
+ * where new ones started (inside the place or not), and rings any whose
+ * place was plainly reached or left. `opening`: the app just opened, so a
+ * ring now is one the phone should have given earlier, and it says so.
  */
-export async function catchUp(items: MnemoItem[]): Promise<void> {
-  if (!getPreferences().places) return;
-  const armed = items.filter(isArmed);
-  if (armed.length === 0) return;
-  const here = await lastFix();
-  if (!here) return;
-  const places = getPlaces().length ? getPlaces() : await loadPlaces();
-  for (const item of armed) {
+async function applyFix(items: MnemoItem[], here: Fix, opening: boolean): Promise<void> {
+  const places = await loadPlaces();
+  const watching = opening && (await Location.getBackgroundPermissionsAsync().catch(() => ({ granted: false }))).granted;
+  for (const item of items.filter(isArmed)) {
     const r = item.place as PlaceReminder;
     const place = places.find((p) => p.id === r.placeId);
     if (!place) continue;
-    if (r.insideAtSet === undefined) {
-      // Only when the fix is clear either way; otherwise ask again next time.
-      const d = distance(place, here);
-      const radius = watchedRadius(place);
-      if (d + here.accuracy <= radius) await save(item, { ...r, insideAtSet: true });
-      else if (d - here.accuracy > radius) await save(item, { ...r, insideAtSet: false });
-      continue;
+    const action = onFix(r, place, here);
+    if (action === 'inside' || action === 'outside') {
+      await save(item, { ...r, insideAtSet: action === 'inside' });
+    } else if (action === 'fire' && opening) {
+      // Watched in the background and still missed: the phone held it back.
+      // Not watched (no "all the time"): it could only be noticed now.
+      await fire(item, place, watching ? 'late: your phone held it back' : 'noticed when you opened Mnemo', watching);
+      if (watching) await AsyncStorage.setItem(LATE_KEY, String(Date.now())).catch(() => {});
+    } else if (action === 'fire') {
+      await fire(item, place);
     }
-    if (caughtLate(r, place, here)) {
-      await show(item, place.name, true);
-      await save(item, { ...r, firedAt: Date.now(), caughtLate: true });
-      await AsyncStorage.setItem(LATE_KEY, String(Date.now())).catch(() => {});
-    }
+  }
+}
+
+/** When Mnemo opens or comes back: one recent position, applied (see applyFix). */
+export async function catchUp(items: MnemoItem[]): Promise<void> {
+  if (!getPreferences().places || !items.some(isArmed)) return;
+  const here = await lastFix();
+  if (here) await applyFix(items, here, true);
+}
+
+/**
+ * While Mnemo is open, without "all the time": nothing else is watching, so
+ * the app follows the phone's position itself and rings on the spot. With
+ * it, the phone's geofences do this and the app stays out of the way.
+ * Returns the way to stop.
+ */
+export async function watchWhileOpen(getItems: () => MnemoItem[]): Promise<() => void> {
+  if (!geofencingAvailable || !getPreferences().places) return () => {};
+  try {
+    if (!(await Location.getForegroundPermissionsAsync()).granted) return () => {};
+    if ((await Location.getBackgroundPermissionsAsync()).granted) return () => {};
+    const sub = await Location.watchPositionAsync(
+      { accuracy: Location.Accuracy.Balanced, distanceInterval: 40, timeInterval: 30_000 },
+      (p) => {
+        const items = getItems();
+        if (!items.some(isArmed)) return;
+        applyFix(items, { latitude: p.coords.latitude, longitude: p.coords.longitude, accuracy: p.coords.accuracy ?? 200 }, false);
+      },
+    );
+    return () => sub.remove();
+  } catch {
+    return () => {};
   }
 }

@@ -21,6 +21,7 @@ import { useKeyboardInset } from '@/hooks/use-keyboard-inset';
 import { useMnemoStore } from '@/hooks/use-mnemo-store';
 import { useThemeColors } from '@/hooks/use-theme';
 import { saveTextNote } from '@/lib/capture';
+import { allowBackground } from '@/lib/geofence';
 import { imageUri, pickPhotos, type ImageBlock } from '@/lib/images';
 import { usePlaces } from '@/lib/place-store';
 import { placeLabel } from '@/lib/places';
@@ -357,7 +358,14 @@ export default function CaptureScreen() {
                 <Text className="font-sans-semi text-sm" style={{ color: colors.fgSecondary }}>
                   Remind me at a place
                 </Text>
-                <PlaceChoice value={place} onChange={setPlace} />
+                <PlaceChoice
+                  value={place}
+                  onChange={(next) => {
+                    setPlace(next);
+                    // Without "all the time", nothing rings while Mnemo is closed.
+                    if (next) allowBackground();
+                  }}
+                />
               </>
             )}
             {panel === 'details' && (

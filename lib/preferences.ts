@@ -30,6 +30,8 @@ export interface Preferences {
   earlierNotesAsked?: boolean;
   /** Place reminders (Settings → Location). Off until turned on: nothing is watched or asked for. */
   places?: boolean;
+  /** What a place reminder sounds like (lib/place-sound.ts). */
+  placeSound?: 'chime' | 'bells' | 'rise' | 'default' | 'custom';
 }
 
 /** Long enough for most first names, short enough for the greeting to fit. */

@@ -2,7 +2,7 @@ import { useEffect, useRef } from 'react';
 import { AppState } from 'react-native';
 
 import { useMnemoStore } from '@/hooks/use-mnemo-store';
-import { catchUp, onPlaceReminderChange, syncGeofences } from '@/lib/geofence';
+import { catchUp, onPlaceReminderChange, syncGeofences, watchWhileOpen } from '@/lib/geofence';
 import { usePlaces } from '@/lib/place-store';
 import { isArmed } from '@/lib/places';
 import { usePreferences } from '@/lib/preferences';
@@ -37,14 +37,36 @@ export function PlaceReminderSync() {
     return () => clearTimeout(handle);
   }, [items, places, isLoaded, on]);
 
+  // On opening: one position, to catch what was missed. While open (and the
+  // phone isn't watching in the background): follow the position, so a
+  // reminder rings on the spot. Stopped in the background.
+  const anyArmed = items.some(isArmed);
   useEffect(() => {
-    if (!isLoaded) return;
+    if (!isLoaded || !on || !anyArmed) return;
+    let stop: (() => void) | null = null;
+    let live = true;
+    const startWatching = () =>
+      watchWhileOpen(() => latest.current).then((s) => {
+        if (live && AppState.currentState === 'active') stop = s;
+        else s();
+      });
     catchUp(latest.current);
+    startWatching();
     const subscription = AppState.addEventListener('change', (state) => {
-      if (state === 'active') catchUp(latest.current);
+      stop?.();
+      stop = null;
+      if (state === 'active') {
+        catchUp(latest.current);
+        // Permissions may have changed in the phone's settings meanwhile.
+        startWatching();
+      }
     });
-    return () => subscription.remove();
-  }, [isLoaded]);
+    return () => {
+      live = false;
+      stop?.();
+      subscription.remove();
+    };
+  }, [isLoaded, on, anyArmed]);
 
   return null;
 }
