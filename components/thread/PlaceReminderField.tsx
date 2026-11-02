@@ -1,11 +1,11 @@
 import React from 'react';
-import { AppState, Pressable, View } from 'react-native';
+import { AppState, View } from 'react-native';
 import { router } from 'expo-router';
 
 import { Icon } from '@/components/ui/Icon';
-import { Pill } from '@/components/ui/Pill';
 import { Text } from '@/components/ui/Text';
 import { usePlaceProblems, WarningList } from '@/components/PlaceWarnings';
+import { PlaceChoice } from '@/components/PlaceChoice';
 import { useMnemoStore } from '@/hooks/use-mnemo-store';
 import { useThemeColors } from '@/hooks/use-theme';
 import { allowBackground } from '@/lib/geofence';
@@ -52,63 +52,29 @@ function useWarnings(thread: MnemoItem): Line[] {
 export function PlaceReminderField({ thread, onChange }: { thread: MnemoItem; onChange: (place: PlaceReminder | undefined) => void }) {
   const colors = useThemeColors();
   const places = usePlaces();
-  const warnings = useWarnings(thread);
+  const problems = usePlaceProblems(useReturns());
+  const { items } = useMnemoStore();
   const r = thread.place;
-
-  if (places.length === 0) {
-    return (
-      <Pressable onPress={() => router.push('/place')} accessibilityRole="button" className="flex-row items-center active:opacity-70" style={{ gap: 8 }}>
-        <Icon name="mapPin" size={15} color={colors.fgTertiary} />
-        <Text className="flex-1 font-sans text-sm" style={{ color: colors.fgSecondary }}>
-          No places saved yet.
-        </Text>
-        <Text className="font-sans-semi text-sm" style={{ color: colors.accent }}>
-          Add a place
-        </Text>
-      </Pressable>
-    );
-  }
-
-  const set = (next: Pick<PlaceReminder, 'placeId' | 'on'>) => {
-    // A new place or direction starts over: where the phone is gets read again.
-    onChange({ ...next, step: r?.step, setAt: Date.now() });
-    // Without "all the time", nothing goes off while Mnemo is closed.
-    allowBackground();
-  };
-  const waiting = r && !r.firedAt;
+  const waiting = r && !r.firedAt ? r : undefined;
+  const overflow = waiting && pickWatched(items, places).overflow.has(waiting.placeId);
 
   return (
     <View className="gap-3">
-      <View className="flex-row flex-wrap gap-2">
-        {places.map((p) => {
-          const selected = !!waiting && r.placeId === p.id;
-          return (
-            <Pill
-              key={p.id}
-              tone={colors.accent}
-              size="md"
-              dot={false}
-              outline={!selected}
-              selected={selected}
-              onPress={() => (selected ? onChange(undefined) : set({ placeId: p.id, on: r?.on ?? 'arrive' }))}
-            >
-              {p.name}
-            </Pill>
-          );
-        })}
-      </View>
-      {waiting ? (
-        <>
-          <View className="flex-row gap-2">
-            {(['arrive', 'leave'] as const).map((on) => (
-              <Pill key={on} tone={colors.fgSecondary} size="md" dot={false} outline={r.on !== on} selected={r.on === on} onPress={() => r.on !== on && set({ placeId: r.placeId, on })}>
-                {on === 'arrive' ? 'When I get there' : 'When I leave'}
-              </Pill>
-            ))}
-          </View>
-          <WarningList lines={warnings} />
-        </>
-      ) : r?.firedAt ? (
+      <PlaceChoice
+        value={waiting}
+        onChange={(next) => {
+          if (!next) return onChange(undefined);
+          // A new place or direction starts over: where the phone is gets read again.
+          onChange({ ...next, step: r?.step, setAt: Date.now() });
+          // Without "all the time", nothing goes off while Mnemo is closed.
+          allowBackground();
+        }}
+        more={[
+          ...(overflow ? [{ text: `A phone watches at most ${MAX_WATCHED} places at once; this one waits until others are done.` }] : []),
+          ...(problems ?? []),
+        ]}
+      />
+      {r?.firedAt ? (
         <Text className="font-sans text-sm" style={{ color: colors.fgTertiary }}>
           {placeLabel(r, places.find((p) => p.id === r.placeId))}: went off {formatReminder(r.firedAt)}
           {r.caughtLate ? ', late' : ''}. Pick a place to set another.

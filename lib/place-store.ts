@@ -10,7 +10,7 @@ import type { Place } from '@/types/mnemo';
 
 const KEY = 'mnemo-places';
 let places: Place[] = [];
-let loaded: Promise<Place[]> | null = null;
+let loaded: Promise<void> | null = null;
 const listeners = new Set<(p: Place[]) => void>();
 
 function valid(p: unknown): p is Place {
@@ -23,18 +23,21 @@ function valid(p: unknown): p is Place {
   );
 }
 
-/** Reads the saved places once; later calls get the same answer. */
+/**
+ * The saved places, read from storage once. Always resolves to the list as
+ * it is now: the first read is cached, not its result, so a screen opened
+ * after a place was added or removed never sees the list as it was at launch.
+ */
 export function loadPlaces(): Promise<Place[]> {
   if (!loaded) {
     loaded = AsyncStorage.getItem(KEY)
       .then((raw) => {
         const parsed = raw ? JSON.parse(raw) : [];
         places = Array.isArray(parsed) ? parsed.filter(valid) : [];
-        return places;
       })
-      .catch(() => places);
+      .catch(() => undefined);
   }
-  return loaded;
+  return loaded.then(() => places);
 }
 
 /** The places as last loaded; [] until loadPlaces resolves. */
