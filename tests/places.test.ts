@@ -3,6 +3,7 @@ import {
   MAX_WATCHED,
   MIN_RADIUS,
   caughtLate,
+  onFix,
   circleChanged,
   distance,
   fixText,
@@ -130,6 +131,29 @@ describe('events', () => {
   });
   it('fired is done', () => {
     expect(onPlaceEvent({ ...arrive, firedAt: 1 }, 'enter', later, 0)).toBe('ignore');
+  });
+});
+
+describe('positions read while the app is open', () => {
+  const near = { latitude: b.latitude, longitude: b.longitude, accuracy: 20 };
+  const far = { latitude: c.latitude, longitude: c.longitude, accuracy: 20 };
+  it('first learns where the phone is', () => {
+    expect(onFix({ placeId: 'b', on: 'arrive', setAt: 0 }, b, near)).toBe('inside');
+    expect(onFix({ placeId: 'b', on: 'arrive', setAt: 0 }, b, far)).toBe('outside');
+  });
+  it('arrive: leaving first, then coming back, fires', () => {
+    const r: PlaceReminder = { placeId: 'b', on: 'arrive', setAt: 0, insideAtSet: true };
+    expect(onFix(r, b, near)).toBeNull();
+    expect(onFix(r, b, far)).toBe('outside');
+    expect(onFix({ ...r, insideAtSet: false }, b, near)).toBe('fire');
+  });
+  it('leave: once inside, going fires', () => {
+    const r: PlaceReminder = { placeId: 'b', on: 'leave', setAt: 0, insideAtSet: false };
+    expect(onFix(r, b, near)).toBe('inside');
+    expect(onFix({ ...r, insideAtSet: true }, b, far)).toBe('fire');
+  });
+  it('a fix too rough to tell says nothing', () => {
+    expect(onFix({ placeId: 'b', on: 'arrive', setAt: 0, insideAtSet: false }, b, { ...near, accuracy: 300 })).toBeNull();
   });
 });
 

@@ -66,7 +66,16 @@
       ],
       "expo-font",
       "expo-sqlite",
-      "expo-notifications",
+      [
+        "expo-notifications",
+        {
+          "sounds": [
+            "./assets/sounds/mnemo_chime.wav",
+            "./assets/sounds/mnemo_bells.wav",
+            "./assets/sounds/mnemo_rise.wav"
+          ]
+        }
+      ],
       [
         "expo-location",
         {

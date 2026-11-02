@@ -12,6 +12,9 @@ import { useThemeColors } from '@/hooks/use-theme';
 import { usePlaces } from '@/lib/place-store';
 import { formatMeters, isArmed, overlaps, overlapText, watchedRadius } from '@/lib/places';
 import { setPreferences, usePreferences } from '@/lib/preferences';
+import { allowBackground } from '@/lib/geofence';
+import { allowPlaceNotifications, chooseOwnRingtone, DEFAULT_PLACE_SOUND, PLACE_SOUNDS, ringPlaceReminder } from '@/lib/place-sound';
+import { Pill } from '@/components/ui/Pill';
 import { confirmAction } from '@/utils/confirm';
 
 /**
@@ -21,7 +24,9 @@ import { confirmAction } from '@/utils/confirm';
  */
 export function LocationCard() {
   const colors = useThemeColors();
-  const { places: on } = usePreferences();
+  const { places: on, placeSound } = usePreferences();
+  const sound = placeSound ?? DEFAULT_PLACE_SOUND;
+  const [tested, setTested] = React.useState(false);
   const places = usePlaces();
   const { items } = useMnemoStore();
   const waiting = items.filter(isArmed);
@@ -37,6 +42,9 @@ export function LocationCard() {
     if (next || waiting.length === 0) {
       Haptics.selectionAsync();
       setPreferences({ places: next });
+      // Turning on asks right away: while in use, then "all the time",
+      // without which nothing rings while Mnemo is closed.
+      if (next) allowPlaceNotifications().then(allowBackground).then(() => setReturns((n) => n + 1));
       return;
     }
     confirmAction({
@@ -105,6 +113,58 @@ export function LocationCard() {
           <Button variant="quiet" size="sm" icon="plus" onPress={() => router.push('/place')}>
             Add a place
           </Button>
+
+          {/* How it rings: its own sound, loud, and on the lock screen. */}
+          {Platform.OS !== 'web' ? (
+            <View className="pt-4 border-t border-border/50 gap-3">
+              <Text className="font-sans-semi text-sm" style={{ color: colors.fg }}>
+                Sound
+              </Text>
+              <View className="flex-row flex-wrap gap-2">
+                {PLACE_SOUNDS.map((p) => (
+                  <Pill
+                    key={p.key}
+                    tone={colors.accent}
+                    size="md"
+                    dot={false}
+                    outline={sound !== p.key}
+                    selected={sound === p.key}
+                    onPress={() => {
+                      setPreferences({ placeSound: p.key });
+                      setTested(false);
+                      if (p.key === 'custom') chooseOwnRingtone();
+                      else ringPlaceReminder({ title: p.label, body: 'This is how a place reminder will sound.' }, p.key);
+                    }}
+                  >
+                    {p.label}
+                  </Pill>
+                ))}
+              </View>
+              {sound === 'custom' ? (
+                <Text className="font-sans text-sm leading-relaxed" style={{ color: colors.fgSecondary }}>
+                  Pick any ringtone under “Sound” in the settings that opened.{' '}
+                  <Text className="font-sans-semi" style={{ color: colors.accent }} onPress={chooseOwnRingtone}>
+                    Open again
+                  </Text>
+                </Text>
+              ) : null}
+              <View className="flex-row items-center justify-between gap-3">
+                <Text className="font-sans text-sm text-fg-tertiary flex-1">
+                  {tested ? 'Sent. It rings like a real one, with the app open or closed.' : 'Hear it as it will ring.'}
+                </Text>
+                <Button
+                  variant="quiet"
+                  size="sm"
+                  onPress={() => {
+                    ringPlaceReminder({ title: 'Place reminder', body: 'When you get to a place you saved, it rings like this.' });
+                    setTested(true);
+                  }}
+                >
+                  Ring now
+                </Button>
+              </View>
+            </View>
+          ) : null}
         </>
       ) : null}
     </View>

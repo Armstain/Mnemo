@@ -166,16 +166,26 @@ export function onPlaceEvent(
 }
 
 /**
- * Opening the app is a second chance: if the phone is plainly inside the
- * circle (or plainly out of it) and the reminder never went off, the phone
- * held the event back. Fire it now, and say so.
+ * What a position the app read itself means for one reminder: the same
+ * crossings a geofence reports, but only when the fix is clear (the circle
+ * plainly contains it, or plainly doesn't). Used while Mnemo is open, and
+ * when it opens to catch what the phone held back.
  */
-export function caughtLate(r: PlaceReminder, place: Place, here: Point & { accuracy: number }): boolean {
-  if (r.firedAt || r.insideAtSet === undefined) return false;
+export function onFix(r: PlaceReminder, place: Place, here: Point & { accuracy: number }): 'fire' | 'inside' | 'outside' | null {
+  if (r.firedAt) return null;
   const d = distance(place, here);
   const radius = watchedRadius(place);
-  if (r.on === 'arrive') return r.insideAtSet === false && d + here.accuracy <= radius;
-  return r.insideAtSet === true && d - here.accuracy > radius;
+  const inside = d + here.accuracy <= radius;
+  const outside = d - here.accuracy > radius;
+  if (!inside && !outside) return null;
+  if (r.insideAtSet === undefined) return inside ? 'inside' : 'outside';
+  if (r.on === 'arrive') return inside ? (r.insideAtSet ? null : 'fire') : r.insideAtSet ? 'outside' : null;
+  return outside ? (r.insideAtSet ? 'fire' : null) : r.insideAtSet ? null : 'inside';
+}
+
+/** The phone plainly crossed and the reminder never went off: the phone held the event back. */
+export function caughtLate(r: PlaceReminder, place: Place, here: Point & { accuracy: number }): boolean {
+  return r.insideAtSet !== undefined && onFix(r, place, here) === 'fire';
 }
 
 // ─── Reading it from a note ─────────────────────────────────────
