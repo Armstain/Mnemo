@@ -16,7 +16,7 @@ import {
   EMBEDDING_DIMS,
 } from '@/lib/embeddings';
 import { getVectors, upsertEmbedding } from '@/lib/db';
-import type { Block, Category, ChecklistItem, Entry, Filing, LaterStep, MnemoItem } from '@/types/mnemo';
+import type { Block, Category, ChecklistItem, Entry, Filing, LaterStep, MnemoItem, PlaceReminder } from '@/types/mnemo';
 import { queueSteps } from '@/lib/when';
 import type { CaptureStore } from '@/hooks/use-mnemo-store';
 import { buildBlocks } from '@/lib/threads';
@@ -95,6 +95,8 @@ interface NoteInput {
   title?: string;
   /** A voice note's sound, held for Gemini to write out (lib/voice-audio). */
   audio?: string[];
+  /** A place reminder picked on the Write screen; otherwise one said in the text is read. */
+  place?: Pick<PlaceReminder, 'placeId' | 'on'>;
   store: CaptureStore;
 }
 
@@ -171,8 +173,8 @@ function saveNote(source: Entry['source'], params: NoteInput): { threadId: strin
   };
   const due = params.dueDate ?? reading.due;
   // "when I get to the market": a saved place named with words that say when.
-  const placeHit = getPreferences().places ? readPlaceReminder(words, getPlaces()) : undefined;
-  const place = placeHit ? { ...placeHit, step: reading.nextStep, setAt: Date.now() } : undefined;
+  const placeHit = getPreferences().places ? (params.place ?? readPlaceReminder(words, getPlaces())) : undefined;
+  const place = placeHit ? { ...placeHit, step: params.nextStep?.trim() || reading.nextStep, setAt: Date.now() } : undefined;
 
   let saved: { threadId: string; entry: Entry };
   if (threadId) {
@@ -607,9 +609,16 @@ async function structure(entry: PendingEntry, store: CaptureStore): Promise<void
     said && !editedMeanwhile
       ? understand(said, { now: now.createdAt, monthFirst: monthFirst(), currency: localCurrency() })
       : undefined;
+  // Same for a place ("when I get to the gym…" said, not typed): typed
+  // notes have theirs read when saved (saveNote).
+  const heardPlace = said && !editedMeanwhile && getPreferences().places ? readPlaceReminder(said, getPlaces()) : undefined;
   const remindFromSound = (threadId: string) => {
     const t = store.getThread(threadId);
-    if (!heard?.due || !t || heard.due < Date.now() || (t.dueDate && t.dueDate > Date.now())) return;
+    if (!t) return;
+    if (heardPlace && !(t.place && !t.place.firedAt && t.place.placeId === heardPlace.placeId && t.place.on === heardPlace.on)) {
+      store.updateItem(threadId, { place: { ...heardPlace, step: nextStep ?? heard?.nextStep, setAt: Date.now() } });
+    }
+    if (!heard?.due || heard.due < Date.now() || (t.dueDate && t.dueDate > Date.now())) return;
     store.updateItem(threadId, { dueDate: heard.due, repeat: heard.repeat });
     reminderSet({ threadId, at: heard.due, previous: t.dueDate });
   };
