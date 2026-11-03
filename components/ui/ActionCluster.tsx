@@ -44,41 +44,29 @@ import { setCaptureActive } from '@/hooks/use-capture-active';
 import { OpenRing } from '@/components/ui/ThreadRing';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-// How long a hold must last before it commits to recording. Long enough that
-// a normal tap never triggers it; the red fill inside the button shows the
-// hold filling up over exactly this time.
 const LONG_PRESS_MS = 320;
 
-// Distance from the button's centre up to the bin's centre. Dragging past
-// CANCEL_ENTER_PX arms "release to discard"; dropping back under
-// CANCEL_EXIT_PX disarms it (two thresholds, so it doesn't flicker).
+// Two thresholds so "release to discard" doesn't flicker.
 const CANCEL_DISTANCE = 116;
 const CANCEL_ENTER_PX = 84;
 const CANCEL_EXIT_PX = 56;
-// Light ticks on the way up, so the slide has notches you can feel.
 const DETENTS_PX = [28, 56];
 
-// How long the result ("Saved", "Discarded") stays up after release.
 const TAIL_MS = { saved: 1400, discarded: 900, tooShort: 1600 } as const;
 
-// Main button diameter, and the brand ring drawn around it.
 const FAB_SIZE = CAPTURE_BUTTON_SIZE;
-/** The brand ring around the button; the tab bar's notch is shaped for it. */
+/** The tab bar's notch is shaped for this ring. */
 const ORBIT_SIZE = CAPTURE_RING_SIZE;
-/** The ring's stroke as a share of its size: about 3.5px. */
 const ORBIT_WEIGHT = 0.05;
-/** The closed ring at rest: a hairline under the open ring's weight. */
 const REST_RING_STROKE = 2;
 const BIN_SIZE = 56;
 const FAB_CENTER = FAB_SIZE / 2;
 
-// The tap menu: two options either side, above the button.
 const OPTION_X = 92;
 const OPTION_CIRCLE = 60;
 const OPTION_CENTER_Y = FAB_CENTER + 108;
 
-// Everything the button shows lives in one box above it, so every target is
-// inside its parent's bounds (Android drops touches outside them).
+// One box so every target is inside its parent's bounds (Android drops touches outside them).
 const STAGE_HEIGHT = 380;
 
 const SNAP = { damping: 18, stiffness: 260, mass: 0.6 };
@@ -91,19 +79,11 @@ type Tail =
   | { kind: 'tooShort' }
   | null;
 
-/**
- * ActionCluster: the capture button in the middle of the tab bar.
- *
- * Tap: the + turns into an ×, the page dims, and two choices fan out:
- * Write and Record. Hold: the button fills red, clicks, and records right
- * here. Release saves. Slide up into the bin to discard. On a thread's
- * screen everything it captures joins that thread.
- */
+/** Tap opens Write/Record; hold records in place, release saves, slide up to discard. */
 export function ActionCluster({ visible = true }: { visible?: boolean }) {
   const insets = useSafeAreaInsets();
   const colors = useThemeColors();
   const reduceMotion = useReduceMotion();
-  // Live speech-to-text; the level drives the waveform and the voice halo.
   const levelNow = useRef(0);
   const speech = useSpeechCapture({ onLevel: (v) => (levelNow.current = v) });
   const store = useMnemoStore();
@@ -115,8 +95,6 @@ export function ActionCluster({ visible = true }: { visible?: boolean }) {
     pathname.includes('context') && typeof routeId === 'string'
       ? items.find((i) => i.id === routeId)
       : undefined;
-  // Anywhere else, captures go to the focus thread if one is set (the
-  // Write and Record screens resolve that themselves).
   const focusThread =
     !currentThread && focusThreadId ? items.find((i) => i.id === focusThreadId) : undefined;
   const target = currentThread ?? focusThread;
@@ -124,8 +102,6 @@ export function ActionCluster({ visible = true }: { visible?: boolean }) {
 
   const [expanded, setExpanded] = useState(false);
 
-  // "Hold to record" hint above the button, until hold has been used once
-  // or the hint is dismissed.
   const [showHoldHint, setShowHoldHint] = useState(false);
   useEffect(() => {
     AsyncStorage.getItem(HOLD_HINT_KEY)
@@ -139,8 +115,6 @@ export function ActionCluster({ visible = true }: { visible?: boolean }) {
   const [holdPhase, setHoldPhase] = useState<HoldPhase>('idle');
   const [tail, setTail] = useState<Tail>(null);
 
-  // How far the button has been dragged up (px), and the live voice level
-  // (0..1). Both are read on the UI thread by the animated styles below.
   const dragY = useSharedValue(0);
   const level = useSharedValue(0);
 
@@ -149,14 +123,10 @@ export function ActionCluster({ visible = true }: { visible?: boolean }) {
   const detent = useRef(0);
   const recordingSince = useRef(0);
   const tailTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
-  // Our own long-press timer; see handleGrant for why this isn't Pressable.
   const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  // Mirrors holdPhase for gesture decisions, current the instant it's
-  // written (state stays for rendering).
+  // Current the instant it's written, unlike state.
   const holdPhaseRef = useRef<HoldPhase>('idle');
-  // start() awaits permission and recorder prep. If the finger lifts before
-  // it resolves, beginHold sees this and discards instead of leaving the
-  // mic running with nobody holding the button.
+  // start() awaits permission and recorder prep; if the finger lifts first, beginHold discards instead of leaving the mic running.
   const isPressed = useRef(false);
 
   useEffect(() => {
@@ -171,8 +141,7 @@ export function ActionCluster({ visible = true }: { visible?: boolean }) {
     setHoldPhase(phase);
   };
 
-  // Hidden rather than unmounted (see app/(tabs)/_layout.tsx), so coming
-  // back from a detail screen doesn't replay the entrance.
+  // Hidden rather than unmounted, so returning from a detail screen doesn't replay the entrance.
   const entrance = reduceMotion
     ? { from: { opacity: 0 }, animate: { opacity: visible ? 1 : 0 }, transition: REDUCED }
     : {
@@ -235,7 +204,6 @@ export function ActionCluster({ visible = true }: { visible?: boolean }) {
     recordingSince.current = Date.now();
     setPhase('recording');
     if (showHoldHint) retireHoldHint();
-    // The click that says "you're recording now".
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Rigid);
   };
 
@@ -256,12 +224,11 @@ export function ActionCluster({ visible = true }: { visible?: boolean }) {
     }
     setTail({ kind: 'finishing' });
 
-    // Focus is checked again now: it may have lapsed while the app sat open.
+    // Focus may have lapsed while the app sat open.
     const focusNow = currentThread ? undefined : focusThread && getFocusThreadId() === focusThread.id ? focusThread : undefined;
     const saveTo = currentThread ?? focusNow;
     speech.stop().then(({ words, audio }) => {
       if (!words.trim() && audio.length === 0) {
-        // Nothing was heard (or the hold was a slip): there's nothing to save.
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
         showTail({ kind: 'tooShort' });
         return;
@@ -294,7 +261,6 @@ export function ActionCluster({ visible = true }: { visible?: boolean }) {
 
     if (current === 'recording' && raw > CANCEL_ENTER_PX) {
       setPhase('cancelling');
-      // A heavier bump as the button drops into the bin.
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
       dragY.value = reduceMotion ? CANCEL_DISTANCE : withSpring(CANCEL_DISTANCE, SNAP);
     } else if (current === 'cancelling' && raw < CANCEL_EXIT_PX) {
@@ -302,17 +268,12 @@ export function ActionCluster({ visible = true }: { visible?: boolean }) {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
       dragY.value = reduceMotion ? raw : withSpring(raw, SNAP);
     } else if (current === 'recording') {
-      // Follows the finger, so the button feels like something you carry.
       dragY.value = Math.min(raw, CANCEL_DISTANCE);
     }
   };
 
-  // The button owns the raw responder instead of using Pressable: Pressable
-  // negotiates the responder with scroll views and its own press-rect
-  // logic, and a fast upward drag is exactly the gesture that negotiation
-  // can take away mid-flight, which made slide-to-cancel unreliable. Here we
-  // claim the responder on touch, refuse to hand it over, and run our own
-  // long-press timer, so every release lands on the gesture we started.
+  // Raw responder, not Pressable: Pressable's negotiation with scroll views can take a fast upward drag away
+  // mid-flight, which made slide-to-cancel unreliable. We claim on touch, refuse to yield, and time the long press ourselves.
   const handleGrant = (e: GestureResponderEvent) => {
     longPressFired.current = false;
     isPressed.current = true;
@@ -351,8 +312,7 @@ export function ActionCluster({ visible = true }: { visible?: boolean }) {
     }
   };
 
-  // The OS took the gesture away (a real release never arrives). Intent is
-  // unclear, so discard rather than save something nobody released.
+  // The OS took the gesture (no release arrives): discard rather than save something nobody released.
   const handleTerminate = () => {
     clearLongPressTimer();
     isPressed.current = false;
@@ -367,8 +327,6 @@ export function ActionCluster({ visible = true }: { visible?: boolean }) {
 
   const live = holdPhase === 'recording' || holdPhase === 'cancelling';
 
-  // Lets the tab bar move its dot under this button while it's in use, and
-  // close the menu when a tab is tapped.
   useEffect(() => {
     setCaptureActive(expanded || live, () => setExpanded(false));
   }, [expanded, live]);
@@ -383,7 +341,6 @@ export function ActionCluster({ visible = true }: { visible?: boolean }) {
     transform: [{ translateY: -dragY.value }],
   }));
 
-  // A soft disc behind the button that swells with your voice.
   const voiceHaloStyle = useAnimatedStyle(() => ({
     opacity: interpolate(level.value, [0, 1], [0.16, 0.34]),
     transform: [
@@ -394,9 +351,6 @@ export function ActionCluster({ visible = true }: { visible?: boolean }) {
 
   return (
     <>
-      {/* Dims the page under the menu or a recording so the controls are the
-          only thing to look at. Tapping it closes the menu; while recording
-          it ignores touches (the finger is on the button anyway). */}
       <AnimatePresence>
         {dimmed && (
           <MotiView
@@ -426,14 +380,11 @@ export function ActionCluster({ visible = true }: { visible?: boolean }) {
         style={[
           styles.dock,
           {
-            // Same bottom gap as FloatingTabBar, then up so the button rises
-            // CENTER_BUTTON_RISE above the bar's top edge.
             paddingBottom: navBottom(insets.bottom) + NAV_BAR_HEIGHT + CENTER_BUTTON_RISE - FAB_SIZE,
           },
         ]}
       >
         <MotiView {...entrance} pointerEvents="box-none" style={styles.stage}>
-          {/* ── Tap menu ── */}
           <AnimatePresence>
             {expanded && (
               <MenuHint
@@ -470,14 +421,12 @@ export function ActionCluster({ visible = true }: { visible?: boolean }) {
             )}
           </AnimatePresence>
 
-          {/* ── First-run hint: hold is otherwise invisible ── */}
           <AnimatePresence>
             {showHoldHint && !expanded && holdPhase === 'idle' && tail === null && pathname === '/' && (
               <HoldHint key="hold-hint" reduceMotion={reduceMotion} onDismiss={retireHoldHint} />
             )}
           </AnimatePresence>
 
-          {/* ── Recording ── */}
           <AnimatePresence>
             {(live || tail !== null) && (
               <RecordingCard
@@ -504,7 +453,6 @@ export function ActionCluster({ visible = true }: { visible?: boolean }) {
             )}
           </AnimatePresence>
 
-          {/* ── The button ── */}
           <View pointerEvents="box-none" style={styles.fabSlot}>
             {live && !reduceMotion && (
               <Animated.View
@@ -513,9 +461,6 @@ export function ActionCluster({ visible = true }: { visible?: boolean }) {
               />
             )}
             <Animated.View pointerEvents="box-none" style={[styles.fabSlotInner, puckStyle]}>
-              {/* At rest, a closed ring, even all round like the notch it
-                  sits in. Held, it gives way to the brand's open ring, red,
-                  spinning while it records: the loop that isn't closed yet. */}
               <MotiView
                 pointerEvents="none"
                 style={styles.orbit}
@@ -544,8 +489,7 @@ export function ActionCluster({ visible = true }: { visible?: boolean }) {
                   opacity: !expanded && (live || holdPhase === 'charging') ? 1 : 0,
                   scale: holdPhase === 'charging' && !reduceMotion ? 1.06 : 1,
                 }}
-                // Only rotate loops: a shared looping transition would also
-                // restart scale/opacity each lap, snapping the ring outward.
+                // Only rotate loops: a shared looping transition would restart scale/opacity each lap.
                 transition={{
                   type: 'spring',
                   damping: 16,
@@ -593,8 +537,6 @@ export function ActionCluster({ visible = true }: { visible?: boolean }) {
                   }}
                   style={styles.fab}
                 >
-                  {/* Hold feedback: red fills the button from the centre over
-                      exactly the hold time, then it clicks into recording. */}
                   <MotiView
                     pointerEvents="none"
                     animate={{ scale: holdPhase === 'charging' || live ? 1 : 0 }}
@@ -635,10 +577,6 @@ export function ActionCluster({ visible = true }: { visible?: boolean }) {
 
 const HOLD_HINT_KEY = 'mnemo-hint-hold-done';
 
-/**
- * A bubble pointing at the button: the one place that says it can be held.
- * Shown on Home until the person records by holding, or closes it.
- */
 function HoldHint({ reduceMotion, onDismiss }: { reduceMotion: boolean; onDismiss: () => void }) {
   const colors = useThemeColors();
   return (
@@ -651,7 +589,6 @@ function HoldHint({ reduceMotion, onDismiss }: { reduceMotion: boolean; onDismis
       pointerEvents="box-none"
       style={[styles.hintWrap, { bottom: FAB_SIZE + 16 }]}
     >
-      {/* A slow bob draws the eye once, then keeps still under Reduce Motion. */}
       <MotiView
         animate={{ translateY: reduceMotion ? 0 : -3 }}
         transition={
@@ -682,14 +619,12 @@ function HoldHint({ reduceMotion, onDismiss }: { reduceMotion: boolean; onDismis
             <Icon name="x" size={14} color={colors.bg} stroke={2.2} />
           </Pressable>
         </View>
-        {/* Arrow pointing down at the button */}
         <View style={[styles.hintArrow, { backgroundColor: colors.fg }]} />
       </MotiView>
     </MotiView>
   );
 }
 
-/** One of the button's glyphs; only the current one is visible. */
 function Glyph({
   show,
   rotate = '0deg',
@@ -713,7 +648,6 @@ function Glyph({
   );
 }
 
-/** "Adding to …" above the menu, and the hint that teaches hold-to-record. */
 function MenuHint({ threadTitle, reduceMotion }: { threadTitle?: string; reduceMotion: boolean }) {
   const colors = useThemeColors();
   return (
@@ -743,7 +677,6 @@ function MenuHint({ threadTitle, reduceMotion }: { threadTitle?: string; reduceM
   );
 }
 
-/** A choice in the tap menu: a big round target with a label underneath. */
 function MenuOption({
   x,
   icon,
@@ -768,7 +701,6 @@ function MenuOption({
   const circleBg = tone === 'accent' ? colors.accent : colors.surfaceRaised;
   const ink = tone === 'accent' ? colors.accentInk : colors.fg;
 
-  // Each option flies out of the button along its own diagonal.
   const motionProps = reduceMotion
     ? { from: { opacity: 0 }, animate: { opacity: 1 }, exit: { opacity: 0 }, transition: REDUCED }
     : {
@@ -819,11 +751,6 @@ function MenuOption({
   );
 }
 
-/**
- * The slide-to-cancel lane: chevrons that drift upward toward a bin. The bin
- * grows as the button gets closer and turns red once releasing would
- * discard.
- */
 function CancelLane({
   dragY,
   armed,
@@ -905,7 +832,6 @@ function CancelLane({
 const WAVEFORM_BARS = 30;
 const WAVE_SAMPLE_MS = 80;
 
-/** Live timer and waveform while recording, then the result after release. */
 function RecordingCard({
   transcript,
   levelNow,
@@ -917,7 +843,6 @@ function RecordingCard({
   reduceMotion,
 }: {
   transcript: string;
-  /** Latest microphone level (0..1), written by the speech hook. */
   levelNow: React.MutableRefObject<number>;
   startedAt: number;
   level: SharedValue<number>;
@@ -930,8 +855,6 @@ function RecordingCard({
   const { width } = useWindowDimensions();
   const isLive = tail === null;
 
-  // Samples the mic level into a rolling waveform, and ticks the timer,
-  // only while this card is live.
   const [levels, setLevels] = useState<number[]>(() => Array(WAVEFORM_BARS).fill(0));
   const [elapsed, setElapsed] = useState(0);
   useEffect(() => {
@@ -1008,7 +931,6 @@ function RecordingCard({
                   styles.bar,
                   {
                     backgroundColor: cancelling ? colors.error : colors.accent,
-                    // Older samples fade out toward the left.
                     opacity: 0.35 + (0.65 * i) / (WAVEFORM_BARS - 1),
                   },
                 ]}
@@ -1016,7 +938,6 @@ function RecordingCard({
             ))}
           </View>
 
-          {/* The words as they're heard: the note is what you see here. */}
           <Text
             className="font-sans text-body mb-2"
             style={{ color: transcript ? colors.fg : colors.fgTertiary }}
