@@ -193,6 +193,8 @@ export async function syncGeofences(items: MnemoItem[], places: Place[]): Promis
     }
     if (started && watch.signature === signature && setThisLaunch) return;
     if (!(await Location.getBackgroundPermissionsAsync()).granted) return;
+    // With location off, Android quietly sets nothing; wait until it's on (rechecked on return to the app).
+    if (!(await Location.hasServicesEnabledAsync().catch(() => true))) return;
     await Location.startGeofencingAsync(GEOFENCE_TASK, regions);
     setThisLaunch = true;
     await AsyncStorage.setItem(WATCH_KEY, JSON.stringify({ signature, since: Date.now() }));

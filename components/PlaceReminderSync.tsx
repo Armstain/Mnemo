@@ -23,6 +23,8 @@ export function PlaceReminderSync() {
   const { places: on } = usePreferences();
   const latest = useRef(items);
   latest.current = items;
+  const latestPlaces = useRef(places);
+  latestPlaces.current = places;
 
   // The background task and late catches write to the database; the store follows.
   useEffect(() => onPlaceReminderChange((id, place) => updateItem(id, { place }, { touch: false })), [updateItem]);
@@ -36,6 +38,18 @@ export function PlaceReminderSync() {
     }, SYNC_DEBOUNCE_MS);
     return () => clearTimeout(handle);
   }, [items, places, isLoaded, on]);
+
+  // "All the time" is granted in a dialog or the phone's settings, after the
+  // sync above already ran and found it missing (setting a reminder asks for
+  // it). Nothing else changes on the way back, so without this the geofences
+  // were never set until the next edit or launch, and nothing rang.
+  useEffect(() => {
+    if (!isLoaded) return;
+    const subscription = AppState.addEventListener('change', (state) => {
+      if (state === 'active') syncGeofences(latest.current, latestPlaces.current);
+    });
+    return () => subscription.remove();
+  }, [isLoaded]);
 
   // On opening: one position, to catch what was missed. While open (and the
   // phone isn't watching in the background): follow the position, so a
