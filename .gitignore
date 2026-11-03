@@ -51,3 +51,7 @@ yarn-error.*
 
 # native module build output
 modules/*/android/build/
+
+# generated
+brag-output*/
+.gradle/
