@@ -3,6 +3,7 @@ import { Linking, Platform } from 'react-native';
 import * as Location from 'expo-location';
 
 import { getAllItems, updatePartialItem } from '@/lib/db';
+import { logError } from '@/lib/errors';
 import { loadPlaces } from '@/lib/place-store';
 import { isArmed, onFix, onPlaceEvent, pickWatched, placeLabel, watchedRadius, type PlaceEvent } from '@/lib/places';
 import { ringPlaceReminder } from '@/lib/place-sound';
@@ -17,6 +18,8 @@ export const GEOFENCE_TASK = 'mnemo-geofence';
 export const geofencingAvailable = Platform.OS === 'android' || Platform.OS === 'ios';
 
 const WATCH_KEY = 'mnemo-geofence-watch';
+/** The last enter/exit the background task heard (lib/geofence-task.ts), for the problem report. */
+export const GEOFENCE_EVENT_KEY = 'mnemo-geofence-event';
 const LATE_KEY = 'mnemo-geofence-late';
 
 export interface Fix {
@@ -198,7 +201,9 @@ export async function syncGeofences(items: MnemoItem[], places: Place[]): Promis
     await Location.startGeofencingAsync(GEOFENCE_TASK, regions);
     setThisLaunch = true;
     await AsyncStorage.setItem(WATCH_KEY, JSON.stringify({ signature, since: Date.now() }));
-  } catch {}
+  } catch (e) {
+    logError('geofence sync', e);
+  }
 }
 
 type Listener = (itemId: string, place: PlaceReminder) => void;
@@ -272,18 +277,34 @@ async function applyFix(items: MnemoItem[], here: Fix, opening: boolean): Promis
   }
 }
 
+/** No recent position cached (common: nothing else asked for one): read one, briefly. */
+async function freshFix(): Promise<Fix | null> {
+  try {
+    if (!(await Location.getForegroundPermissionsAsync()).granted) return null;
+    const p = await Promise.race([
+      Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced }),
+      new Promise<null>((resolve) => setTimeout(() => resolve(null), 15_000)),
+    ]);
+    return p ? { latitude: p.coords.latitude, longitude: p.coords.longitude, accuracy: p.coords.accuracy ?? 200 } : null;
+  } catch {
+    return null;
+  }
+}
+
 export async function catchUp(items: MnemoItem[]): Promise<void> {
   if (!getPreferences().places || !items.some(isArmed)) return;
-  const here = await lastFix();
+  const here = (await lastFix()) ?? (await freshFix());
   if (here) await applyFix(items, here, true);
 }
 
-/** Only without "all the time" (otherwise geofences do this). Returns the way to stop. */
+/**
+ * While Mnemo is open, follow the position so a reminder rings on the spot. Also with
+ * "all the time": Android's geofence alerts can lag minutes, or never come. Returns the way to stop.
+ */
 export async function watchWhileOpen(getItems: () => MnemoItem[]): Promise<() => void> {
   if (!geofencingAvailable || !getPreferences().places) return () => {};
   try {
     if (!(await Location.getForegroundPermissionsAsync()).granted) return () => {};
-    if ((await Location.getBackgroundPermissionsAsync()).granted) return () => {};
     const sub = await Location.watchPositionAsync(
       { accuracy: Location.Accuracy.Balanced, distanceInterval: 40, timeInterval: 30_000 },
       (p) => {
