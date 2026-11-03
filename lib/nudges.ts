@@ -5,26 +5,15 @@ import type { MnemoItem } from '@/types/mnemo';
 import { ensureReminderCategory, REMINDER_CATEGORY } from '@/lib/reminders';
 import { DAY_MS } from '@/utils/time';
 
-// ─── Gentle nudges ──────────────────────────────────────────────
-// "Resume" only works if the user remembers to open the app. Nudges are
-// the app reaching out instead: when a thread goes quiet for a couple of
-// days, one local notification brings it back with its next step.
-//
-// Everything is local notifications planned ahead of time — there's no
-// server, so the next PLAN_DAYS of nudges are computed from the current
-// items and scheduled up front, then re-planned whenever items change or
-// the app comes back to the foreground. Items can only change while the
-// app is open, so a plan made at the last change stays accurate until the
-// next one.
+// No server: the next PLAN_DAYS of nudges are scheduled locally up front and re-planned on item change or foreground.
+// Items only change while the app is open, so the last plan stays accurate until then.
 
 export type NudgeTime = 'morning' | 'midday' | 'evening';
 
 export interface NudgePrefs {
   enabled: boolean;
   time: NudgeTime | 'custom';
-  /** The clock time when `time` is 'custom'. */
   custom?: { hour: number; minute: number };
-  /** The weekly review notification (lib/review-notice.ts), under the same switch. */
   weekly: boolean;
 }
 
@@ -39,16 +28,13 @@ const DEFAULT_PREFS: NudgePrefs = { enabled: true, time: 'morning', weekly: true
 const PREFS_KEY = 'mnemo-nudge-prefs';
 const STATE_KEY = 'mnemo-nudge-state';
 const ID_PREFIX = 'nudge-';
-/** Nudges and the weekly review share one Android channel (one switch in system settings). */
+/** Shared with the weekly review: one switch in system settings. */
 export const ANDROID_CHANNEL_ID = 'nudges';
 
-/** How many days ahead to schedule. At most one nudge per day. */
 const PLAN_DAYS = 7;
-/** A thread counts as quiet once it's been untouched this long. */
 const QUIET_AFTER_MS = 2 * DAY_MS;
-/** Past this, a thread is probably abandoned, not paused — stop nudging it. */
+/** Past this a thread is probably abandoned, not paused. */
 const GIVE_UP_AFTER_MS = 14 * DAY_MS;
-/** Minimum gap before the same thread can be nudged again. */
 const RENUDGE_AFTER_MS = 4 * DAY_MS;
 
 type NudgeItem = Pick<
@@ -62,13 +48,10 @@ interface NudgeSlot {
 }
 
 interface NudgeState {
-  /** What the last plan scheduled. Slots whose time has passed were delivered. */
+  /** Slots whose time has passed were delivered. */
   planned: NudgeSlot[];
-  /** itemId → when it was last nudged, so an ignored nudge doesn't repeat daily. */
   delivered: Record<string, number>;
 }
-
-// ─── Preferences ────────────────────────────────────────────────
 
 export async function loadNudgePrefs(): Promise<NudgePrefs> {
   try {
@@ -82,18 +65,14 @@ export async function loadNudgePrefs(): Promise<NudgePrefs> {
         custom: parsed.custom,
       };
     }
-  } catch {
-    // Unreadable — fall back to defaults.
-  }
+  } catch {}
   return DEFAULT_PREFS;
 }
 
 export async function saveNudgePrefs(prefs: NudgePrefs): Promise<void> {
   try {
     await AsyncStorage.setItem(PREFS_KEY, JSON.stringify(prefs));
-  } catch {
-    // Non-critical — the preference just won't survive a restart.
-  }
+  } catch {}
 }
 
 async function loadState(): Promise<NudgeState> {
@@ -106,13 +85,9 @@ async function loadState(): Promise<NudgeState> {
         delivered: parsed.delivered && typeof parsed.delivered === 'object' ? parsed.delivered : {},
       };
     }
-  } catch {
-    // Unreadable — start fresh.
-  }
+  } catch {}
   return { planned: [], delivered: {} };
 }
-
-// ─── Permission ─────────────────────────────────────────────────
 
 export async function ensureAndroidChannel(): Promise<void> {
   if (Platform.OS !== 'android') return;
@@ -123,7 +98,6 @@ export async function ensureAndroidChannel(): Promise<void> {
   });
 }
 
-/** Whether notifications are currently allowed, without prompting. */
 export async function hasNudgePermission(): Promise<boolean> {
   if (Platform.OS === 'web') return false;
   try {
@@ -133,10 +107,7 @@ export async function hasNudgePermission(): Promise<boolean> {
   }
 }
 
-/**
- * Asks for notification permission. Only call from an explicit user action
- * (onboarding's "Turn on nudges", the Settings toggle) — never on mount.
- */
+/** Only call from an explicit user action, never on mount. */
 export async function requestNudgePermission(): Promise<boolean> {
   if (Platform.OS === 'web') return false;
   try {
@@ -151,7 +122,6 @@ export async function requestNudgePermission(): Promise<boolean> {
   }
 }
 
-/** Fires one nudge a few seconds from now, so the whole path can be checked. */
 export async function sendTestNudge(): Promise<boolean> {
   if (!(await requestNudgePermission())) return false;
   try {
@@ -167,22 +137,15 @@ export async function sendTestNudge(): Promise<boolean> {
   }
 }
 
-/** The hour and minute nudges go out at. */
 export function nudgeClock(prefs: NudgePrefs): { hour: number; minute: number } {
   return prefs.time === 'custom' && prefs.custom ? prefs.custom : NUDGE_TIMES[prefs.time === 'custom' ? 'morning' : prefs.time];
 }
-
-// ─── Planning ───────────────────────────────────────────────────
 
 function lastTouched(item: NudgeItem): number {
   return Math.max(item.updatedAt, item.lastResumedAt ?? 0);
 }
 
-/**
- * Pure: which thread, if any, each of the next PLAN_DAYS nudge times should
- * bring back. Each thread appears at most once per plan, and never within
- * RENUDGE_AFTER_MS of the last time it was actually delivered.
- */
+/** Each thread appears at most once per plan, and never within RENUDGE_AFTER_MS of its last delivery. */
 function planSlots(
   items: NudgeItem[],
   clock: { hour: number; minute: number },
@@ -197,9 +160,7 @@ function planSlots(
         // A future due date already has its own reminder (lib/reminders.ts).
         !(item.dueDate && item.dueDate > now),
     )
-    // Threads with a next step first — the nudge can say what to do, not
-    // just that something exists. Then the most recently touched, since
-    // the freshest quiet thread is the one most likely still wanted.
+    // Next step first, then freshest: the nudge can say what to do, and recent threads are most likely still wanted.
     .sort((a, b) => {
       const byNextStep = Number(!!b.nextStep) - Number(!!a.nextStep);
       return byNextStep !== 0 ? byNextStep : lastTouched(b) - lastTouched(a);
@@ -213,7 +174,7 @@ function planSlots(
   const used = new Set<string>();
   const slots: NudgeSlot[] = [];
   for (let day = 0; day < PLAN_DAYS; day++) {
-    // setDate (not + day * DAY_MS) so a DST shift doesn't move the hour.
+    // setDate, not + day * DAY_MS, so DST doesn't move the hour.
     const fire = new Date(first);
     fire.setDate(first.getDate() + day);
     const fireAt = fire.getTime();
@@ -253,7 +214,6 @@ async function replan(items: NudgeItem[]): Promise<void> {
   const now = Date.now();
   const [prefs, state] = await Promise.all([loadNudgePrefs(), loadState()]);
 
-  // Slots from the previous plan whose time has passed were delivered.
   const delivered = { ...state.delivered };
   for (const slot of state.planned) {
     if (slot.fireAt <= now) {
@@ -276,10 +236,8 @@ async function replan(items: NudgeItem[]): Promise<void> {
         content: {
           title: item.title,
           body: nudgeBody(item, slot.fireAt),
-          // Routing reads itemId from here — the identifier is a slot, not
-          // an item id like a due-date reminder's is.
+          // The identifier is a slot, not an item id, so routing reads itemId from here.
           data: { itemId: item.id },
-          // Same buttons as a reminder: Done, In an hour, Reply.
           categoryIdentifier: REMINDER_CATEGORY,
         },
         trigger: {
@@ -292,7 +250,6 @@ async function replan(items: NudgeItem[]): Promise<void> {
     }
   }
 
-  // Drop history for deleted items and anything old enough not to matter.
   const liveIds = new Set(items.map((item) => item.id));
   const pruned: Record<string, number> = {};
   for (const [id, at] of Object.entries(delivered)) {
@@ -302,16 +259,10 @@ async function replan(items: NudgeItem[]): Promise<void> {
   await AsyncStorage.setItem(STATE_KEY, JSON.stringify({ planned, delivered: pruned }));
 }
 
-// Serialized — an items change and a Settings change can both trigger a
-// replan at once, and interleaved cancel/schedule passes could otherwise
-// leave a slot from the older plan behind.
+// Serialized: interleaved cancel/schedule passes could leave a slot from the older plan behind.
 let replanChain: Promise<void> = Promise.resolve();
 
-/**
- * Re-plans every upcoming nudge from the current items and preferences.
- * Safe to call as often as needed. Best-effort, like reminders: failures
- * are absorbed, never thrown.
- */
+/** Failures are absorbed, never thrown. */
 export function scheduleNudges(items: NudgeItem[]): Promise<void> {
   if (Platform.OS === 'web') return Promise.resolve();
   replanChain = replanChain.then(() => replan(items)).catch(() => {});

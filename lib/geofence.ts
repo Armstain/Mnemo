@@ -10,18 +10,10 @@ import { getPreferences } from '@/lib/preferences';
 import { openSettings, reminderHealth, type CheckState } from '@/lib/reliability';
 import type { MnemoItem, Place, PlaceReminder } from '@/types/mnemo';
 
-// The phone's side of location reminders (the rules are in lib/places.ts).
-//
-// Android watches the saved places that have a reminder waiting (a
-// geofence each) and wakes Mnemo's background task on entering or leaving
-// one, even with the app closed. That only works when Mnemo may use
-// location "all the time", location is on, and the battery saver leaves it
-// alone, so `placeHealth` checks all of that and Home says what's missing.
-// When the phone holds an event back anyway, opening Mnemo catches it
-// (`catchUp`) and remembers that it happened, so the warning stays honest.
+// Phone side of location reminders (rules in lib/places.ts). Background events need "all the time"
+// location, and a phone may still hold one back, so opening Mnemo catches it (`catchUp`).
 
 export const GEOFENCE_TASK = 'mnemo-geofence';
-/** Geofencing needs a phone; the web can still save places (browser location). */
 export const geofencingAvailable = Platform.OS === 'android' || Platform.OS === 'ios';
 
 const WATCH_KEY = 'mnemo-geofence-watch';
@@ -33,9 +25,6 @@ export interface Fix {
   accuracy: number;
 }
 
-// ─── Where am I ─────────────────────────────────────────────────
-
-/** Asks for location while the app is open, if it hasn't been allowed. */
 export async function allowForeground(): Promise<boolean> {
   try {
     const now = await Location.getForegroundPermissionsAsync();
@@ -47,10 +36,7 @@ export async function allowForeground(): Promise<boolean> {
   }
 }
 
-/**
- * Asks for "Allow all the time". Android 11+ can't ask in a dialog: it
- * opens Mnemo's location settings, so the answer comes back on return.
- */
+/** Android 11+ can't ask in a dialog: it opens location settings, so the answer comes back on return. */
 export async function allowBackground(): Promise<boolean> {
   if (!geofencingAvailable) return false;
   if (!(await allowForeground())) return false;
@@ -68,7 +54,7 @@ export async function allowBackground(): Promise<boolean> {
   }
 }
 
-/** A fresh, careful fix for saving a place. Throws with a sentence to show when it can't. */
+/** Throws with a sentence to show when it can't. */
 export async function locateHere(): Promise<Fix> {
   if (!(await allowForeground())) throw new Error('Mnemo needs location to save where you are.');
   if (Platform.OS !== 'web' && !(await Location.hasServicesEnabledAsync().catch(() => true))) {
@@ -81,7 +67,6 @@ export async function locateHere(): Promise<Fix> {
   return { latitude: fix.coords.latitude, longitude: fix.coords.longitude, accuracy: Math.round(fix.coords.accuracy ?? 999) };
 }
 
-/** A recent position without waking the GPS, or null. */
 async function lastFix(): Promise<Fix | null> {
   try {
     if (!(await Location.getForegroundPermissionsAsync()).granted) return null;
@@ -92,31 +77,23 @@ async function lastFix(): Promise<Fix | null> {
   }
 }
 
-// ─── Will it work ───────────────────────────────────────────────
-
 export interface PlaceHealth {
-  /** False on the web: places can be saved, but nothing watches them. */
   available: boolean;
   services: CheckState;
   foreground: CheckState;
-  /** "Allow all the time": without it, nothing fires while Mnemo is closed. */
   background: CheckState;
   notifications: CheckState;
-  /** Android battery optimisation, where it can be read. */
   battery: CheckState | null;
-  /** The last time a reminder had to be caught on opening Mnemo, if recent. */
   lateAt: number | null;
 }
 
 export interface PlaceProblem {
   key: keyof Omit<PlaceHealth, 'available' | 'lateAt'> | 'late' | 'web';
   text: string;
-  /** Label for the button that fixes it. */
   action?: string;
   fix?: () => void;
 }
 
-/** A late catch older than this is old news. */
 const LATE_MEMORY_MS = 14 * 24 * 60 * 60 * 1000;
 
 export async function placeHealth(): Promise<PlaceHealth> {
@@ -141,7 +118,6 @@ export async function placeHealth(): Promise<PlaceHealth> {
   };
 }
 
-/** What stands between a place reminder and it going off, most important first. */
 export function placeProblems(h: PlaceHealth): PlaceProblem[] {
   if (!h.available) return [{ key: 'web', text: 'Place reminders need the phone app; here places can only be saved.' }];
   const out: PlaceProblem[] = [];
@@ -173,12 +149,8 @@ export function placeProblems(h: PlaceHealth): PlaceProblem[] {
   return out;
 }
 
-// ─── Watching places ────────────────────────────────────────────
-
 interface Watch {
-  /** Which circles are watched, so an unchanged list isn't set again. */
   signature: string;
-  /** When the list was last set: events just after are "where you already are". */
   since: number;
 }
 
@@ -192,7 +164,6 @@ async function loadWatch(): Promise<Watch> {
   }
 }
 
-/** The circles to watch: places some open reminder is waiting on, at most MAX_WATCHED. */
 export function watchList(items: MnemoItem[], places: Place[]): Location.LocationRegion[] {
   return pickWatched(items, places).watched.map((p) => ({
     identifier: p.id,
@@ -207,12 +178,7 @@ export function watchList(items: MnemoItem[], places: Place[]): Location.Locatio
 /** Phones drop geofences on restart, so the list is set again once per launch. */
 let setThisLaunch = false;
 
-/**
- * Keeps the phone's geofences in step with the reminders: when the list
- * changes, and once per launch. Not more often, since every new list makes
- * the phone report "inside" again. Never asks for permission. Off in
- * Settings: nothing is watched.
- */
+/** Not set more often than needed: every new list makes the phone report "inside" again. Never asks for permission. */
 export async function syncGeofences(items: MnemoItem[], places: Place[]): Promise<void> {
   if (!geofencingAvailable) return;
   try {
@@ -230,17 +196,12 @@ export async function syncGeofences(items: MnemoItem[], places: Place[]): Promis
     await Location.startGeofencingAsync(GEOFENCE_TASK, regions);
     setThisLaunch = true;
     await AsyncStorage.setItem(WATCH_KEY, JSON.stringify({ signature, since: Date.now() }));
-  } catch {
-    // Best-effort like every reminder; placeHealth says what's wrong.
-  }
+  } catch {}
 }
-
-// ─── When a reminder goes off ───────────────────────────────────
 
 type Listener = (itemId: string, place: PlaceReminder) => void;
 const listeners = new Set<Listener>();
 
-/** A thread's place reminder changed outside the store (the background task, a late catch). */
 export function onPlaceReminderChange(listener: Listener): () => void {
   listeners.add(listener);
   return () => listeners.delete(listener);
@@ -261,7 +222,7 @@ async function show(item: MnemoItem, placeName: string | undefined, note?: strin
   });
 }
 
-/** Reminders already rung in this run, so two quick reports can't ring one twice. */
+/** So two quick reports can't ring one reminder twice. */
 const rung = new Set<string>();
 
 async function fire(item: MnemoItem, place: Place | undefined, note?: string, late = false): Promise<void> {
@@ -272,10 +233,7 @@ async function fire(item: MnemoItem, place: Place | undefined, note?: string, la
   await save(item, { ...item.place!, firedAt: Date.now(), ...(late ? { caughtLate: true } : {}) });
 }
 
-/**
- * The background task's work: Android says the phone entered or left a
- * watched place. Runs with the app closed, so it reads the threads itself.
- */
+/** Runs with the app closed, so it reads the threads itself. */
 export async function handleGeofenceEvent(event: PlaceEvent, placeId: string, now = Date.now()): Promise<void> {
   const [items, places, watch] = await Promise.all([getAllItems(), loadPlaces(), loadWatch()]);
   const place = places.find((p) => p.id === placeId);
@@ -291,12 +249,7 @@ export async function handleGeofenceEvent(event: PlaceEvent, placeId: string, no
   }
 }
 
-/**
- * A position the app read itself, applied to every waiting reminder: notes
- * where new ones started (inside the place or not), and rings any whose
- * place was plainly reached or left. `opening`: the app just opened, so a
- * ring now is one the phone should have given earlier, and it says so.
- */
+/** `opening`: the app just opened, so a ring now is one the phone should have given earlier, and it says so. */
 async function applyFix(items: MnemoItem[], here: Fix, opening: boolean): Promise<void> {
   const places = await loadPlaces();
   const watching = opening && (await Location.getBackgroundPermissionsAsync().catch(() => ({ granted: false }))).granted;
@@ -308,8 +261,7 @@ async function applyFix(items: MnemoItem[], here: Fix, opening: boolean): Promis
     if (action === 'inside' || action === 'outside') {
       await save(item, { ...r, insideAtSet: action === 'inside' });
     } else if (action === 'fire' && opening) {
-      // Watched in the background and still missed: the phone held it back.
-      // Not watched (no "all the time"): it could only be noticed now.
+      // Watched and still missed: the phone held it back. Unwatched: only noticeable now.
       await fire(item, place, watching ? 'late: your phone held it back' : 'noticed when you opened Mnemo', watching);
       if (watching) await AsyncStorage.setItem(LATE_KEY, String(Date.now())).catch(() => {});
     } else if (action === 'fire') {
@@ -318,19 +270,13 @@ async function applyFix(items: MnemoItem[], here: Fix, opening: boolean): Promis
   }
 }
 
-/** When Mnemo opens or comes back: one recent position, applied (see applyFix). */
 export async function catchUp(items: MnemoItem[]): Promise<void> {
   if (!getPreferences().places || !items.some(isArmed)) return;
   const here = await lastFix();
   if (here) await applyFix(items, here, true);
 }
 
-/**
- * While Mnemo is open, without "all the time": nothing else is watching, so
- * the app follows the phone's position itself and rings on the spot. With
- * it, the phone's geofences do this and the app stays out of the way.
- * Returns the way to stop.
- */
+/** Only without "all the time" (otherwise geofences do this). Returns the way to stop. */
 export async function watchWhileOpen(getItems: () => MnemoItem[]): Promise<() => void> {
   if (!geofencingAvailable || !getPreferences().places) return () => {};
   try {
