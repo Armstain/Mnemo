@@ -1,4 +1,4 @@
-import { GoogleGenAI, Modality, Type, type GenerateContentParameters } from '@google/genai';
+import { GoogleGenAI, Modality, Type, type GenerateContentParameters, type HarmBlockThreshold, type HarmCategory, type SafetySetting } from '@google/genai';
 import { getActiveApiKey, onApiKeyChanged } from './api-key';
 import { isLiteModel, isMissingModel, isOverloaded, pickTextModels, pickTtsModel, quotaInfo, quotaPause, type ModelInfo } from './model-pick';
 import { aiEnabled, setAiNotice } from './ai-mode';
@@ -108,6 +108,19 @@ const OVERLOAD_PAUSE_MS = 1500;
  */
 const REQUEST_TIMEOUT_MS = 90_000;
 
+/**
+ * Gemini's default filters sometimes decline an ordinary note (a place
+ * name, a reminder) as "dangerous". The four categories the API lets a
+ * caller adjust are set to block only what's rated HIGH, so a false alarm
+ * at MEDIUM goes through. Nothing is turned off (no BLOCK_NONE), and the
+ * filters Google always applies stay on whatever is set here. Written as
+ * the API's own string values, so the type comes from the SDK without
+ * needing its runtime enums.
+ */
+export const SAFETY_SETTINGS: SafetySetting[] = (
+  ['HARM_CATEGORY_HARASSMENT', 'HARM_CATEGORY_HATE_SPEECH', 'HARM_CATEGORY_SEXUALLY_EXPLICIT', 'HARM_CATEGORY_DANGEROUS_CONTENT'] as const
+).map((category) => ({ category: category as HarmCategory, threshold: 'BLOCK_ONLY_HIGH' as HarmBlockThreshold }));
+
 /** For callers that asked for JSON: text that doesn't parse is no better than none. */
 const parsesAsJson = (text: string): void => {
   JSON.parse(text);
@@ -142,7 +155,12 @@ async function generateText(
         const response = await client.models.generateContent({
           model,
           ...params,
-          config: { ...params.config, httpOptions: { ...params.config?.httpOptions, timeout: REQUEST_TIMEOUT_MS } },
+          config: {
+            ...params.config,
+            // A caller's own settings win; otherwise only HIGH blocks (SAFETY_SETTINGS).
+            safetySettings: params.config?.safetySettings ?? SAFETY_SETTINGS,
+            httpOptions: { ...params.config?.httpOptions, timeout: REQUEST_TIMEOUT_MS },
+          },
         });
         let unreadable = false;
         if (response.text && validate) {

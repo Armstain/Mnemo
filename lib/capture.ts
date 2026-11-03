@@ -1,3 +1,4 @@
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Directory, Paths } from 'expo-file-system';
 import {
   processAudioDump,
@@ -756,6 +757,70 @@ async function embedThread(store: CaptureStore, threadId: string): Promise<void>
 const BACKOFF_MS = [30_000, 60_000, 2 * 60_000, 5 * 60_000, 10 * 60_000, 30 * 60_000];
 const attempts = new Map<string, { count: number; nextAt: number }>();
 
+// ─── Notes Gemini's safety filter declined ──────────────────────
+// A block is Google's answer about this note's content, so sending the same
+// content again gets the same answer: the sweep leaves it. It's kept apart
+// from `attempts` (which "try everything now" clears) and saved, so neither
+// returning to the app nor restarting it sends the note again. What's
+// remembered is the content that was declined: once the person edits the
+// note, it differs, and the edited note goes through. Retry sends it too
+// (retryEntryNow), and clears the record first.
+
+const BLOCKED_KEY = 'mnemo-ai-blocked';
+/** Entry id → the content Gemini declined. */
+let blocked = new Map<string, string>();
+const blockedLoaded: Promise<void> = AsyncStorage.getItem(BLOCKED_KEY)
+  .then((raw) => {
+    const saved = raw ? JSON.parse(raw) : null;
+    if (saved && typeof saved === 'object') blocked = new Map(Object.entries(saved).filter((e): e is [string, string] => typeof e[1] === 'string'));
+  })
+  .catch(() => undefined);
+
+function saveBlocked(): void {
+  AsyncStorage.setItem(BLOCKED_KEY, JSON.stringify(Object.fromEntries(blocked))).catch(() => {
+    // Kept for this session; written again on the next change.
+  });
+}
+
+/** What would be sent for this note: its words, and its recording if there's one. */
+function sentContent(e: Pick<Entry, 'pendingRawText' | 'pendingAudioUri' | 'blocks'>): string {
+  return `${(e.pendingRawText ?? textOf(e)).trim()}|${e.pendingAudioUri ?? ''}`;
+}
+
+/** The note as it is now was declined by the safety filter: the sweep leaves it. */
+export function isBlockedNote(e: Pick<Entry, 'id' | 'pendingRawText' | 'pendingAudioUri' | 'blocks'>): boolean {
+  const declined = blocked.get(e.id);
+  return declined !== undefined && declined === sentContent(e);
+}
+
+function markBlocked(entryId: string, store: CaptureStore): void {
+  const now = store.snapshot().entries.find((x) => x.id === entryId);
+  if (!now) return;
+  blocked.set(entryId, sentContent(now));
+  saveBlocked();
+}
+
+function clearBlocked(entryId: string): void {
+  if (blocked.delete(entryId)) saveBlocked();
+}
+
+/**
+ * Retry, from the note itself: sends it now whatever happened before,
+ * a safety block included. If it's declined again, the sweep goes back to
+ * leaving it. Throws like structurePendingEntry, for the screen to explain.
+ */
+export async function retryEntryNow(entry: PendingEntry, store: CaptureStore): Promise<void> {
+  await blockedLoaded;
+  clearBlocked(entry.id);
+  attempts.delete(entry.id);
+  try {
+    await structurePendingEntry(entry, store);
+  } catch (e) {
+    if (classifyAiError(e) === 'blocked') markBlocked(entry.id, store);
+    throw e;
+  }
+}
+
 /**
  * Fire-and-forget version of `structurePendingEntry` for background callers
  * (freshly saved entries, PendingProcessor's sweeps). Never throws. On
@@ -766,6 +831,11 @@ const attempts = new Map<string, { count: number; nextAt: number }>();
  * Gemini busy, no signal): a sweep stops there instead of trying them all.
  */
 export async function resolvePendingEntry(entry: PendingEntry, store: CaptureStore): Promise<boolean> {
+  await blockedLoaded;
+  // Declined by the safety filter as it stands: only an edit or Retry sends it.
+  const current = store.snapshot().entries.find((x) => x.id === entry.id) ?? entry;
+  if (isBlockedNote(current)) return false;
+  clearBlocked(entry.id);
   const previous = attempts.get(entry.id);
   if (previous && Date.now() < previous.nextAt) return false;
   try {
@@ -781,13 +851,20 @@ export async function resolvePendingEntry(entry: PendingEntry, store: CaptureSto
       attempts.delete(entry.id);
       return true;
     }
+    const problem = classifyAiError(e);
+    if (problem === 'blocked') {
+      // Not a failure to wait out: off the back-off list, and left by the sweep.
+      attempts.delete(entry.id);
+      markBlocked(entry.id, store);
+      logError('ai', e);
+      return false;
+    }
     const count = (previous?.count ?? 0) + 1;
     attempts.set(entry.id, { count, nextAt: Date.now() + BACKOFF_MS[Math.min(count, BACKOFF_MS.length) - 1] });
-    const problem = classifyAiError(e);
     if (problem === 'invalid' || problem === 'quota') setAiProblem(problem, problem === 'quota' ? aiErrorText(e) : null);
     // Only a note's first failure is logged: its retries would fill the log with the same error.
     // (An empty answer is logged with its cause, see lib/empty-response.ts.)
-    const worthLogging = problem === 'other' || problem === 'blocked' || problem === 'truncated' || problem === 'empty';
+    const worthLogging = problem === 'other' || problem === 'truncated' || problem === 'empty';
     if (worthLogging && !previous) logError('ai', e);
     // A bad key, a spent quota, a busy Gemini or no signal would fail the
     // same way for every other waiting note: the sweep stops here.

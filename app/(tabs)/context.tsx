@@ -43,9 +43,9 @@ import { useThemeColors } from '@/hooks/use-theme';
 import { organiseNotes } from '@/lib/gemini';
 import { canOrganise, cleanOverview, notesSince, notesToOrganise, overviewText } from '@/lib/overview';
 import { aiEnabled } from '@/lib/ai-mode';
-import { aiErrorText, classifyAiError } from '@/lib/api-key';
+import { aiErrorText, retryProblemText } from '@/lib/api-key';
 import { usePreferences } from '@/lib/preferences';
-import { structurePendingEntry } from '@/lib/capture';
+import { retryEntryNow } from '@/lib/capture';
 import { relatedThreads, type RelatedThread } from '@/lib/search';
 import { entryText } from '@/lib/threads';
 import { matchEntries } from '@/lib/find';
@@ -309,13 +309,11 @@ export default function ThreadScreen() {
     setIsGenerating(true);
     try {
       // A voice note whose sound is gone is written out from its words instead.
-      for (const entry of pendingEntries) await structurePendingEntry(entry, store);
+      // Retry sends each note now, one the safety filter declined included.
+      for (const entry of pendingEntries) await retryEntryNow(entry, store);
     } catch (e) {
-      const problem = classifyAiError(e);
-      Alert.alert(
-        problem === 'offline' ? 'Still offline?' : 'Gemini had a problem',
-        `${aiErrorText(e)} It's tried again by itself.`,
-      );
+      const { title, message } = retryProblemText(e);
+      Alert.alert(title, message);
     } finally {
       setIsGenerating(false);
     }

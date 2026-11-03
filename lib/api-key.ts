@@ -115,6 +115,28 @@ export function aiErrorText(err: unknown): string {
   return `Gemini is getting too many requests this minute. ${retry} Notes are saved and will be tidied up later.`;
 }
 
+/** Problems the background sweep tries again by itself (lib/capture.ts). */
+const RETRIED_BY_ITSELF: KeyProblem[] = ['offline', 'quota', 'busy'];
+
+/**
+ * What the Retry dialog on a note says. Only a problem that's actually
+ * tried again later says so; a safety block is left until the note is
+ * edited or Retry is tapped, and says that instead.
+ */
+export function retryProblemText(err: unknown): { title: string; message: string } {
+  const problem = classifyAiError(err);
+  const title = problem === 'offline' ? 'Still offline?' : 'Gemini had a problem';
+  if (problem === 'blocked') {
+    return {
+      title,
+      message:
+        "Gemini's safety filter declined to process this note. It's saved as you wrote it. It won't be tried again until you edit it or tap Retry.",
+    };
+  }
+  const text = aiErrorText(err);
+  return { title, message: RETRIED_BY_ITSELF.includes(problem) ? `${text} It's tried again by itself.` : text };
+}
+
 /**
  * The request never left the phone (no connection), so it cost nothing and
  * can be tried again soon. A timeout isn't this: the call may have reached Gemini.

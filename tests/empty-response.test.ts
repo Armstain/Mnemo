@@ -1,10 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { aiErrorText, classifyAiError } from '@/lib/api-key';
-import { emptyKindOf } from '@/lib/empty-response';
+import { describeEmpty, EmptyResponseError, emptyKindOf, topSafety } from '@/lib/empty-response';
 import { processAudioDump, processVoiceDump } from '@/lib/gemini';
 
 // A pretend Google: three flash models; each answers as `behaviour` says.
 const calls = vi.hoisted(() => [] as string[]);
+// The config each request was sent with.
+const configs = vi.hoisted(() => [] as Record<string, unknown>[]);
 const behaviour = vi.hoisted(() => new Map<string, () => unknown>());
 
 vi.mock('expo-secure-store', () => ({}));
@@ -18,8 +20,9 @@ vi.mock('@google/genai', () => ({
           for (const name of ['gemini-3-flash-preview', 'gemini-2.5-flash', 'gemini-2.5-flash-lite'])
             yield { name: `models/${name}`, supportedActions: ['generateContent'] };
         })(),
-      generateContent: async ({ model }: { model: string }) => {
+      generateContent: async ({ model, config }: { model: string; config: Record<string, unknown> }) => {
         calls.push(model);
+        configs.push(config);
         return (behaviour.get(model) ?? valid)();
       },
     };
@@ -37,6 +40,20 @@ const valid = () => ({ text: JSON.stringify(NOTE) });
 const empty = () => ({ text: undefined, candidates: [{ finishReason: 'STOP' }] });
 const truncated = () => ({ text: '', candidates: [{ finishReason: 'MAX_TOKENS' }] });
 const safety = () => ({ text: undefined, candidates: [{ finishReason: 'SAFETY' }], promptFeedback: { blockReason: 'PROHIBITED_CONTENT' } });
+// What the phone saw for "Remind me when I get to Eastern": blocked at the
+// prompt, no candidates, and the ratings saying which category fired.
+const rated = () => ({
+  text: undefined,
+  candidates: [],
+  promptFeedback: {
+    blockReason: 'PROHIBITED_CONTENT',
+    safetyRatings: [
+      { category: 'HARM_CATEGORY_HARASSMENT', probability: 'NEGLIGIBLE' },
+      { category: 'HARM_CATEGORY_DANGEROUS_CONTENT', probability: 'HIGH' },
+      { category: 'HARM_CATEGORY_HATE_SPEECH', probability: 'LOW' },
+    ],
+  },
+});
 
 const cutOff = () => ({ text: '{"title":"Plumber","notes":"Call the', candidates: [{ finishReason: 'MAX_TOKENS' }] });
 
@@ -119,5 +136,53 @@ describe('an answer with no text', () => {
 
   it('counts in the message are not taken for status codes', () => {
     expect(classifyAiError(new Error('Gemini returned no text (empty) · input: transcript 429 chars · gemini-2.5-flash finish=STOP candidates=1'))).toBe('empty');
+  });
+});
+
+describe('which safety category fired', () => {
+  beforeEach(() => {
+    calls.length = 0;
+    configs.length = 0;
+    behaviour.clear();
+  });
+
+  it('a block names the category and its probability, right after the cause', async () => {
+    for (const m of ['gemini-3-flash-preview', 'gemini-2.5-flash', 'gemini-2.5-flash-lite']) behaviour.set(m, rated);
+    const error = await processVoiceDump('Remind me when I get to Eastern').catch((e) => e);
+    expect(error.message).toMatch(/^Gemini returned no text \(blocked\) · safety=HARM_CATEGORY_DANGEROUS_CONTENT:HIGH · input: transcript 31 chars · /);
+    expect(error.message).toContain('block=PROHIBITED_CONTENT candidates=0');
+    expect(emptyKindOf(error)).toBe('blocked');
+    expect(classifyAiError(error)).toBe('blocked');
+  });
+
+  it("reads a candidate's ratings too, and prefers the one Google marks as the blocker", () => {
+    const a = describeEmpty(
+      {
+        candidates: [{ finishReason: 'SAFETY', safetyRatings: [{ category: 'HARM_CATEGORY_HARASSMENT', probability: 'HIGH' }, { category: 'HARM_CATEGORY_DANGEROUS_CONTENT', probability: 'MEDIUM', blocked: true }] }],
+      },
+      'gemini-2.5-flash',
+    );
+    expect(a.safety).toHaveLength(2);
+    expect(topSafety([a])).toEqual({ category: 'HARM_CATEGORY_DANGEROUS_CONTENT', probability: 'MEDIUM', blocked: true });
+    expect(new EmptyResponseError([a]).message).toContain('safety=HARM_CATEGORY_DANGEROUS_CONTENT:MEDIUM');
+  });
+
+  it('no ratings, or not a block: nothing about safety in the message', () => {
+    expect(new EmptyResponseError([describeEmpty({ promptFeedback: { blockReason: 'OTHER' } }, 'm')]).message).not.toContain('safety=');
+    expect(new EmptyResponseError([describeEmpty({ candidates: [{ finishReason: 'MAX_TOKENS' }] }, 'm')]).message).not.toContain('safety=');
+  });
+
+  it('every request asks to block only HIGH in the four adjustable categories, and never turns one off', async () => {
+    await processVoiceDump('call the plumber');
+    expect(configs[0].safetySettings).toEqual([
+      { category: 'HARM_CATEGORY_HARASSMENT', threshold: 'BLOCK_ONLY_HIGH' },
+      { category: 'HARM_CATEGORY_HATE_SPEECH', threshold: 'BLOCK_ONLY_HIGH' },
+      { category: 'HARM_CATEGORY_SEXUALLY_EXPLICIT', threshold: 'BLOCK_ONLY_HIGH' },
+      { category: 'HARM_CATEGORY_DANGEROUS_CONTENT', threshold: 'BLOCK_ONLY_HIGH' },
+    ]);
+    expect(JSON.stringify(configs)).not.toMatch(/BLOCK_NONE|"OFF"|CIVIC_INTEGRITY/);
+    // The rest of the config is the caller's, as before.
+    expect(configs[0].responseMimeType).toBe('application/json');
+    expect(configs[0].httpOptions).toEqual({ timeout: 90_000 });
   });
 });
