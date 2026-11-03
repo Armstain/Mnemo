@@ -58,11 +58,26 @@ export async function readErrors(): Promise<LoggedError[]> {
   }
 }
 
+/** Place reminders: how many places the phone watches since when, and the last event it sent. No coordinates. */
+async function placeLine(): Promise<string> {
+  try {
+    const [w, e] = await Promise.all([AsyncStorage.getItem('mnemo-geofence-watch'), AsyncStorage.getItem('mnemo-geofence-event')]);
+    const watch = w ? JSON.parse(w) : null;
+    const event = e ? JSON.parse(e) : null;
+    const count = watch?.signature ? String(watch.signature).split('|').length : 0;
+    const when = (at: unknown) => (Number(at) ? new Date(Number(at)).toISOString() : 'never');
+    return `Places watched: ${count}${count ? ` since ${when(watch.since)}` : ''} · last place event: ${event ? `${event.event} ${when(event.at)}` : 'never'}`;
+  } catch {
+    return 'Places: unreadable';
+  }
+}
+
 /** The report a person can paste into an email or issue: versions and recent errors. */
 export async function problemReport(): Promise<string> {
   const errors = await readErrors();
   const lines = [
     `Mnemo ${Constants.expoConfig?.version ?? '?'} · ${Platform.OS} ${String(Platform.Version)}`,
+    await placeLine(),
     `Errors logged: ${errors.length}`,
     ...errors
       .slice(-10)

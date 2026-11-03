@@ -51,9 +51,8 @@ export function PlaceReminderSync() {
     return () => subscription.remove();
   }, [isLoaded]);
 
-  // On opening: one position, to catch what was missed. While open (and the
-  // phone isn't watching in the background): follow the position, so a
-  // reminder rings on the spot. Stopped in the background.
+  // On opening: one position, to catch what was missed. While open: follow
+  // the position, so a reminder rings on the spot. Stopped in the background.
   const anyArmed = items.some(isArmed);
   useEffect(() => {
     if (!isLoaded || !on || !anyArmed) return;
