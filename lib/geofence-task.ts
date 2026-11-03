@@ -3,14 +3,19 @@ import * as TaskManager from 'expo-task-manager';
 import { GeofencingEventType, type LocationRegion } from 'expo-location';
 
 import { logError } from '@/lib/errors';
-import { GEOFENCE_EVENT_KEY, GEOFENCE_TASK, handleGeofenceEvent } from '@/lib/geofence';
+import { forgetWatch, GEOFENCE_EVENT_KEY, GEOFENCE_TASK, handleGeofenceEvent } from '@/lib/geofence';
 
 // Android starts Mnemo's JS in the background to run this, even with the
 // app closed, so it's defined when the app's entry file loads (index.ts),
 // not inside a screen.
 TaskManager.defineTask<{ eventType: GeofencingEventType; region: LocationRegion }>(GEOFENCE_TASK, async ({ data, error }) => {
   // Android's own errors, e.g. "Geofencing not available." when Google location accuracy is off.
-  if (error) return logError('geofence task', error);
+  // Android drops every geofence then (Google's docs say to add them again), so the next sync does.
+  if (error) {
+    logError('geofence task', error);
+    if (/not available/i.test(error.message)) await forgetWatch();
+    return;
+  }
   if (!data?.region?.identifier) return;
   const event = data.eventType === GeofencingEventType.Enter ? 'enter' : data.eventType === GeofencingEventType.Exit ? 'exit' : null;
   if (!event) return;

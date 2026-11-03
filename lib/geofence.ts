@@ -83,6 +83,8 @@ async function lastFix(): Promise<Fix | null> {
 export interface PlaceHealth {
   available: boolean;
   services: CheckState;
+  /** Android's network location ("Google Location Accuracy"): geofences run on it, so without it they may never fire. */
+  network: CheckState;
   foreground: CheckState;
   background: CheckState;
   notifications: CheckState;
@@ -103,16 +105,21 @@ export async function placeHealth(): Promise<PlaceHealth> {
   const late = Number(await AsyncStorage.getItem(LATE_KEY).catch(() => null)) || 0;
   const lateAt = late && Date.now() - late < LATE_MEMORY_MS ? late : null;
   if (!geofencingAvailable) {
-    return { available: false, services: 'check', foreground: 'check', background: 'fix', notifications: 'check', battery: null, lateAt };
+    return { available: false, services: 'check', network: 'check', foreground: 'check', background: 'fix', notifications: 'check', battery: null, lateAt };
   }
   const ok = (b: boolean): CheckState => (b ? 'ok' : 'fix');
   const services = await Location.hasServicesEnabledAsync().catch(() => true);
+  const network =
+    Platform.OS === 'android' && services
+      ? await Location.getProviderStatusAsync().then((s) => s.networkAvailable !== false).catch(() => true)
+      : true;
   const fg = await Location.getForegroundPermissionsAsync().catch(() => ({ granted: false }));
   const bg = await Location.getBackgroundPermissionsAsync().catch(() => ({ granted: false }));
   const r = await reminderHealth().catch(() => null);
   return {
     available: true,
     services: ok(services),
+    network: ok(network),
     foreground: ok(fg.granted),
     background: ok(bg.granted),
     notifications: r?.notifications.state ?? 'check',
@@ -126,6 +133,14 @@ export function placeProblems(h: PlaceHealth): PlaceProblem[] {
   const out: PlaceProblem[] = [];
   if (h.services === 'fix') {
     out.push({ key: 'services', text: 'Location is turned off on this phone.', action: 'Turn on', fix: () => Linking.openSettings().catch(() => {}) });
+  }
+  if (h.network === 'fix') {
+    out.push({
+      key: 'network',
+      text: 'Google Location Accuracy is off. Android notices places with it, so without it reminders may never go off.',
+      action: 'Turn on',
+      fix: () => void Location.enableNetworkProviderAsync().catch(() => Linking.openSettings().catch(() => {})),
+    });
   }
   if (h.foreground === 'fix' || h.background === 'fix') {
     out.push({
@@ -176,6 +191,14 @@ export function watchList(items: MnemoItem[], places: Place[]): Location.Locatio
     notifyOnEnter: true,
     notifyOnExit: true,
   }));
+}
+
+/**
+ * Android dropped the geofences ("Geofencing not available", usually location or its accuracy
+ * mode turned off) and won't bring them back: forget the list, so the next sync sets it again.
+ */
+export async function forgetWatch(): Promise<void> {
+  await AsyncStorage.setItem(WATCH_KEY, JSON.stringify({ signature: '', since: 0 })).catch(() => {});
 }
 
 /** Phones drop geofences on restart, so the list is set again once per launch. */
