@@ -121,12 +121,16 @@ describe('events', () => {
     expect(onPlaceEvent(inside, 'exit', later, 0)).toBe('outside');
     expect(onPlaceEvent({ ...inside, insideAtSet: false }, 'enter', later + 1, 0)).toBe('fire');
   });
-  it('right after the watch list is set (a new list, a restart), "inside" isn’t an arrival', () => {
-    expect(onPlaceEvent(arrive, 'enter', later, later - 30_000)).toBe('inside');
+  it('right after the watch list is set, "inside" isn’t an arrival when where the phone was is unknown', () => {
+    expect(onPlaceEvent({ ...arrive, insideAtSet: undefined }, 'enter', later, later - 30_000)).toBe('inside');
   });
-  it('leaving fires once inside; an exit while settling doesn’t', () => {
+  it('known outside, then inside right after the list is set (opening Mnemo on arriving): it fires', () => {
+    expect(onPlaceEvent(arrive, 'enter', later, later - 30_000)).toBe('fire');
+  });
+  it('leaving fires once inside, even right after the list is set; an unknown exit while settling doesn’t', () => {
     expect(onPlaceEvent(leave, 'exit', later, 0)).toBe('fire');
-    expect(onPlaceEvent(leave, 'exit', later, later - 10_000)).toBe('outside');
+    expect(onPlaceEvent(leave, 'exit', later, later - 10_000)).toBe('fire');
+    expect(onPlaceEvent({ ...leave, insideAtSet: undefined }, 'exit', later, later - 10_000)).toBe('outside');
     expect(onPlaceEvent({ ...leave, insideAtSet: false }, 'exit', later, 0)).toBe('outside');
   });
   it('fired is done', () => {
