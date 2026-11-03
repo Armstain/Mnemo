@@ -61,12 +61,7 @@ import { freshness } from '@/utils/time';
 import { reportFlightTarget } from '@/lib/card-flight';
 import { KIND_LABEL, kindOf } from '@/lib/kind';
 
-/**
- * ThreadScreen — one thread: where you are (left off, next step), what to
- * do about it (resume, pause, done), and its timeline of entries, newest
- * first. The capture button in the tab bar adds to this thread while it's
- * open. Route stays `context` so existing links and notifications work.
- */
+/** Route stays `context` so existing links and notifications work. */
 export default function ThreadScreen() {
   const enter = useEnter();
   const insets = useSafeAreaInsets();
@@ -98,10 +93,8 @@ export default function ThreadScreen() {
 
   const thread = items.find((c) => c.id === id);
   const threadId = thread?.id;
-  // getEntries is rebuilt whenever any entry changes, so this follows new notes.
   const entries = React.useMemo(() => (threadId ? getEntries(threadId) : []), [threadId, getEntries]);
   const { places: placesOn } = usePreferences(); // re-render when AI or place reminders are switched
-  // Finding one note in a long thread.
   const [finding, setFinding] = React.useState(false);
   const [findQuery, setFindQuery] = React.useState('');
   const shownEntries = React.useMemo(
@@ -109,13 +102,11 @@ export default function ThreadScreen() {
     [entries, finding, findQuery],
   );
   const ai = aiEnabled();
-  // Offline digest: next steps and unticked items from the notes, newest first.
   const openSteps = React.useMemo(() => openStepsOf(entries).slice(0, 5), [entries]);
   const numbers = React.useMemo(() => summarizeMeasures(entries), [entries]);
-  // Same rule as the weekly review: active, untouched a week, no reminder still to come.
+  // Same rule as the weekly review.
   const quietDays = React.useMemo(() => (thread ? quietFor(thread, entries) : null), [thread, entries]);
   const isFocus = !!thread && focusThreadId === thread.id;
-  // An entry auto-filing thought might belong elsewhere (lib/filing.ts).
   const suggestion = entries.find((e) => e.filing.by === 'suggested');
   const suggestedThread =
     suggestion && suggestion.filing.by === 'suggested'
@@ -125,16 +116,13 @@ export default function ThreadScreen() {
   const [isEditing, setIsEditing] = React.useState(false);
   const [menuOpen, setMenuOpen] = React.useState(false);
   const titleRef = React.useRef<React.ComponentRef<typeof Text>>(null);
-  // Where the Resume card's title should land when it opens this thread.
-  // Measured again once the header's entrance has risen into place, since
-  // it starts a little low.
+  // Re-measured after the header entrance settles, since it starts low.
   const reportTitlePlace = () => {
     const report = () =>
       titleRef.current?.measureInWindow((x, y, width, height) => reportFlightTarget(id, { x, y, width, height }));
     report();
     setTimeout(report, DUR_BASE + 20);
   };
-  // Height of the nav row, where the ⋯ menu drops from.
   const [navBottom, setNavBottom] = React.useState(64);
   const [isGenerating, setIsGenerating] = React.useState(false);
   const [organising, setOrganising] = React.useState(false);
@@ -150,8 +138,6 @@ export default function ThreadScreen() {
     setIsEditing(true);
   };
 
-  // Nearest threads by meaning — a supplementary section that stays empty
-  // until this thread has a vector, and on any failure.
   const [related, setRelated] = React.useState<RelatedThread[]>([]);
   React.useEffect(() => {
     if (!thread) {
@@ -201,13 +187,12 @@ export default function ThreadScreen() {
   const status = statusColors[thread.status];
   const pendingEntries = entries.filter((e) => e.pending);
 
-  // ─── Actions ───────────────────────────────────────────────
+  // ─── Actions ───
 
   const handleSaveEdit = () => {
     const nextStep = editNextStep.trim();
     const whereLeftOff = editWhereLeftOff.trim();
-    // A value the user wrote here is pinned, so new entries don't
-    // overwrite it; clearing it hands the field back to the entries.
+    // Pinned values aren't overwritten by new entries; clearing one hands it back.
     const latestNext = entries.find((e) => e.nextStep)?.nextStep;
     const latestLeftOff = entries.find((e) => e.leftOff)?.leftOff;
     const title = editTitle.trim() || thread.title;
@@ -216,7 +201,6 @@ export default function ThreadScreen() {
       nextStep: nextStep || latestNext,
       whereLeftOff: whereLeftOff || latestLeftOff,
       pinned: {
-        // A name the person gave stays: the AI won't rename it.
         title: title !== thread.title || !!thread.pinned?.title,
         nextStep: nextStep ? nextStep !== thread.nextStep || !!thread.pinned?.nextStep : false,
         whereLeftOff: whereLeftOff
@@ -227,8 +211,7 @@ export default function ThreadScreen() {
     setIsEditing(false);
   };
 
-  // A correction to one tracked number across the thread: a new name (the
-  // same name as another merges them) or a different way of adding up.
+  // Renaming to another metric's name merges them.
   const fixMetric = (summary: MetricSummary, fix: MetricFix) => {
     for (const entry of entries) {
       let touched = false;
@@ -247,7 +230,6 @@ export default function ThreadScreen() {
     }
   };
 
-  // A thread with some history gets a wrap-up card first; a one-liner is just done.
   const hasHistory = entries.length >= 3 || numbers.length > 0;
   const handleDone = () => {
     if (hasHistory) {
@@ -256,7 +238,6 @@ export default function ThreadScreen() {
     }
     const before = thread;
     const wasFocus = isFocus;
-    // Something that was to be done gets its moment; a note filed away doesn't.
     if (isRealTask(thread, entries)) celebrate({ title: thread.title, detail: doneSummary(thread, entries) });
     completeItem(thread.id);
     showUndoToast(`"${thread.title}" is done`, () => {
@@ -266,7 +247,7 @@ export default function ThreadScreen() {
   };
 
   const handleStepDone = () => {
-    // DoneCheck has already played the moment (ring, haptics) by now.
+    // DoneCheck already played ring and haptics.
     const step = thread.nextStep;
     const undo = store.completeNextStep(thread.id);
     showUndoToast(`Done: ${step}`, undo);
@@ -295,7 +276,6 @@ export default function ThreadScreen() {
       showUndoToast(`"${thread.title}" deleted`, () => undoDelete(thread.id));
       router.back();
     };
-    // One note is undone from the toast; a whole history deserves a question first.
     if (entries.length <= 1) return remove();
     confirmAction({
       title: 'Delete thread?',
@@ -308,8 +288,6 @@ export default function ThreadScreen() {
   const handleRetryProcessing = async () => {
     setIsGenerating(true);
     try {
-      // A voice note whose sound is gone is written out from its words instead.
-      // Retry sends each note now, one the safety filter declined included.
       for (const entry of pendingEntries) await retryEntryNow(entry, store);
     } catch (e) {
       const { title, message } = retryProblemText(e);
@@ -319,7 +297,6 @@ export default function ThreadScreen() {
     }
   };
 
-  // Groups the thread's notes by theme, when the person asks.
   const handleOrganise = async () => {
     setOrganising(true);
     try {
@@ -339,7 +316,6 @@ export default function ThreadScreen() {
     ? Math.round((Math.max(...entries.map((e) => e.createdAt)) - Math.min(...entries.map((e) => e.createdAt))) / 86_400_000)
     : 0;
 
-  // What's shared: the overview, or offline the steps still open.
   const shareText = thread.overview
     ? overviewText(thread.title, thread.overview)
     : openSteps.map((step, i) => `${i + 1}. ${step}`).join('\n');
@@ -347,11 +323,10 @@ export default function ThreadScreen() {
     try {
       await Share.share({ message: shareText });
     } catch {
-      // Share sheet dismissed or unavailable — nothing to do.
+      // Dismissed or unavailable.
     }
   };
 
-  /** After an entry moved out: follow it if this thread is now gone. */
   const followMove = (toThreadId: string) => {
     if (!snapshot().items.some((i) => i.id === thread.id)) {
       router.replace(`/(tabs)/context?id=${toThreadId}`);
@@ -368,7 +343,6 @@ export default function ThreadScreen() {
   const addUpdate = (mode: 'write' | 'record') =>
     router.push(`/${mode === 'write' ? 'capture' : 'dump'}?threadId=${thread.id}`);
 
-  // Now-and-then actions, out of the way in the ⋯ menu.
   const open = thread.status === 'active' || thread.status === 'paused';
   const menuItems: ThreadMenuItem[] = [
     { icon: 'pencil', label: 'Edit thread', onPress: startEditing },
@@ -389,12 +363,11 @@ export default function ThreadScreen() {
     { icon: 'trash', label: 'Delete thread', onPress: handleDelete, danger: true },
   ];
 
-  // ─── Render ────────────────────────────────────────────────
+  // ─── Render ───
 
   return (
     <KeyboardAvoidingView className="flex-1" behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <View className="flex-1">
-        {/* Nav */}
         <View
           className="flex-row justify-between items-center px-5 pb-2"
           style={{ paddingTop: Math.max(insets.top, 12) + 4 }}
@@ -441,7 +414,7 @@ export default function ThreadScreen() {
           keyboardShouldPersistTaps="handled"
           contentContainerStyle={{ paddingBottom: Math.max(insets.bottom, 20) + NAV_CLEARANCE }}
         >
-          {/* ─── Header ─────────────────────────────────── */}
+          {/* ─── Header ─── */}
           <MotiView {...enter.rise(0)} className="px-6 pt-3">
             <View className="flex-row items-center mb-4">
               <ThreadRing
@@ -523,7 +496,6 @@ export default function ThreadScreen() {
               <>
                 <Text
                   ref={titleRef}
-                  // Where the Resume card's title lands when it opens this thread.
                   onLayout={reportTitlePlace}
                   className="font-display text-fg leading-tight"
                   style={{ fontSize: 32, letterSpacing: -0.4 }}
@@ -601,7 +573,7 @@ export default function ThreadScreen() {
 
           {!isEditing && (
             <>
-              {/* ─── Where you are ──────────────────────── */}
+              {/* ─── Where you are ─── */}
               {thread.whereLeftOff || thread.nextStep ? (
                 <MotiView {...enter.rise(1)} className="px-6 mt-6 gap-4">
                   {thread.whereLeftOff ? (
@@ -631,7 +603,7 @@ export default function ThreadScreen() {
                 </MotiView>
               ) : null}
 
-              {/* ─── Gone quiet: keep going, pause or wrap up ─── */}
+              {/* ─── Gone quiet ─── */}
               {!isEditing && quietDays !== null ? (
                 <MotiView {...enter.fade(1)} className="mx-6 mt-5 rounded-lg p-4" style={{ backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border }}>
                   <Text className="font-sans-semi text-body" style={{ color: colors.fg }}>
@@ -649,7 +621,7 @@ export default function ThreadScreen() {
                       size="sm"
                       onPress={() => {
                         const before = thread;
-                        // Not activity: it shouldn't jump to the top of Home.
+                        // Not activity: must not jump to the top of Home.
                         updateItem(thread.id, { quietUntil: Date.now() + STILL_ON_IT_DAYS * 86_400_000 }, { touch: false });
                         showUndoToast(`Won't ask about it for a month`, () => restoreItem(before));
                       }}
@@ -663,7 +635,7 @@ export default function ThreadScreen() {
                 </MotiView>
               ) : null}
 
-              {/* ─── What to do now: one row, the rest is in the ⋯ menu ─── */}
+              {/* ─── Primary actions ─── */}
               <MotiView {...enter.fade(1)} className="px-6 mt-5 flex-row gap-2">
                 {thread.status === 'active' ? (
                   <Button
@@ -682,8 +654,7 @@ export default function ThreadScreen() {
                     icon="play"
                     className="flex-1"
                     onPress={() => {
-                      // Speak the re-brief before flipping status, so the
-                      // script reflects how long the thread sat untouched.
+                      // Start before flipping status: the script depends on how long it sat untouched.
                       rebrief.start(thread);
                       resumeItem(thread.id);
                     }}
@@ -691,8 +662,7 @@ export default function ThreadScreen() {
                     Resume
                   </Button>
                 ) : (
-                  // Finished or archived: bringing it back isn't a return to
-                  // work, so no briefing starts.
+                  // No briefing: reopening finished or archived isn't a return to work.
                   <Button variant="tonal" size="sm" icon="play" className="flex-1" onPress={() => resumeItem(thread.id)}>
                     Reopen
                   </Button>
@@ -708,7 +678,6 @@ export default function ThreadScreen() {
                 ) : null}
               </MotiView>
 
-              {/* Re-brief player */}
               {rebrief.state !== 'idle' && (
                 <View className="px-6 mt-3">
                   <Pressable
@@ -734,7 +703,7 @@ export default function ThreadScreen() {
                 </View>
               )}
 
-              {/* ─── Focus: quick captures land here (switched on from the ⋯ menu) ─── */}
+              {/* ─── Focus ─── */}
               {isFocus && (thread.status === 'active' || thread.status === 'paused') && (
                 <MotiView {...enter.fade(1)} className="px-6 mt-3">
                   <View
@@ -761,21 +730,21 @@ export default function ThreadScreen() {
                 </MotiView>
               )}
 
-              {/* ─── Numbers it tracks ──────────────────── */}
+              {/* ─── Numbers ─── */}
               {numbers.length > 0 && (
                 <MotiView {...enter.rise(2)} className="px-6 mt-9">
                   <NumbersSection summaries={numbers} onFix={fixMetric} />
                 </MotiView>
               )}
 
-              {/* ─── Organise: once there are enough loose notes ─── */}
+              {/* ─── Organise ─── */}
               {ai && !finding && canOrganise(entries, thread.overview) && (
                 <MotiView {...enter.rise(2)} className="px-6 mt-7">
                   <OrganiseOffer count={entries.length} spanDays={noteSpanDays} busy={organising} onOrganise={handleOrganise} />
                 </MotiView>
               )}
 
-              {/* ─── Timeline ───────────────────────────── */}
+              {/* ─── Timeline ─── */}
               <MotiView {...enter.rise(2)} className="px-6 mt-9">
                 <View className="flex-row items-center justify-between">
                   <Eyebrow>Timeline</Eyebrow>
@@ -819,7 +788,6 @@ export default function ThreadScreen() {
                   </View>
                 ) : null}
 
-                {/* One way in: tap to write, or the mic to say it. */}
                 <View
                   className="flex-row items-center rounded-full mb-4 pl-5 pr-1.5 h-14"
                   style={{ backgroundColor: colors.surfaceLowest, borderWidth: 1, borderColor: colors.border }}
@@ -869,7 +837,6 @@ export default function ThreadScreen() {
                 </View>
               </MotiView>
 
-              {/* Offline: what's still open, gathered from the notes on the phone. */}
               {!ai && !thread.aiSummary && openSteps.length > 0 && (
                 <View className="px-6 mt-9">
                   <Eyebrow>Still open</Eyebrow>
@@ -888,7 +855,7 @@ export default function ThreadScreen() {
                   </View>
                 </View>
               )}
-              {/* ─── Related ────────────────────────────── */}
+              {/* ─── Related ─── */}
               {related.length > 0 && (
                 <View className="px-6 mt-9">
                   <Eyebrow>Related threads</Eyebrow>

@@ -48,14 +48,7 @@ function asCategory(value: unknown): Category | undefined {
   return CATEGORIES.includes(value as Category) ? (value as Category) : undefined;
 }
 
-/**
- * Embeds a just-structured note and stores the vector, for semantic search
- * and "related notes". Best-effort by design: embedding is an enhancement
- * on top of an already-saved, already-searchable (via BM25) note — a
- * failure here must never throw out of `structurePendingEntry` or leave the
- * entry `pending`. An un-embedded note just stays keyword-only until the
- * next backfill sweep picks it up.
- */
+/** Best-effort: a failure must never throw out of `structurePendingEntry` or leave the entry `pending`. */
 async function embedAndStore(item: {
   id: string;
   title: string;
@@ -74,7 +67,7 @@ async function embedAndStore(item: {
       dims: EMBEDDING_DIMS,
     });
   } catch {
-    // Left un-embedded — PendingProcessor's backfill sweep retries it later.
+    // PendingProcessor's backfill sweep retries.
   }
 }
 
@@ -82,42 +75,29 @@ interface NoteInput {
   text: string;
   category: Category;
   threadId?: string;
-  /** How it got into `threadId`: picked there by the person, or their focus thread. */
   filing?: Filing;
   checklistItems?: ChecklistItem[];
   leftOff?: string;
   nextStep?: string;
   dueDate?: number;
-  /** Photos already kept (lib/images). */
   images?: Block[];
-  /** Links given apart from the text (a shared page). */
   links?: string[];
-  /** A name for a new thread, when there's a better one than the text's (a shared page's title). */
   title?: string;
-  /** A voice note's sound, held for Gemini to write out (lib/voice-audio). */
   audio?: string[];
-  /** A place reminder picked on the Write screen; otherwise one said in the text is read. */
   place?: Pick<PlaceReminder, 'placeId' | 'on'>;
   store: CaptureStore;
 }
 
-/** What a thread already tracks, so the phone reuses its names. */
 function knownMetrics(store: CaptureStore, threadId?: string): KnownMetric[] {
   if (!threadId) return [];
   const entries = store.snapshot().entries.filter((e) => e.threadId === threadId);
   return summarizeMeasures(entries).map((m) => ({ metric: m.metric, unit: m.unit }));
 }
 
-/**
- * Every note is read on the phone the moment it's saved (lib/understand):
- * offline that's all it gets; with AI on it's what shows until Gemini's
- * version arrives, and what stays if Gemini never answers.
- */
-// A capture that set a reminder says so (components/FilingNotifier.tsx shows it).
+// Shown by components/FilingNotifier.tsx.
 export interface ReminderSetEvent {
   threadId: string;
   at: number;
-  /** What the thread's reminder was before, for Undo. */
   previous?: number;
 }
 const reminderListeners = new Set<(event: ReminderSetEvent) => void>();
@@ -142,17 +122,13 @@ function saveNote(source: Entry['source'], params: NoteInput): { threadId: strin
   const { category, threadId, store } = params;
   const words = params.text.trim();
   const images = params.images ?? [];
-  // Gemini can read a photo too (a receipt, a whiteboard), so one alone is worth sending.
   const recorded = params.audio ?? [];
-  // A recording is written out by Gemini: with AI off there's no one to.
   const ai = aiEnabled() && (words.length > 0 || images.length > 0 || recorded.length > 0 || (params.links?.length ?? 0) > 0);
   const audio = ai ? recorded : [];
   if (!ai) deleteAudio(recorded);
   const reading = understand(words, { known: knownMetrics(store, threadId), monthFirst: monthFirst(), currency: localCurrency() });
 
-  // With AI on, the text stays exactly as said: Gemini rewrites it, and an
-  // edit made meanwhile is noticed against it. Offline, list lines become a
-  // checklist.
+  // With AI on the text stays as said, so an edit made meanwhile is detected against it.
   const later = params.dueDate ? [] : reading.later;
   const checklist = [...(params.checklistItems ?? []), ...(ai ? [] : reading.checklist)];
   const blocks: Block[] = [
@@ -173,7 +149,6 @@ function saveNote(source: Entry['source'], params: NoteInput): { threadId: strin
     pendingAudioUri: joinAudio(audio),
   };
   const due = params.dueDate ?? reading.due;
-  // "when I get to the market": a saved place named with words that say when.
   const placeHit = getPreferences().places ? (params.place ?? readPlaceReminder(words, getPlaces())) : undefined;
   const place = placeHit ? { ...placeHit, step: params.nextStep?.trim() || reading.nextStep, setAt: Date.now() } : undefined;
 
@@ -182,7 +157,6 @@ function saveNote(source: Entry['source'], params: NoteInput): { threadId: strin
     saved = { threadId, entry: store.addEntry(threadId, { ...entryInput, filing: params.filing ?? { by: 'user' } }) };
     const thread = store.getThread(threadId);
     if (thread) {
-      // A day named in the note sets the reminder, unless one's already coming.
       const updates: Partial<MnemoItem> = due
         ? withReminders(thread, {
             due,
@@ -203,12 +177,11 @@ function saveNote(source: Entry['source'], params: NoteInput): { threadId: strin
     const created = store.createThread(
       {
         title: (reading.title || params.title?.trim() || fallback).slice(0, 80),
-        // Offline, the phone's guess beats "General"; with AI on, Gemini guesses.
         category:
           category === 'general' && !ai
             ? reading.category ?? (words || !params.title ? undefined : understand(params.title, { monthFirst: monthFirst() }).category) ?? 'general'
             : category,
-        // The phone's guess; with AI on, Gemini's replaces it (resolvePendingEntry).
+        // Replaced by Gemini's in resolvePendingEntry.
         kind: reading.kind,
         tags: reading.tags,
         status: 'active',
@@ -216,7 +189,6 @@ function saveNote(source: Entry['source'], params: NoteInput): { threadId: strin
         laterSteps: later.length > 0 ? later : undefined,
         repeat: params.dueDate ? undefined : reading.repeat,
         place,
-        // A placeholder title the AI replaces, when AI is on.
         pending: ai,
       },
       entryInput,
@@ -231,7 +203,6 @@ function saveNote(source: Entry['source'], params: NoteInput): { threadId: strin
 }
 
 const previewed = new Set<string>();
-// One fetch per link: the share screen, the AI and the link card all ask.
 const previews = new Map<string, Promise<LinkPreview | null>>();
 
 function previewOf(url: string): Promise<LinkPreview | null> {
@@ -239,28 +210,23 @@ function previewOf(url: string): Promise<LinkPreview | null> {
   if (!preview) {
     preview = fetchLinkPreview(url);
     previews.set(url, preview);
-    // A page that couldn't be read (no signal) is tried again next time.
+    // Failed reads (no signal) are evicted so they retry.
     preview.then((p) => p || previews.delete(url));
   }
   return preview;
 }
 
-/** A preview already fetched (the share screen shows one): no need to fetch again. */
 export function rememberPreview(url: string, preview: LinkPreview): void {
   previews.set(url, Promise.resolve(preview));
 }
 
-/** What the pages an entry links to say about themselves (as far as the phone could read them). */
 async function pagesOf(entry: Pick<Entry, 'blocks'>): Promise<PageContext[]> {
   const urls = [...new Set(entry.blocks.flatMap((b) => (b.kind === 'link' ? [b.url] : [])))].slice(0, 3);
   const read = await Promise.all(urls.map(async (url) => ({ url, preview: await previewOf(url) })));
   return read.flatMap((r) => (r.preview ? [{ url: r.url, ...r.preview }] : []));
 }
 
-/**
- * Gives an entry's links their page title, site and picture, read by the
- * phone (lib/link-preview). Fire-and-forget; each link is tried once.
- */
+/** Fire-and-forget; each link is tried once. */
 export async function enrichLinks(entryId: string, store: CaptureStore): Promise<void> {
   const entry = store.snapshot().entries.find((e) => e.id === entryId);
   if (!entry) return;
@@ -269,7 +235,7 @@ export async function enrichLinks(entryId: string, store: CaptureStore): Promise
     previewed.add(url);
     const preview = await previewOf(url);
     if (!preview) continue;
-    // Re-read: the entry may have changed while the page loaded.
+    // Entry may have changed while the page loaded.
     const now = store.snapshot().entries.find((e) => e.id === entryId);
     if (!now) return;
     store.updateEntry(entryId, {
@@ -282,7 +248,6 @@ export async function enrichLinks(entryId: string, store: CaptureStore): Promise
   }
 }
 
-/** Offline: point out an open thread the note clearly shares words with. */
 function suggestByKeywords(saved: { threadId: string; entry: Entry }, text: string, store: CaptureStore) {
   const match = keywordMatch({ text, threads: store.snapshot().items, excludeId: saved.threadId });
   if (!match) return;
@@ -299,7 +264,6 @@ function suggestByKeywords(saved: { threadId: string; entry: Entry }, text: stri
   });
 }
 
-/** The phone's currency, for amounts said without one ("salary 45000"). */
 const REGION_CURRENCY: Record<string, string> = { BD: 'BDT', IN: 'INR', US: 'USD', GB: 'GBP', IE: 'EUR', DE: 'EUR', FR: 'EUR', ES: 'EUR', IT: 'EUR', NL: 'EUR', PT: 'EUR', BE: 'EUR', AT: 'EUR', FI: 'EUR', GR: 'EUR' };
 function localCurrency(): string | undefined {
   try {
@@ -321,29 +285,19 @@ function monthFirst(): boolean {
   }
 }
 
-/**
- * Saves a voice note: the recording, for Gemini to write out (deleted once
- * it has), or offline the words the phone heard. With a `threadId` it joins
- * that thread; otherwise it starts one.
- */
 export function saveVoiceNote(params: Omit<NoteInput, 'checklistItems' | 'leftOff' | 'nextStep' | 'dueDate'>) {
   return saveNote('voice', params);
 }
 
-/** Saves a typed note. Same shape as `saveVoiceNote`, plus the Write screen's own fields. */
 export function saveTextNote(params: NoteInput) {
   return saveNote('text', params);
 }
 
-/** Saves something shared in from another app: text, a link, photos. */
 export function saveSharedNote(params: NoteInput) {
   return saveNote('share', params);
 }
 
-/**
- * Finishes a note that was waiting for an AI that won't come (the person
- * switched to offline): it gets the phone's reading instead.
- */
+/** For a pending note whose AI won't come (switched offline). */
 export function finishOnDevice(entry: Entry, store: CaptureStore): void {
   deleteAudio(entry.pendingAudioUri);
   const words = (entry.pendingRawText ?? textOf(entry)).trim();
@@ -374,12 +328,11 @@ export function finishOnDevice(entry: Entry, store: CaptureStore): void {
   }
 }
 
-/** Deletes the whole recordings directory. Used by "Clear all data" in Settings. */
 export function deleteAllRecordings(): void {
   try {
     new Directory(Paths.document, 'recordings').delete();
   } catch {
-    // Never existed, or already gone — nothing to do.
+    // Already gone.
   }
   deleteAllAudio();
 }
@@ -389,28 +342,12 @@ type PendingEntry = Pick<
   'id' | 'threadId' | 'blocks' | 'leftOff' | 'nextStep' | 'transcript' | 'pendingAudioUri' | 'pendingRawText'
 >;
 
-/**
- * Structures a pending entry (voice or text), writes the result back, and
- * decides where it belongs. Throws on failure — callers that show their own
- * error feedback (the manual "Retry" button) should call this directly;
- * silent background callers should use `resolvePendingEntry` instead.
- *
- * - The entry gets the cleaned-up text, links and any measures (each number
- *   checked against what was actually said). A hand-made checklist is kept,
- *   and the person's own left-off / next step win over the AI's.
- * - A quick capture (filed `new` or to the focus thread) is matched against
- *   open threads in the same AI call, then filed per lib/filing.ts:
- *   attached to an existing thread, suggested, or moved out of the focus
- *   thread. The UI hears about it through `emitFiling`.
- * - If the entry still has its own new thread, that thread takes the AI's
- *   title, tags and summary; an existing thread only gains tags.
- */
+/** Throws on failure: for callers with their own error feedback (manual Retry). Background callers use `resolvePendingEntry`. */
 export async function structurePendingEntry(
   entry: PendingEntry,
   store: CaptureStore,
 ): Promise<void> {
-  // One run per entry at a time: a manual Retry while the background run
-  // is still out would otherwise process (and bill) the same note twice.
+  // A manual Retry during a background run would process (and bill) the note twice.
   if (inFlight.has(entry.id)) return;
   inFlight.add(entry.id);
   try {
@@ -422,11 +359,7 @@ export async function structurePendingEntry(
 
 const inFlight = new Set<string>();
 
-/**
- * A voice note Groq wrote out while Gemini can't tidy it up: its new thread
- * gets a title from the words, and a reminder said in them is set, so the
- * note is useful before Gemini comes back.
- */
+/** For a Groq-written voice note while Gemini can't tidy it: titles the thread and sets a spoken reminder. */
 function nameFromWords(store: CaptureStore, threadId: string, words: string): void {
   const thread = store.getThread(threadId);
   if (!thread) return;
@@ -440,15 +373,13 @@ function nameFromWords(store: CaptureStore, threadId: string, words: string): vo
   if (Object.keys(updates).length > 0) store.updateItem(threadId, updates);
   if (updates.dueDate) reminderSet({ threadId, at: updates.dueDate, previous: thread.dueDate });
 }
-/** Photos sent along with one note; more would be slow and costly. */
+/** More photos would be slow and costly. */
 const MAX_PHOTOS_TO_AI = 3;
 
-/** Whether this entry is with the AI right now (an edit then keeps the person's words). */
 export function isStructuring(entryId: string): boolean {
   return inFlight.has(entryId);
 }
 
-/** The text block of an entry, as it reads right now. */
 function textOf(e: Pick<Entry, 'blocks'>): string {
   const block = e.blocks.find((b) => b.kind === 'text');
   return block && block.kind === 'text' ? block.markdown.trim() : '';
@@ -457,26 +388,22 @@ function textOf(e: Pick<Entry, 'blocks'>): string {
 async function structure(entry: PendingEntry, store: CaptureStore): Promise<void> {
   const snap = store.snapshot();
   const live = snap.entries.find((e) => e.id === entry.id);
-  // Deleted while it waited: so is its sound.
   if (!live) return deleteAudio(entry.pendingAudioUri);
-  // Its thread was deleted (or is in its undo window): don't bring it back.
+  // Thread deleted or in its undo window: don't bring it back.
   if (!store.getThread(live.threadId)) return;
   const filedBy = live.filing.by;
-  // A new note's thread the person has already named is where they want it.
   const named = filedBy === 'new' && !!store.getThread(live.threadId)?.pinned?.title;
   const matching = (filedBy === 'new' && !named) || filedBy === 'focus';
   const candidates = matching
     ? gatherCandidates({
         threads: snap.items,
         entries: snap.entries,
-        // A new capture's own placeholder thread isn't a candidate; the focus
-        // thread it was saved into is.
+        // A new capture's placeholder thread isn't a candidate; the focus thread is.
         excludeId: filedBy === 'new' ? live.threadId : undefined,
         focusId: store.getFocusThreadId(),
         text: entry.pendingRawText,
       })
     : [];
-  // Names the entry's own thread already tracks, so "spent" stays "spent".
   const tracks =
     filedBy === 'new' ? [] : trackedMetrics(snap.entries.filter((e) => e.threadId === live.threadId));
   const ctx = candidates.length > 0 || tracks.length > 0 ? { candidates, tracks } : undefined;
@@ -484,38 +411,29 @@ async function structure(entry: PendingEntry, store: CaptureStore): Promise<void
   let processed: ProcessedCapture;
   let transcript = entry.transcript;
   const photos = imagesOf([live]);
-  // What a linked page says about itself, so "read this later" is about the page.
   const pages = await pagesOf(live);
 
-  // What the note's text was when it went off to be read: an edit made
-  // meanwhile is noticed against it.
+  // Text as sent: an edit made meanwhile is detected against it.
   let shownText = (entry.pendingRawText ?? '').trim();
-  /** What the person said, as written out from their recording. */
   let said: string | undefined;
   const recordings = splitAudio(entry.pendingAudioUri);
   const sound = recordings.length > 0 ? await loadAudio(recordings) : [];
   if (sound.length > 0) {
-    // Gemini writes out what was said (Bangla, English or both). Then the
-    // recording goes: it's never kept with the note.
     try {
       processed = await processAudioDump(sound.map((a) => ({ data: a.data, mimeType: a.mimeType })), ctx, pages);
       said = processed.transcript?.trim() || undefined;
     } catch (e) {
       if (e instanceof AiOffError) throw e;
-      // Gemini can't (down, out of quota, won't take it): Groq's Whisper
-      // writes it out, if the person added a Groq key. Otherwise it's tried
-      // again later, recording and all.
+      // Fall back to Groq Whisper if a key exists; otherwise retried later with the recording.
       const words = hasGroq()
         ? await transcribeAudio(sound, { banglaSpeaker: getPreferences().speechLang === 'bn-BD' }).catch((groqError) => {
-            // Shown in Settings → Copy problem report, so a Groq key that
-            // doesn't help can be told apart from one that isn't tried.
+            // Surfaces in the Settings problem report.
             logError('groq', groqError);
             return '';
           })
         : '';
       if (!words) throw e;
       said = words;
-      // Readable straight away, even if Gemini can't tidy it up yet.
       const nowEntry = store.snapshot().entries.find((x) => x.id === entry.id);
       if (!nowEntry) return deleteAudio(recordings);
       if (!textOf(nowEntry)) {
@@ -529,7 +447,6 @@ async function structure(entry: PendingEntry, store: CaptureStore): Promise<void
     }
     deleteAudio(recordings);
   } else if (recordings.length > 0 && !entry.pendingRawText) {
-    // The recording is gone and nothing else was said.
     store.updateEntry(entry.id, { pending: false, pendingAudioUri: undefined });
     return;
   } else if (entry.pendingRawText || photos.length > 0 || pages.length > 0) {
@@ -542,22 +459,17 @@ async function structure(entry: PendingEntry, store: CaptureStore): Promise<void
     store.updateEntry(entry.id, { pending: false });
     return;
   }
-  // What Gemini read off a photo is not something the person said; what
-  // was heard in a recording is.
+  // Text Gemini read off a photo is not something the person said.
   transcript = said ?? transcript ?? (photos.length > 0 ? undefined : processed.transcript);
-  // The language it was really in: where the phone starts listening offline.
   const spoken = said ? languageOf(said) : null;
   if (spoken && spoken !== getPreferences().speechLang) setPreferences({ speechLang: spoken });
 
-  // The AI call takes a while. Whatever happened meanwhile wins over it:
+  // Edits made during the AI call win; numbers and links are still extracted from them.
   const now = store.snapshot().entries.find((e) => e.id === entry.id);
-  if (!now || !store.getThread(now.threadId)) return; // deleted meanwhile
-  // …and if the person edited the note while it waited, their words stay
-  // (numbers and links are still picked out, from what they wrote).
+  if (!now || !store.getThread(now.threadId)) return;
   const editedMeanwhile = textOf(now) !== shownText;
 
-  // Every number must appear in the person's own words, not only the AI's notes.
-  // (A photo has no words of the person's: what Gemini read off it is checked instead.)
+  // Every number must appear in the person's words (for a photo, in what Gemini read off it).
   const measures = verifyMeasures(
     processed.measures,
     editedMeanwhile
@@ -569,8 +481,7 @@ async function structure(entry: PendingEntry, store: CaptureStore): Promise<void
   const handMadeChecklists = now.blocks.filter((b) => b.kind === 'checklist');
   const existingLinks = now.blocks.flatMap((b) => (b.kind === 'link' ? [b.url] : []));
   const links = [...new Set([...existingLinks, ...(processed.links ?? [])])];
-  // Numbers, lists or links corrected by hand while it waited stay as they are.
-  // (A link's fetched preview arriving meanwhile isn't a correction.)
+  // Hand corrections stay; a link preview arriving meanwhile isn't one.
   const rest = (e: Pick<Entry, 'blocks'>) =>
     JSON.stringify(e.blocks.filter((b) => b.kind !== 'text').map((b) => (b.kind === 'link' ? { kind: b.kind, url: b.url } : b)));
   const correctedMeanwhile = rest(now) !== rest(live);
@@ -587,7 +498,6 @@ async function structure(entry: PendingEntry, store: CaptureStore): Promise<void
   const leftOff = now.leftOff || (editedMeanwhile ? undefined : processed.summary?.leftOff);
   const nextStep = now.nextStep || (editedMeanwhile ? undefined : processed.summary?.nextSteps?.[0]);
 
-  // Links the AI found get their previews too.
   setTimeout(() => enrichLinks(entry.id, store), 0);
   store.updateEntry(entry.id, {
     transcript,
@@ -601,17 +511,14 @@ async function structure(entry: PendingEntry, store: CaptureStore): Promise<void
 
   const tags = processed.tags ?? [];
   const aiCategory = asCategory(processed.suggestedCategory);
-  // "note" (none of the three) comes back as no kind, and that's an answer too.
+  // "note" comes back as no kind, which is an answer too.
   const aiKind = asKind(processed.kind);
 
-  // A recording had no words for the phone to find a reminder in when it
-  // was saved: the written-out words do ("remind me at 7" said in Bangla).
+  // A recording had no words to find a reminder in at save time; the written-out words do.
   const heard =
     said && !editedMeanwhile
       ? understand(said, { now: now.createdAt, monthFirst: monthFirst(), currency: localCurrency() })
       : undefined;
-  // Same for a place ("when I get to the gym…" said, not typed): typed
-  // notes have theirs read when saved (saveNote).
   const heardPlace = said && !editedMeanwhile && getPreferences().places ? readPlaceReminder(said, getPlaces()) : undefined;
   const remindFromSound = (threadId: string) => {
     const t = store.getThread(threadId);
@@ -624,7 +531,7 @@ async function structure(entry: PendingEntry, store: CaptureStore): Promise<void
     reminderSet({ threadId, at: heard.due, previous: t.dueDate });
   };
 
-  // ─── Where it belongs ──────────────────────────────────────
+  // ─── Filing ───
   let decision: FilingDecision = { action: 'stay' };
   if (matching && processed.thread) {
     let similarity: Map<string, number> | undefined;
@@ -639,7 +546,7 @@ async function structure(entry: PendingEntry, store: CaptureStore): Promise<void
         const all = await getVectors(await embeddingModel());
         similarity = similarityTo(vector, new Map([...ids].flatMap((id) => (all.has(id) ? [[id, all.get(id)!] as const] : []))));
       } catch {
-        // Offline or not embedded yet: the model's answer stands alone.
+        // The model's answer stands alone.
       }
     }
     decision = decideFiling({ filedBy, match: processed.thread, candidates, similarity });
@@ -662,7 +569,6 @@ async function structure(entry: PendingEntry, store: CaptureStore): Promise<void
       if (Object.keys(carried).length > 0) store.updateItem(target.id, carried);
       if (carried.dueDate) reminderSet({ threadId: target.id, at: carried.dueDate, previous: target.dueDate });
     }
-    // A place reminder goes with the note, unless the thread already has one waiting.
     if (emptied?.place && !emptied.place.firedAt && !(target.place && !target.place.firedAt)) {
       store.updateItem(target.id, { place: emptied.place });
     }
@@ -710,9 +616,7 @@ async function structure(entry: PendingEntry, store: CaptureStore): Promise<void
     store.updateItem(thread.id, {
       title: thread.pinned?.title ? thread.title : processed.title,
       tags: [...new Set([...thread.tags, ...tags])].slice(0, 8),
-      // The category picker defaults to General; a better guess wins.
       ...(thread.category === 'general' && aiCategory ? { category: aiCategory } : {}),
-      // Gemini read the whole note; its kind beats the phone's first guess.
       ...(thread.pinned?.kind || processed.kind === undefined ? {} : { kind: aiKind }),
       aiSummary: processed.summary,
       pending: false,
@@ -745,29 +649,20 @@ async function structure(entry: PendingEntry, store: CaptureStore): Promise<void
   await embedThread(store, thread.id);
 }
 
-/** Re-embeds a thread from its current text (best-effort, see embedAndStore). */
 async function embedThread(store: CaptureStore, threadId: string): Promise<void> {
   const thread = store.getThread(threadId);
   if (!thread) return;
   await embedAndStore(thread);
 }
 
-// How long to wait before trying a note again after Gemini failed on it:
-// half a minute, then longer each time, up to half an hour.
 const BACKOFF_MS = [30_000, 60_000, 2 * 60_000, 5 * 60_000, 10 * 60_000, 30 * 60_000];
 const attempts = new Map<string, { count: number; nextAt: number }>();
 
-// ─── Notes Gemini's safety filter declined ──────────────────────
-// A block is Google's answer about this note's content, so sending the same
-// content again gets the same answer: the sweep leaves it. It's kept apart
-// from `attempts` (which "try everything now" clears) and saved, so neither
-// returning to the app nor restarting it sends the note again. What's
-// remembered is the content that was declined: once the person edits the
-// note, it differs, and the edited note goes through. Retry sends it too
-// (retryEntryNow), and clears the record first.
+// ─── Safety-blocked notes ───
+// Same content gets the same block, so the sweep skips it. Kept apart from `attempts`
+// (which "try everything now" clears) and persisted. Keyed on content: an edit lets it through.
 
 const BLOCKED_KEY = 'mnemo-ai-blocked';
-/** Entry id → the content Gemini declined. */
 let blocked = new Map<string, string>();
 const blockedLoaded: Promise<void> = AsyncStorage.getItem(BLOCKED_KEY)
   .then((raw) => {
@@ -778,16 +673,14 @@ const blockedLoaded: Promise<void> = AsyncStorage.getItem(BLOCKED_KEY)
 
 function saveBlocked(): void {
   AsyncStorage.setItem(BLOCKED_KEY, JSON.stringify(Object.fromEntries(blocked))).catch(() => {
-    // Kept for this session; written again on the next change.
+    // Retried on the next change.
   });
 }
 
-/** What would be sent for this note: its words, and its recording if there's one. */
 function sentContent(e: Pick<Entry, 'pendingRawText' | 'pendingAudioUri' | 'blocks'>): string {
   return `${(e.pendingRawText ?? textOf(e)).trim()}|${e.pendingAudioUri ?? ''}`;
 }
 
-/** The note as it is now was declined by the safety filter: the sweep leaves it. */
 export function isBlockedNote(e: Pick<Entry, 'id' | 'pendingRawText' | 'pendingAudioUri' | 'blocks'>): boolean {
   const declined = blocked.get(e.id);
   return declined !== undefined && declined === sentContent(e);
@@ -804,11 +697,7 @@ function clearBlocked(entryId: string): void {
   if (blocked.delete(entryId)) saveBlocked();
 }
 
-/**
- * Retry, from the note itself: sends it now whatever happened before,
- * a safety block included. If it's declined again, the sweep goes back to
- * leaving it. Throws like structurePendingEntry, for the screen to explain.
- */
+/** Sends now, safety block included; re-blocks if declined again. Throws like structurePendingEntry. */
 export async function retryEntryNow(entry: PendingEntry, store: CaptureStore): Promise<void> {
   await blockedLoaded;
   clearBlocked(entry.id);
@@ -821,18 +710,9 @@ export async function retryEntryNow(entry: PendingEntry, store: CaptureStore): P
   }
 }
 
-/**
- * Fire-and-forget version of `structurePendingEntry` for background callers
- * (freshly saved entries, PendingProcessor's sweeps). Never throws. On
- * failure the entry stays pending (it already shows the phone's reading)
- * and is tried again later, backing off; a problem the person can fix
- * (bad key, quota) is reported through `setAiProblem`. Resolves true when
- * every other waiting note would fail the same way (bad key, no quota,
- * Gemini busy, no signal): a sweep stops there instead of trying them all.
- */
+/** Never throws; retries with back-off. Resolves true when every other waiting note would fail the same way, so a sweep stops. */
 export async function resolvePendingEntry(entry: PendingEntry, store: CaptureStore): Promise<boolean> {
   await blockedLoaded;
-  // Declined by the safety filter as it stands: only an edit or Retry sends it.
   const current = store.snapshot().entries.find((x) => x.id === entry.id) ?? entry;
   if (isBlockedNote(current)) return false;
   clearBlocked(entry.id);
@@ -845,15 +725,13 @@ export async function resolvePendingEntry(entry: PendingEntry, store: CaptureSto
     return false;
   } catch (e) {
     if (e instanceof AiOffError) return true;
-    // No connection: nothing reached Gemini, so no reason to wait longer
-    // each time. The next sweep (within a minute) tries again.
+    // Nothing reached Gemini, so no back-off.
     if (isNoConnection(e)) {
       attempts.delete(entry.id);
       return true;
     }
     const problem = classifyAiError(e);
     if (problem === 'blocked') {
-      // Not a failure to wait out: off the back-off list, and left by the sweep.
       attempts.delete(entry.id);
       markBlocked(entry.id, store);
       logError('ai', e);
@@ -862,20 +740,15 @@ export async function resolvePendingEntry(entry: PendingEntry, store: CaptureSto
     const count = (previous?.count ?? 0) + 1;
     attempts.set(entry.id, { count, nextAt: Date.now() + BACKOFF_MS[Math.min(count, BACKOFF_MS.length) - 1] });
     if (problem === 'invalid' || problem === 'quota') setAiProblem(problem, problem === 'quota' ? aiErrorText(e) : null);
-    // Only a note's first failure is logged: its retries would fill the log with the same error.
-    // (An empty answer is logged with its cause, see lib/empty-response.ts.)
+    // Only the first failure is logged; retries would repeat it.
     const worthLogging = problem === 'other' || problem === 'truncated' || problem === 'empty';
     if (worthLogging && !previous) logError('ai', e);
-    // A bad key, a spent quota, a busy Gemini or no signal would fail the
-    // same way for every other waiting note: the sweep stops here.
     return problem === 'invalid' || problem === 'quota' || problem === 'busy' || problem === 'offline';
   }
 }
 
-/** Forgets past failures, so the next sweep tries every waiting note. */
 export function retryWaitingNow(): void {
   attempts.clear();
 }
 
-// A new key: forget past failures, so the next sweep tries everything.
 onApiKeyChanged(retryWaitingNow);

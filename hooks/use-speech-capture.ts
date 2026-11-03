@@ -8,14 +8,7 @@ import { heardLanguage, languageOf } from '@/lib/language';
 import { getPreferences, setPreferences, type SpeechLang } from '@/lib/preferences';
 import { deleteAudio, keepRecording } from '@/lib/voice-audio';
 
-// Two ways to take a voice note:
-//
-// - With Gemini on, it's recorded, and Gemini writes it out afterwards
-//   (Groq's Whisper if Gemini can't; lib/capture). Whole recordings come out
-//   far better than live recognition, in Bangla, English or both mixed. The
-//   recording is deleted once it's written out (lib/voice-audio).
-// - Offline, the phone's own speech recognition writes it out as you talk.
-//   Nothing is recorded.
+// Gemini on: record, transcribe afterwards (Whisper fallback; lib/capture), then delete the audio. Offline: live recognition, nothing recorded.
 
 export type ListenStart = 'ok' | 'permission-denied' | 'unavailable';
 
@@ -25,24 +18,17 @@ export interface Heard {
   audio: string[];
 }
 
-// Recognition events are global, but several screens can listen (the
-// capture button stays mounted under the Record screen). Only the screen
-// that started this session handles its events.
+// Recognition events are global and several screens listen; only the starter handles them.
 let owner = 0;
 let nextId = 1;
 
-// How long to wait for the recognizer to hand back its last words after
-// stop() before giving up and using what we have.
 const STOP_TIMEOUT_MS = 2500;
 
-// After this many restarts in a row with nothing heard, stop trying: the
-// recognizer is failing, not pausing.
+// Consecutive empty restarts mean the recognizer is failing, not pausing.
 const MAX_RESTARTS = 4;
 
-// How sure Android's language detector must be before we act on it.
 const DETECT_CONFIDENCE = 0.8;
 
-// Shorter than this is a slip of the finger, not a note.
 const MIN_RECORDING_MS = 600;
 
 const RECORDER_OPTIONS = { ...RecordingPresets.HIGH_QUALITY, isMeteringEnabled: true };
@@ -50,8 +36,7 @@ const LEVEL_MS = 80;
 
 const LANGUAGES: SpeechLang[] = ['bn-BD', 'en-US'];
 const other = (l: SpeechLang): SpeechLang => (l === 'bn-BD' ? 'en-US' : 'bn-BD');
-// Language detection came in Android 14. The library looks each extra up by
-// name, and an unknown one stops listening from starting at all.
+// Detection needs Android 14; an unknown intent extra stops listening from starting.
 const CAN_DETECT = Platform.OS === 'android' && Number(Platform.Version) >= 34;
 
 /** volumechange reports roughly -2 (silence) to 10 (loud). */
@@ -59,15 +44,7 @@ const recognizerLevel = (db: number) => Math.max(0, Math.min(1, (db + 2) / 12));
 /** Recorder metering is dBFS: about -60 is quiet, 0 is as loud as it goes. */
 const recorderLevel = (db: number) => Math.max(0, Math.min(1, (db + 60) / 60));
 
-/**
- * Voice capture.
- *
- *   const speech = useSpeechCapture({ onLevel });
- *   await speech.start();                   // asks for the microphone the first time
- *   speech.text                             // offline: the words so far
- *   const { words, audio } = await speech.stop();
- *   speech.cancel();                        // throw it away
- */
+/** Voice capture: start() asks for the mic the first time, stop() resolves `{ words, audio }`, cancel() discards. */
 export function useSpeechCapture(options: { onLevel?: (level: number) => void } = {}) {
   const id = useRef(nextId++).current;
   const recorder = useAudioRecorder(RECORDER_OPTIONS);
@@ -95,14 +72,11 @@ export function useSpeechCapture(options: { onLevel?: (level: number) => void } 
 
   const mine = () => owner === id;
   const full = () => [finalText.current, interim.current].filter(Boolean).join(' ').trim();
-  // Words still showing as "interim" when a session ends were said: keep
-  // them, or a restart (after a pause, or a language change) drops them.
+  // Interim words at session end were said; keep them or a restart drops them.
   const keepInterim = () => {
     finalText.current = full();
     interim.current = '';
   };
-
-  // ─── Recording (Gemini on) ───────────────────────────────────
 
   const stopLevels = () => {
     if (levelTimer.current) clearInterval(levelTimer.current);
@@ -149,29 +123,21 @@ export function useSpeechCapture(options: { onLevel?: (level: number) => void } 
     return 'ok';
   }, [recorder]);
 
-  // ─── Live recognition (offline) ──────────────────────────────
-
   const begin = useCallback(() => {
     tried.current.add(lang.current);
     ExpoSpeechRecognitionModule.start({
       lang: lang.current,
       interimResults: true,
       continuous: true,
-      // Android's punctuation (formatting) exists for English only; asking
-      // for it in Bangla can end the session as "language not supported".
+      // Punctuation is English-only; in Bangla it can end the session as "language not supported".
       addsPunctuation: lang.current === 'en-US',
       requiresOnDeviceRecognition: false,
       androidIntentOptions: {
-        // Detect which of the two is being spoken (see 'languagedetection').
-        // No EXTRA_ENABLE_LANGUAGE_SWITCH: letting Android switch models
-        // mid-sentence is what wrote Bangla out as Hindi and dropped words.
+        // No EXTRA_ENABLE_LANGUAGE_SWITCH: mid-sentence model switching wrote Bangla as Hindi and dropped words.
         ...(CAN_DETECT
           ? { EXTRA_ENABLE_LANGUAGE_DETECTION: true, EXTRA_LANGUAGE_DETECTION_ALLOWED_LANGUAGES: LANGUAGES }
           : {}),
-        // expo-speech-recognition asks for offline-only recognition whenever
-        // it streams the microphone (continuous, Android 13+). Offline Bangla
-        // is often not installed and offline models miss more words, so let
-        // the phone use its best recognizer.
+        // The library forces offline-only when streaming (Android 13+); offline Bangla is often missing.
         EXTRA_PREFER_OFFLINE: false,
       },
     });
@@ -204,7 +170,6 @@ export function useSpeechCapture(options: { onLevel?: (level: number) => void } 
     setText(full());
   });
 
-  // Speaking the other language than the one it's listening in: move over.
   useSpeechRecognitionEvent('languagedetection', (event) => {
     if (!mine() || !wanted.current || stopWaiter.current) return;
     const heard = heardLanguage(event.detectedLanguage);
@@ -219,7 +184,6 @@ export function useSpeechCapture(options: { onLevel?: (level: number) => void } 
 
   useSpeechRecognitionEvent('error', (event) => {
     if (!mine()) return;
-    // The phone can't recognise this language: try the other one, once.
     if (event.error === 'language-not-supported' && wanted.current && !stopWaiter.current) {
       const next = other(lang.current);
       if (!tried.current.has(next)) {
@@ -230,13 +194,11 @@ export function useSpeechCapture(options: { onLevel?: (level: number) => void } 
         restarts.current = MAX_RESTARTS; // neither works: finish with what's there
       }
     }
-    // Otherwise a pause with nothing said ends the session on some phones;
-    // the 'end' that follows starts listening again.
+    // Silence ends the session on some phones; 'end' restarts it.
   });
 
   const finishRecognizing = () => {
     const words = full();
-    // Next note starts in the language this one was in.
     const learned = detected.current ?? languageOf(words) ?? lang.current;
     if (learned !== getPreferences().speechLang) setPreferences({ speechLang: learned });
     finalText.current = words;
@@ -250,9 +212,7 @@ export function useSpeechCapture(options: { onLevel?: (level: number) => void } 
     if (!mine()) return;
     keepInterim();
     if (wanted.current && !stopWaiter.current && restarts.current < MAX_RESTARTS) {
-      // Older Android stops after a silence even in continuous mode, and a
-      // language change ends the session on purpose: pick up again so the
-      // note goes on.
+      // Older Android stops after silence even in continuous mode; a language change also ends it on purpose.
       restarts.current += 1;
       try {
         begin();
@@ -266,8 +226,6 @@ export function useSpeechCapture(options: { onLevel?: (level: number) => void } 
     const words = finishRecognizing();
     resolve?.(words);
   });
-
-  // ─── Both ────────────────────────────────────────────────────
 
   const start = useCallback(async (): Promise<ListenStart> => {
     finalText.current = '';
@@ -363,8 +321,7 @@ export function useSpeechCapture(options: { onLevel?: (level: number) => void } 
     }
   }, [endRecording, id]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Leaving the screen mid-note discards it (the person agreed a lost
-  // recording is fine; a microphone left on is not).
+  // Leaving mid-note discards it: a lost recording is fine, a live mic is not.
   const cancelRef = useRef(cancel);
   cancelRef.current = cancel;
   useEffect(() => () => cancelRef.current(), []);
