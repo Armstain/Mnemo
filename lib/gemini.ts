@@ -13,28 +13,18 @@ export class AiOffError extends Error {
   }
 }
 
-/**
- * The one way out to Gemini. Offline means nothing leaves the phone, even
- * with a key saved, so every caller (search, related threads, digests)
- * fails here and falls back to what the phone can do.
- */
+/** The one way out to Gemini. Offline means nothing leaves the phone, even with a key saved, so callers fail here and fall back. */
 export function getAIClient(): GoogleGenAI {
   if (!aiEnabled()) throw new AiOffError();
   return new GoogleGenAI({ apiKey: getActiveApiKey() });
 }
 
-// ─── Which models ───────────────────────────────────────────────
-// Asked of Google once per launch (and again after a key change or a
-// model that's gone), then chosen in lib/model-pick.ts. Names written into
-// the app go stale: Google renames and retires models, and one that 404s
-// left every note "Processing". These are only used if the list can't be
-// fetched.
+// Hardcoded names go stale (a 404ing model left every note "Processing"); these are only used if the model list can't be fetched.
 const FALLBACK_TEXT = ['gemini-flash-latest'];
 const FALLBACK_TTS = 'gemini-2.5-flash-preview-tts';
 
 let catalog: Promise<ModelInfo[] | null> | null = null;
 
-/** Every model this key can use, or null when the list couldn't be fetched. */
 export function modelCatalog(): Promise<ModelInfo[] | null> {
   if (!catalog) {
     catalog = (async () => {
@@ -52,7 +42,6 @@ export function modelCatalog(): Promise<ModelInfo[] | null> {
   return catalog;
 }
 
-/** Forget the list: the next call fetches it again. */
 export function refreshModels(): void {
   catalog = null;
 }
@@ -64,9 +53,7 @@ async function textModels(): Promise<string[]> {
   return picked.length > 0 ? picked : FALLBACK_TEXT;
 }
 
-// Models out of quota, and until when to leave them alone. The free tier
-// counts each model on its own: the newest model running out (a preview's
-// allowance can be small) mustn't stop notes while older ones still answer.
+// The free tier counts quota per model: a newest model running out mustn't stop notes while older ones answer.
 const resting = new Map<string, { until: number; daily: boolean }>();
 onApiKeyChanged(() => resting.clear());
 
@@ -78,7 +65,6 @@ function isResting(model: string, now = Date.now()): boolean {
   return false;
 }
 
-/** The error for "every model is resting", worded so it reads as the quota it is (daily, or a wait). */
 function allRestingError(): string {
   const rests = [...resting.values()];
   if (rests.length > 0 && rests.every((r) => r.daily)) return 'RESOURCE_EXHAUSTED: PerDay quota used up on every model';
@@ -87,10 +73,7 @@ function allRestingError(): string {
   return `RESOURCE_EXHAUSTED: every model is out of quota. Please retry in ${secs}s.`;
 }
 
-/**
- * Flash-Lite writing a note means every full Flash model was resting or out
- * of quota: say so, until a Flash model answers again.
- */
+/** Flash-Lite writing a note means every full Flash model was resting: say so until one answers again. */
 function noteModelUsed(model: string, models: string[]): void {
   if (isLiteModel(model) && models.some((m) => !isLiteModel(m))) {
     setAiNotice('Gemini Flash is out of quota for now, so Mnemo is using the lighter Flash-Lite. Notes may be a little less sharp.');
@@ -100,28 +83,14 @@ function noteModelUsed(model: string, models: string[]): void {
 }
 
 const OVERLOAD_PAUSE_MS = 1500;
-/**
- * Longest one request may take, a recording's upload included. Without a
- * limit, a request that never came back (a bad connection, Google holding
- * it) kept its note "in progress" and skipped by every retry, and by Groq,
- * until the app was closed.
- */
+/** Without a limit, a request that never returned kept its note "in progress" and skipped by every retry until the app closed. */
 const REQUEST_TIMEOUT_MS = 90_000;
 
-/**
- * Gemini's default filters sometimes decline an ordinary note (a place
- * name, a reminder) as "dangerous". The four categories the API lets a
- * caller adjust are set to block only what's rated HIGH, so a false alarm
- * at MEDIUM goes through. Nothing is turned off (no BLOCK_NONE), and the
- * filters Google always applies stay on whatever is set here. Written as
- * the API's own string values, so the type comes from the SDK without
- * needing its runtime enums.
- */
+/** Default filters sometimes block ordinary notes as "dangerous"; block only HIGH (never BLOCK_NONE). String values avoid the SDK's runtime enums. */
 export const SAFETY_SETTINGS: SafetySetting[] = (
   ['HARM_CATEGORY_HARASSMENT', 'HARM_CATEGORY_HATE_SPEECH', 'HARM_CATEGORY_SEXUALLY_EXPLICIT', 'HARM_CATEGORY_DANGEROUS_CONTENT'] as const
 ).map((category) => ({ category: category as HarmCategory, threshold: 'BLOCK_ONLY_HIGH' as HarmBlockThreshold }));
 
-/** For callers that asked for JSON: text that doesn't parse is no better than none. */
 const parsesAsJson = (text: string): void => {
   JSON.parse(text);
 };
@@ -137,14 +106,11 @@ async function generateText(
   const { input, validate } = opts;
   const client = getAIClient();
   let lastError: unknown;
-  // Models that answered with no text (a block, a cut-off, nothing), and
-  // whether that was the latest failure: then it's the one to report.
   const empties: EmptyAttempt[] = [];
   let lastWasEmpty = false;
   let sawMissing = false;
   let tried = false;
-  // Two passes: when every model says "high demand" (it comes in spikes),
-  // one short pause and a second go beats failing the note.
+  // Two passes: "high demand" comes in spikes, so one pause and retry beats failing.
   for (let pass = 0; pass < 2; pass++) {
     let overloaded = false;
     const models = await textModels();
@@ -157,7 +123,6 @@ async function generateText(
           ...params,
           config: {
             ...params.config,
-            // A caller's own settings win; otherwise only HIGH blocks (SAFETY_SETTINGS).
             safetySettings: params.config?.safetySettings ?? SAFETY_SETTINGS,
             httpOptions: { ...params.config?.httpOptions, timeout: REQUEST_TIMEOUT_MS },
           },
@@ -171,9 +136,7 @@ async function generateText(
           }
         }
         if (!response.text || unreadable) {
-          // A reply with no text is no success: another model may answer. A
-          // block (safety) is Google's decision about this note, so waiting
-          // and asking again is pointless: it only gets the other models.
+          // A safety block is final for this note: retrying later is pointless, only other models are tried.
           const empty = describeEmpty(response, model, unreadable);
           empties.push(empty);
           lastWasEmpty = true;
@@ -185,8 +148,7 @@ async function generateText(
       } catch (e) {
         lastError = e;
         lastWasEmpty = false;
-        // A missing model, a busy one or one out of quota is worth trying
-        // another for. A bad key or no signal would fail the same way on each.
+        // Missing, busy or out-of-quota models try another; a bad key or no signal fails the same on each.
         const pause = quotaPause(e);
         if (pause !== undefined) resting.set(model, { until: Date.now() + pause, daily: quotaInfo(e)?.daily ?? false });
         else if (isMissingModel(e)) sawMissing = true;
@@ -198,23 +160,18 @@ async function generateText(
     if (pass === 0) await new Promise((resolve) => setTimeout(resolve, OVERLOAD_PAUSE_MS));
   }
   if (sawMissing) refreshModels();
-  // Every model is sitting out its quota: say so, without spending a request.
   if (!tried) throw new Error(allRestingError());
   if (lastWasEmpty) throw new EmptyResponseError(empties, input);
   throw lastError;
 }
 
-/** Category list for AI suggestion. */
 const VALID_CATEGORIES = ['work', 'personal', 'study', 'shopping', 'health', 'ideas', 'errands', 'general'];
 
-/** What the note is (lib/kind.ts); "note" when it's none of the three clearly. */
 const VALID_KINDS = ['project', 'task', 'idea', 'note'];
 const KIND_RULE =
   'What this is: "project" (something ongoing with several steps: a portfolio, a trip, a renovation), "task" (one thing to get done, or a list to work through), "idea" (a thought worth keeping, not yet something to do), or "note" (information to keep: a number, an address, a receipt). When unsure, "note".';
 
-// ─── Response schemas ───────────────────────────────────────────
-// Every structured call declares a schema so a malformed model
-// response fails at the API layer instead of at JSON.parse.
+// Schemas make a malformed response fail at the API layer, not at JSON.parse.
 
 const SUMMARY_SCHEMA = {
   type: Type.OBJECT,
@@ -297,7 +254,6 @@ const THREAD_MATCH_SCHEMA = {
 
 const DUMP_REQUIRED = ['title', 'notes', 'links', 'tags', 'suggestedCategory', 'kind', 'summary', 'measures'];
 
-/** The capture schema; thread matching and a transcript only when asked for. */
 function dumpSchema(opts: { threads: boolean; transcript: boolean }) {
   const properties: Record<string, unknown> = { ...DUMP_PROPERTIES };
   const required = [...DUMP_REQUIRED];
@@ -321,20 +277,15 @@ export interface ThreadCandidate {
   title: string;
   category: string;
   nextStep?: string;
-  /** A snippet of its newest entry. */
   latest?: string;
-  /** The thread the person chose to send quick captures to. */
   focused?: boolean;
-  /** What it already tracks, e.g. "spent (EUR, sum)". */
+  /** e.g. "spent (EUR, sum)". */
   tracks?: string[];
-  /** Whole days since anything was added. */
   idleDays?: number;
 }
 
 export interface CaptureContext {
-  /** Open threads this capture might belong to (quick captures only). */
   candidates: ThreadCandidate[];
-  /** What the thread it's going into already tracks, so names are reused. */
   tracks?: string[];
 }
 
@@ -345,14 +296,13 @@ export interface ThreadMatch {
   reason: string;
 }
 
-/** What one capture call returns. `measures` is unchecked: see verifyMeasures. */
+/** `measures` is unchecked: see verifyMeasures. */
 export interface ProcessedCapture {
   title: string;
   notes: string;
   links: string[];
   tags?: string[];
   suggestedCategory?: string;
-  /** project, task, idea or note: see KIND_RULE. */
   kind?: string;
   summary?: { leftOff: string; nextSteps: string[]; resources: { name: string; url: string }[] };
   measures?: unknown[];
@@ -360,8 +310,6 @@ export interface ProcessedCapture {
   thread?: ThreadMatch;
 }
 
-// Many notes are Bangla, Banglish (Bangla typed in Latin letters) or a mix
-// with English. Each stays as it was said.
 const LANGUAGE_RULES = `LANGUAGE: Write title, notes, tags, leftOff and nextSteps in the language and script the person used. Bangla stays in Bangla script; Banglish stays in Latin letters; a mix stays a mix, keeping the English words they used. Never translate the note, and never switch it to another script. Fix obvious speech-recognition slips, but don't "correct" one language into the other.`;
 
 const MEASURE_RULES = `
@@ -413,7 +361,6 @@ Decide whether this capture continues one of them: the same trip, task, project,
 - "reason": one short line they will read, e.g. "Sounds like part of your Lisbon trip".`;
 }
 
-/** A note given to `askNotes`: one thread, its dated entries flattened to text. */
 export interface NoteForQuestion {
   id: string;
   title: string;
@@ -429,11 +376,7 @@ const ANSWER_SCHEMA = {
   required: ['answer', 'sourceIds'],
 };
 
-/**
- * Answers a question from the person's own notes (the few most relevant,
- * chosen on the phone), saying which notes it used. Never from general
- * knowledge: if the notes don't say, it says so.
- */
+/** Answers only from the given notes, never general knowledge; says so if they don't cover it. */
 export async function askNotes(
   question: string,
   notes: NoteForQuestion[],
@@ -486,10 +429,7 @@ const OVERVIEW_SCHEMA = {
   required: ['themes', 'open'],
 };
 
-/**
- * Groups a thread's loose notes by theme, when the person asks. Returns
- * the raw answer; lib/overview's cleanOverview checks it.
- */
+/** Returns the raw answer; lib/overview's cleanOverview checks it. */
 export async function organiseNotes(title: string, notes: { text: string; at: number }[]): Promise<unknown> {
   const list = notes.map((n, i) => `${i + 1}. (${new Date(n.at).toDateString()}) ${n.text}`).join('\n');
   const prompt = `
@@ -519,9 +459,8 @@ ${list}
 export async function processVoiceDump(
   transcript: string,
   ctx?: CaptureContext,
-  /** Photos attached to the note, as base64 JPEG. */
+  /** Base64 JPEG. */
   images: string[] = [],
-  /** Pages the note links to, as the phone read them. */
   pages: PageContext[] = [],
 ): Promise<ProcessedCapture> {
   const photoRules = images.length
@@ -611,10 +550,7 @@ export async function generateSpeech(text: string) {
   }
 }
 
-/**
- * Writes out a voice note from its sound and structures it. `audio` is one
- * recording, or several in order when the phone's recognizer restarted.
- */
+/** `audio` is one recording, or several in order when the phone's recognizer restarted. */
 export async function processAudioDump(
   audio: { data: string; mimeType: string }[],
   ctx?: CaptureContext,
@@ -679,10 +615,7 @@ export async function processAudioDump(
   return JSON.parse(text);
 }
 
-/**
- * Write a short spoken briefing to read aloud when the user resumes an item.
- * Returns plain prose (no markdown) in the same language as the note.
- */
+/** Plain prose (no markdown) in the note's language, to read aloud. */
 export async function generateRebriefScript(input: {
   title: string;
   timeAway: string;

@@ -7,11 +7,9 @@ import { nextDailyReset, OVERLOADED_PATTERN, quotaInfo } from '@/lib/model-pick'
 const GEMINI_KEY_STORAGE = 'mnemo_user_gemini_api_key';
 const GROQ_KEY_STORAGE = 'mnemo_user_groq_api_key';
 
-// In-memory cache for fast synchronous access
 let cachedGeminiApiKey: string | null = null;
 let cachedGroqApiKey: string | null = null;
 
-/** Load stored API keys on app initialization. */
 export async function loadStoredApiKeys(): Promise<void> {
   try {
     if (Platform.OS === 'web') {
@@ -28,20 +26,15 @@ export async function loadStoredApiKeys(): Promise<void> {
   }
 }
 
-// ─── Gemini API Key ───────────────────────────────────────────────
+// ─── Gemini ───
 
-/**
- * The person's own Gemini key, or '' if they haven't added one. There is
- * deliberately no built-in fallback: a key bundled into the app can be
- * pulled out of it by anyone.
- */
+/** No built-in fallback key on purpose: a bundled key can be extracted from the app. */
 export function getActiveApiKey(): string {
   return cachedGeminiApiKey?.trim() ?? '';
 }
 
 const keyListeners = new Set<() => void>();
 
-/** Called after the key changes (a new key deserves a fresh try at everything). */
 export function onApiKeyChanged(listener: () => void): () => void {
   keyListeners.add(listener);
   return () => keyListeners.delete(listener);
@@ -74,10 +67,9 @@ export async function saveApiKey(key: string): Promise<void> {
 
 export type KeyProblem = 'invalid' | 'quota' | 'offline' | 'busy' | 'blocked' | 'truncated' | 'empty' | 'other';
 
-/** Sorts a Gemini error into something the person can act on. */
 export function classifyAiError(err: unknown): KeyProblem {
   const msg = String((err as { message?: string })?.message ?? err);
-  // First: its text carries counts ("transcript 401 chars") that the checks below would take for status codes.
+  // Must run first: the text has counts ("transcript 401 chars") that look like status codes.
   const empty = emptyKindOf(msg);
   if (empty) return empty === 'blocked' ? 'blocked' : empty === 'truncated' ? 'truncated' : empty === 'unreadable' ? 'other' : 'empty';
   if (/API_KEY_INVALID|API key not valid|PERMISSION_DENIED|\b(401|403)\b/i.test(msg)) return 'invalid';
@@ -87,13 +79,12 @@ export function classifyAiError(err: unknown): KeyProblem {
   return 'other';
 }
 
-/** Google resets its daily free quota at midnight Pacific; this says when, in the phone's own time. */
+/** Google resets the daily quota at midnight Pacific; shown in local time. */
 export function dailyResetText(now = Date.now()): string {
   const time = new Date(nextDailyReset(now)).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
   return `It resets at ${time} your time.`;
 }
 
-/** The wait Google named, as the person reads it: "37 seconds", "2 minutes". */
 function waitText(ms: number): string {
   const s = Math.ceil(ms / 1000);
   if (s < 90) return `${s} second${s === 1 ? '' : 's'}`;
@@ -101,11 +92,6 @@ function waitText(ms: number): string {
   return `${m} minutes`;
 }
 
-/**
- * What to tell the person about an error: the fixed text for its kind,
- * except a quota one, which says whether the day's allowance or only this
- * minute's is spent (and when it is back).
- */
 export function aiErrorText(err: unknown): string {
   const problem = classifyAiError(err);
   if (problem !== 'quota') return KEY_PROBLEM_TEXT[problem];
@@ -115,14 +101,8 @@ export function aiErrorText(err: unknown): string {
   return `Gemini is getting too many requests this minute. ${retry} Notes are saved and will be tidied up later.`;
 }
 
-/** Problems the background sweep tries again by itself (lib/capture.ts). */
 const RETRIED_BY_ITSELF: KeyProblem[] = ['offline', 'quota', 'busy'];
 
-/**
- * What the Retry dialog on a note says. Only a problem that's actually
- * tried again later says so; a safety block is left until the note is
- * edited or Retry is tapped, and says that instead.
- */
 export function retryProblemText(err: unknown): { title: string; message: string } {
   const problem = classifyAiError(err);
   const title = problem === 'offline' ? 'Still offline?' : 'Gemini had a problem';
@@ -137,10 +117,7 @@ export function retryProblemText(err: unknown): { title: string; message: string
   return { title, message: RETRIED_BY_ITSELF.includes(problem) ? `${text} It's tried again by itself.` : text };
 }
 
-/**
- * The request never left the phone (no connection), so it cost nothing and
- * can be tried again soon. A timeout isn't this: the call may have reached Gemini.
- */
+/** Request never left the phone. A timeout is not this: the call may have reached Gemini. */
 export function isNoConnection(err: unknown): boolean {
   return /Network request failed|Failed to fetch|NetworkError|ENOTFOUND/i.test(String((err as { message?: string })?.message ?? err));
 }
@@ -156,10 +133,7 @@ export const KEY_PROBLEM_TEXT: Record<KeyProblem, string> = {
   other: 'Gemini returned an error. Notes are saved either way.',
 };
 
-/**
- * Checks a key by listing models: cheap, uses no generation quota, and
- * fails the same way generation would for a bad key.
- */
+/** Lists models: uses no generation quota. */
 export async function validateApiKey(keyToTest?: string): Promise<{ valid: boolean; error?: string; problem?: KeyProblem }> {
   const key = keyToTest !== undefined ? keyToTest.trim() : getActiveApiKey();
   if (!key) return { valid: false, error: 'Paste your Gemini key first.', problem: 'invalid' };
@@ -173,12 +147,8 @@ export async function validateApiKey(keyToTest?: string): Promise<{ valid: boole
   }
 }
 
-// ─── Groq API Key (backup voice transcription) ───────────────────
+// ─── Groq (backup voice transcription) ───
 
-/**
- * The person's own Groq key, or ''. Optional: when Gemini can't write a
- * voice note out (down, out of quota), Groq's Whisper does.
- */
 export function getActiveGroqApiKey(): string {
   return cachedGroqApiKey?.trim() ?? '';
 }
@@ -202,7 +172,6 @@ export async function saveGroqApiKey(key: string): Promise<void> {
   }
 }
 
-/** Checks a Groq key by listing its models (free, uses no transcription quota). */
 export async function validateGroqApiKey(keyToTest?: string): Promise<{ valid: boolean; error?: string }> {
   const key = keyToTest !== undefined ? keyToTest.trim() : getActiveGroqApiKey();
   if (!key) return { valid: false, error: 'Paste your Groq key first.' };

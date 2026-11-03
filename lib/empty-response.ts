@@ -1,27 +1,19 @@
-// What to make of a Gemini answer that came back with no text. The HTTP
-// call succeeded, so nothing in the error path said why: a safety block, a
-// reply cut off at the token limit, and a note with nothing in it all
-// looked like "Failed to process voice dump". Pure, so it's tested
-// (tests/empty-response.test.ts).
+// Why a Gemini answer had no text: the HTTP call succeeds, so safety blocks, token-limit cuts and empty input otherwise look alike.
 
-/** One safety rating as Google sends it: which category, and how likely. */
 interface RatingFacts {
   category?: unknown;
   probability?: unknown;
   blocked?: unknown;
 }
 
-/** The parts of a generateContent response that say why there's no text. */
 export interface ResponseFacts {
   candidates?: { finishReason?: unknown; safetyRatings?: RatingFacts[] }[];
   promptFeedback?: { blockReason?: unknown; safetyRatings?: RatingFacts[] };
 }
 
-/** A safety rating, kept short: the category and its probability. */
 export interface SafetyRating {
   category: string;
   probability: string;
-  /** Google says this rating is the one that blocked it. */
   blocked?: boolean;
 }
 
@@ -32,21 +24,15 @@ export interface EmptyAttempt {
   finishReason?: string;
   blockReason?: string;
   candidates: number;
-  /** There was text, but not the JSON that was asked for. */
   unreadable?: boolean;
-  /** Every safety rating given (the prompt's, then each candidate's). */
   safety?: SafetyRating[];
 }
 
-/** What went in: shown in the error, and tells "nothing to process" from "wouldn't process it". */
 export interface InputInfo {
-  /** e.g. "transcript 123 chars" */
   label: string;
-  /** True when there was nothing to process. */
   none: boolean;
 }
 
-/** Finish reasons that mean Google's filters declined to answer. */
 const BLOCKED_FINISH = /^(SAFETY|PROHIBITED_CONTENT|BLOCKLIST|SPII|RECITATION|IMAGE_SAFETY|IMAGE_PROHIBITED_CONTENT|IMAGE_RECITATION)$/;
 
 function readRatings(list: RatingFacts[] | undefined): SafetyRating[] {
@@ -72,13 +58,9 @@ export function describeEmpty(response: ResponseFacts, model: string, unreadable
   };
 }
 
-/** Google's probability scale, lowest to highest. */
 const PROBABILITY = ['NEGLIGIBLE', 'LOW', 'MEDIUM', 'HIGH'];
 
-/**
- * The rating most likely to have caused a block: one Google marks as the
- * blocker, otherwise the highest probability. Null when none were given.
- */
+/** Rating Google marks as the blocker, else the highest probability. */
 export function topSafety(attempts: EmptyAttempt[]): SafetyRating | null {
   let best: SafetyRating | null = null;
   const rank = (r: SafetyRating) => (r.blocked ? 10 : 0) + PROBABILITY.indexOf(r.probability);
@@ -96,7 +78,6 @@ export function emptyKind(attempts: EmptyAttempt[], input?: InputInfo): EmptyKin
   return 'empty';
 }
 
-/** Thrown when every model answered without text. The message carries the cause, for the problem report. */
 export class EmptyResponseError extends Error {
   readonly kind: EmptyKind;
   constructor(readonly attempts: EmptyAttempt[], input?: InputInfo) {
@@ -104,8 +85,7 @@ export class EmptyResponseError extends Error {
     const tried = attempts
       .map((a) => `${a.model} finish=${a.finishReason ?? '-'}${a.blockReason ? ` block=${a.blockReason}` : ''} candidates=${a.candidates}${a.unreadable ? ' unreadable' : ''}`)
       .join('; ');
-    // The cause and the input first: the log cuts long messages short. For a
-    // block, the safety category that fired comes right after the cause.
+    // Cause, input and safety category come first: the log truncates long messages.
     const top = kind === 'blocked' ? topSafety(attempts) : null;
     const safety = top ? ` · safety=${top.category}:${top.probability}` : '';
     super(`Gemini returned ${kind === 'unreadable' ? 'unreadable text' : 'no text'} (${kind})${safety} · input: ${input?.label ?? 'unknown'} · ${tried}`);
@@ -114,7 +94,7 @@ export class EmptyResponseError extends Error {
   }
 }
 
-/** The kind named in an error's text (it survives being logged and re-thrown), or null. */
+/** Parses the kind from error text, which survives logging and re-throwing. */
 export function emptyKindOf(err: unknown): EmptyKind | null {
   const msg = String((err as { message?: string })?.message ?? err);
   const m = msg.match(/Gemini returned (?:no|unreadable) (?:text) \((blocked|truncated|empty-input|unreadable|empty)\)/);

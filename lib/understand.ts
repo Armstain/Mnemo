@@ -6,15 +6,10 @@ import { queueSteps } from '@/lib/when';
 import { isPlan, MONTH_WORDS, opensInPast, readWhenFull, withoutWhen, type Repeat } from '@/lib/when-read';
 import { readKind } from '@/lib/kind';
 
-// Reading a note on the phone, with no AI: a title, lists, links, the
-// numbers worth adding up, the next step and when it's due, a category
-// and #tags. Works on English, Bangla and Banglish (Bangla typed in Latin
-// letters), and on spoken text as well as typed. When Gemini is on it does
-// this better; this is what offline gets, and it's what every note shows
-// the instant it's saved.
+// On-device note reading, no AI: English, Bangla and Banglish, typed or spoken. Offline's only path and what every note shows before Gemini answers.
 
 export interface Reading {
-  /** The note's text, minus any list lines lifted into `checklist`. */
+  /** Minus any list lines lifted into `checklist`. */
   text: string;
   title: string;
   checklist: ChecklistItem[];
@@ -33,7 +28,6 @@ export interface Reading {
   tags: string[];
 }
 
-/** What a thread already tracks, so "spent" stays "spent". */
 export interface KnownMetric {
   metric: string;
   unit?: string;
@@ -67,12 +61,7 @@ export function sentences(text: string): string[] {
     .filter(Boolean);
 }
 
-// ─── Speech with no punctuation ─────────────────────────────────
-// The phone's speech service punctuates English only, and only on some
-// phones; Bangla and Banglish arrive as one long run ("meeting with rahim
-// went well he wants the budget by friday"). In a long note with no
-// sentence ends, break where a spoken clause plainly starts or ends, so
-// the title, next step and left-off each come from one thought.
+// Speech punctuates English only, and only on some phones; Bangla and Banglish arrive as one run. Break at clause boundaries so title, step and left-off each come from one thought.
 
 const SPOKEN_MIN_WORDS = 10;
 const CLAUSE_MIN_WORDS = 3;
@@ -103,10 +92,7 @@ function endsClause(word: string, next: string | undefined): boolean {
   return /[ঀ-৿]/.test(w) && [...w].length >= 3 && BN_VERB_END.test(w) && !BN_NOT_VERBS.has(w);
 }
 
-/**
- * Long unpunctuated text with a new line at each clause break; anything
- * else unchanged. Only for reading it: the note keeps the words as said.
- */
+/** Only for reading: the note keeps the words as said. */
 export function spokenClauses(text: string): string {
   const words = text.trim().split(/\s+/);
   if (words.length < SPOKEN_MIN_WORDS || /[.!?।\n]/.test(text)) return text;
@@ -375,8 +361,7 @@ export function readMeasures(text: string, known: KnownMetric[] = [], currency?:
 
   const out: Measure[] = [];
   for (const { lower, original, spans } of all) {
-    // "lunch 120, cab 80" names things before the amount; "$20 on lunch and
-    // $15 on a cab" after. The first amount tells which.
+    // "lunch 120, cab 80" names things before the amount, "$20 on lunch" after; the first amount tells which.
     const namesFirst = spans.length > 0 && !!labelFrom(lower.slice(0, spans[0].first), original.slice(0, spans[0].first));
     spans.forEach((span, n) => {
       const before = unitAt(lower, span.first - 1);
@@ -474,8 +459,7 @@ function splitTimed(text: string, now?: number, monthFirst?: boolean): string {
   let split = false;
   const out = sentences(text).map((s) => {
     const parts = s.split(THEN).filter(Boolean);
-    // A log of what happened keeps its verb for every day it names:
-    // "ran 3k monday, 5k wednesday" isn't a run planned for wednesday.
+    // A log keeps its verb for every day: "ran 3k monday, 5k wednesday" isn't planned.
     if (opensInPast(parts[0] ?? '')) return s;
     const timed = parts.filter((p) => withoutWhen(p) !== p.trim() && readWhenFull(p, now, monthFirst));
     if (timed.length < 2) return s;
@@ -501,7 +485,6 @@ export function readWhen(sentence: string, now = Date.now(), monthFirst = false)
   return readWhenFull(sentence, now, monthFirst)?.at;
 }
 
-// ─── Category, tags, title ──────────────────────────────────────
 
 const CATEGORY_WORDS: [Category, RegExp][] = [
   ['work', /^(meeting|meetings|office|client|clients|boss|deadline|email|report|presentation|standup|invoice|মিটিং|অফিস|ক্লায়েন্ট|বস|প্রেজেন্টেশন)$/],
@@ -545,8 +528,7 @@ function readTitle(text: string, items: ChecklistItem[], hasWhen: boolean): stri
   const head = title.match(/^([^:]{2,40}):\s+\S/);
   // "Lisbon trip: …" names the thread; "Remember: …" / "Todo: …" don't.
   if (head && head[1].trim().split(/\s+/).length <= 6 && !/^(?:[-*•]\s+)?(?:remember|reminder|todo|to-do|note|task|nb|ps)$/i.test(head[1].trim())) title = head[1];
-  // "tomorrow at 5pm" belongs in the reminder, not the name of the thread;
-  // with no reminder read, the words stay ("met Rumi at 3pm").
+  // A read time goes to the reminder, not the title; with none read the words stay ("met Rumi at 3pm").
   if (hasWhen) title = withoutWhen(title);
   title = trimEnd(title.replace(/^#+\s*/, '').replace(STEP_LEAD, '').replace(TITLE_LEAD, '').replace(SPOKEN_TITLE_LEAD, '').replace(LEAD_INS, '').replace(REMIND_TAIL, ''));
   // A title is no place for a link or a hashtag.
@@ -562,11 +544,6 @@ function readTitle(text: string, items: ChecklistItem[], hasWhen: boolean): stri
 
 // ─── All of it ──────────────────────────────────────────────────
 
-/**
- * Reads a note on the device. `known` is what the destination thread
- * already tracks; `now` is for "tomorrow"; `monthFirst` reads 3/4 as
- * March 4 (otherwise 3 April).
- */
 /** Speech services write "i" for "I"; a title or step shouldn't. */
 function upperI<T extends string | undefined>(s: T): T {
   return (s?.replace(/(^|\s)i(?=$|\s|')/g, '$1I') ?? s) as T;
@@ -579,8 +556,6 @@ export function understand(
   const raw = straightQuotes(input.trim());
   const list = readList(raw);
   const text = list.text;
-  // What the title, step, time and left-off are read from: the text, in
-  // clauses when it was said without punctuation.
   const said = spokenClauses(text || raw);
   const steps = splitTimed(said, options.now, options.monthFirst);
   const { step, sentence } = readNextStep(steps);
@@ -609,9 +584,7 @@ export function understand(
     return /^(?:remind me|reminder|মনে করিয়ে দিও|mone koriye dio|(?:can|could|would|will) you|please|pls|plz|kindly)?$/i.test(out) ? undefined : capitalize(out);
   };
   let nextStep = due ? bare(step ?? planStep) : step;
-  // Said in clauses, a step can lose what it's about: "rahim bhai budget
-  // chaise | shukrobar er moddhe dite hobe" leaves "dite hobe". The clause
-  // before says what.
+  // Said in clauses, a step can lose its subject ("dite hobe"); the clause before has it.
   const clauses = said === (text || raw) ? [] : sentences(said);
   const at = clauses.indexOf(sentence ?? '');
   if (nextStep && at > 0 && nextStep.split(/\s+/).length < 3) {
@@ -642,7 +615,6 @@ export function understand(
     checklist: list.items,
     links: readLinks(raw),
     measures: readMeasures(text || raw, options.known, options.currency),
-    // The time lives in the reminder; the step says what to do.
     nextStep: firstStep,
     leftOff: upperI(readLeftOff(text ? said : '', sentence)),
     due: timed[0]?.at,

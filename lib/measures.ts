@@ -1,11 +1,7 @@
 import type { Entry, Measure, Rollup } from '@/types/mnemo';
 import { nfc } from '@/utils/text';
 
-// Measures: any number someone reports about their life (money spent, km
-// run, their weight, a price they're comparing). The AI only pulls numbers
-// out of what was said. Everything here runs on the device: checking each
-// value was really said, and every total, average and trend, so the maths
-// is arithmetic rather than a guess.
+// The AI only extracts numbers; checking they were really said and all totals, averages and trends run on-device as arithmetic.
 
 export const ROLLUPS: Rollup[] = ['sum', 'latest', 'average', 'compare'];
 
@@ -14,9 +10,7 @@ const MAX_VALUE = 1e12;
 
 // ─── Reading numbers out of text ────────────────────────────────
 
-// First code point of each script's 0–9 run (Latin, Arabic-Indic, Persian,
-// Devanagari, Bengali, Gurmukhi, Gujarati, Oriya, Tamil, Telugu, Kannada,
-// Malayalam, Thai, Lao, full-width), so "৪০" reads as 40.
+// First code point of each script's 0–9 run, so "৪০" reads as 40.
 const DIGIT_ZEROS = [
   0x30, 0x660, 0x6f0, 0x966, 0x9e6, 0xa66, 0xae6, 0xb66, 0xbe6, 0xc66, 0xce6, 0xd66, 0xe50, 0xed0,
   0xff10,
@@ -149,18 +143,12 @@ function lookup(token: string): Word[] | null {
   return null;
 }
 
-/**
- * Numbers said in words, in any mix of English, Bangla and Banglish, and
- * digits followed by a scale word ("১৫ হাজার", "2 lakh", "der hajar").
- */
+/** Also digits followed by a scale word ("১৫ হাজার", "2 lakh"). */
 function wordNumbers(text: string): number[] {
   return scanNumbers(numberTokens(text)).map((n) => n.value);
 }
 
-/**
- * Text split the way numbers are read: lower case, digits in ASCII, figures
- * apart from letters ("1500tk" → "1500", "tk"; "৳৫০" → "৳", "50").
- */
+/** Lower case, ASCII digits, figures apart from letters ("1500tk" → "1500", "tk"). */
 export function numberTokens(text: string, keepCase = false): string[] {
   const ascii = toAsciiDigits(text);
   return nfc((keepCase ? ascii : ascii.toLowerCase()).replace(/(\d),(?=\d)/g, '$1'))
@@ -168,14 +156,12 @@ export function numberTokens(text: string, keepCase = false): string[] {
     .flatMap((t) => t.match(/\d+(?:\.\d+)?|[^\d]+/g) ?? []);
 }
 
-/** A number found in `numberTokens` output, with the tokens it spans. */
 export interface NumberSpan {
   value: number;
   first: number;
   last: number;
 }
 
-/** Every number in a token list, in order, said in figures or words. */
 export function scanNumbers(tokens: string[]): NumberSpan[] {
   const found: NumberSpan[] = [];
   let first = -1;
@@ -256,11 +242,7 @@ export function scanNumbers(tokens: string[]): NumberSpan[] {
   return found;
 }
 
-/**
- * Every value a piece of text could be naming. Separators are ambiguous
- * ("1,200" vs "12,50"), so both readings are kept; "k" after a number
- * means thousands.
- */
+/** Separators are ambiguous ("1,200" vs "12,50"), so both readings are kept; "k" means thousands. */
 export function numbersIn(text: string): number[] {
   const ascii = toAsciiDigits(text);
   const values = new Set<number>();
@@ -285,8 +267,7 @@ export function numbersIn(text: string): number[] {
 
 // ─── Units ──────────────────────────────────────────────────────
 
-// Common ISO 4217 codes. A three-letter unit is only money if it's one of
-// these, so "min" or "hrs" never get a currency symbol.
+// A three-letter unit is money only if listed here, so "min" or "hrs" never get a currency symbol.
 const CURRENCIES = new Set(
   (
     'USD EUR GBP BDT INR PKR LKR NPR JPY CNY KRW HKD TWD SGD MYR THB IDR PHP VND AUD NZD CAD ' +
@@ -319,11 +300,7 @@ function cleanText(raw: unknown, max: number): string | undefined {
 
 // ─── Checking what the AI returned ──────────────────────────────
 
-/**
- * Keeps only well-formed measures whose value appears in `source` (what
- * the person actually said or typed). A number the model inferred,
- * converted or added up is dropped; the words stay in the entry's text.
- */
+/** Keeps only measures whose value appears in `source`; inferred, converted or summed numbers are dropped. */
 export function verifyMeasures(raw: unknown, source: string): Measure[] {
   if (!Array.isArray(raw)) return [];
   const said = numbersIn(source);
@@ -366,23 +343,19 @@ export interface MeasurePoint {
 
 export interface MetricSummary {
   key: string;
-  /** Display name, as first said. */
   metric: string;
   unit?: string;
   rollup: Rollup;
-  /** Readings in `unit`, oldest first. */
+  /** Oldest first. */
   points: MeasurePoint[];
   lastAt: number;
-  /** sum */
   total?: number;
   days?: number;
   perDay?: number;
   byGroup?: { group: string; total: number }[];
-  /** latest */
   latest?: number;
   first?: number;
   change?: number;
-  /** average */
   average?: number;
   min?: number;
   max?: number;
@@ -405,11 +378,7 @@ function mostCommon<T>(values: T[]): T | undefined {
   return [...counts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0];
 }
 
-/**
- * One summary per thing a thread tracks, most recently updated first. A
- * reading with no unit counts in the metric's usual unit; a reading in a
- * different unit is listed separately rather than converted.
- */
+/** A unitless reading counts in the metric's usual unit; other units are listed apart, never converted. */
 export function summarizeMeasures(entries: Entry[]): MetricSummary[] {
   const byMetric = new Map<string, { measure: Measure; at: number }[]>();
   for (const entry of entries) {
@@ -492,7 +461,7 @@ export function summarizeMeasures(entries: Entry[]): MetricSummary[] {
   return summaries.sort((a, b) => b.lastAt - a.lastAt);
 }
 
-/** "spent (EUR, sum)": what a thread already tracks, so new captures reuse the names. */
+/** "spent (EUR, sum)": lets new captures reuse the names. */
 export function trackedMetrics(entries: Entry[], limit = 5): string[] {
   return summarizeMeasures(entries)
     .slice(0, limit)
