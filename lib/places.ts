@@ -95,7 +95,10 @@ export function onPlaceEvent(
   watchedSince: number,
 ): 'fire' | 'outside' | 'inside' | 'ignore' {
   if (r.firedAt) return 'ignore';
-  const settling = now - Math.max(watchedSince, r.setAt) < SETTLE_MS;
+  // Only when where the phone was is unknown. Known outside and now inside is
+  // an arrival, even just after the list was set (every launch, every change):
+  // otherwise opening Mnemo on arriving swallowed the reminder until the next visit.
+  const settling = r.insideAtSet === undefined && now - Math.max(watchedSince, r.setAt) < SETTLE_MS;
   if (event === 'enter') {
     if (r.on === 'leave') return r.insideAtSet ? 'ignore' : 'inside';
     if (settling || r.insideAtSet) return 'inside';
