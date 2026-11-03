@@ -49,7 +49,7 @@ standing in a shop. Mnemo optimises for two moments:
   says when a reminder may not go off (circles overlapping, location not
   allowed all the time, battery saver, more than 20 places waiting) instead of
   failing silently, and catches one the phone held back when you open the app.
-  Every edge case is listed at the top of `lib/places.ts`. Locations stay on
+  Edge cases are handled in `lib/places.ts` and `lib/geofence.ts`. Locations stay on
   the phone; map tiles come from OpenStreetMap while you place a pin.
 - 🔍 **Search that finds things** — hybrid keyword + semantic search.
   No connection? Keyword search still works.
