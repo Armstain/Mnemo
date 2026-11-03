@@ -4,23 +4,12 @@ import { scryptAsync } from '@noble/hashes/scrypt.js';
 import type { Entry, MnemoItem } from '@/types/mnemo';
 import { DAY_MS } from '@/utils/time';
 
-// Encrypted backup: one `.mnemo` file holding every thread and entry,
-// sealed with a passphrase only the person knows. There is no Mnemo
-// server, so this file is the backup; it can be kept anywhere (Drive,
-// email, another phone) because nobody can read it without the passphrase.
-//
-// File format (JSON, so it survives being emailed or opened by mistake):
-//   { mnemo: 'backup', v: 1,
-//     kdf: { alg: 'scrypt', N, r, p, salt },          key = scrypt(passphrase, salt)
-//     cipher: 'xchacha20-poly1305', nonce,             authenticated: a wrong
-//     data }                                           passphrase or any edit fails
-// Binary fields are base64. Voice audio is never stored, so never included;
-// search vectors are left out and rebuilt after import.
+// Encrypted `.mnemo` JSON file: scrypt key from passphrase, xchacha20-poly1305 (a wrong passphrase or any edit fails).
+// Binary fields are base64. Voice audio and search vectors are not included.
 
 const FORMAT = 'backup';
 const VERSION = 1;
-// scrypt cost: ~16 MB of memory and a second or two on a phone. Stored in
-// the file, so later versions can raise it and still open older backups.
+// ~16 MB and a second or two on a phone; stored in the file so it can be raised later.
 const KDF = { N: 2 ** 14, r: 8, p: 1 } as const;
 export const MIN_PASSPHRASE = 6;
 
@@ -42,8 +31,6 @@ export class BackupError extends Error {
     this.reason = reason;
   }
 }
-
-// ─── Bytes ──────────────────────────────────────────────────────
 
 const B64 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
 
@@ -77,8 +64,7 @@ export function fromBase64(text: string): Uint8Array {
   return out.slice(0, o);
 }
 
-// UTF-8 by hand: Hermes doesn't reliably ship TextDecoder, and Bangla text
-// has to round-trip exactly.
+// By hand: Hermes doesn't reliably ship TextDecoder.
 export function utf8Encode(text: string): Uint8Array {
   const out: number[] = [];
   for (const ch of text) {
@@ -121,12 +107,7 @@ export function utf8Decode(bytes: Uint8Array): string {
   return out;
 }
 
-// ─── Seal / open ────────────────────────────────────────────────
-
-/**
- * Encrypts a payload with a passphrase. `randomBytes` is injected (expo-crypto
- * on device, Web Crypto in tests) so this module stays free of native code.
- */
+/** `randomBytes` is injected (expo-crypto on device, Web Crypto in tests) to keep this free of native code. */
 export async function sealBackup(
   payload: BackupPayload,
   passphrase: string,
@@ -149,7 +130,6 @@ export async function sealBackup(
   });
 }
 
-/** Opens a `.mnemo` file. Throws BackupError with a reason the UI can explain. */
 export async function openBackup(fileText: string, passphrase: string): Promise<BackupPayload> {
   let file: Record<string, any>;
   try {
@@ -175,7 +155,6 @@ export async function openBackup(fileText: string, passphrase: string): Promise<
   try {
     plain = xchacha20poly1305(key, fromBase64(String(file.nonce))).decrypt(fromBase64(file.data));
   } catch {
-    // Authentication failed: the passphrase is wrong (or the file was changed).
     throw new BackupError('wrong-passphrase', "That passphrase doesn't open this backup.");
   }
   try {
@@ -189,8 +168,6 @@ export async function openBackup(fileText: string, passphrase: string): Promise<
   }
 }
 
-// ─── Merging into what's already here ───────────────────────────
-
 export interface MergeResult {
   items: MnemoItem[];
   entries: Entry[];
@@ -199,11 +176,7 @@ export interface MergeResult {
   unchanged: number;
 }
 
-/**
- * Combines a backup with the notes already on this phone, so importing
- * never deletes anything: a thread or entry only on one side is kept, and
- * where both have it, the more recently changed copy wins.
- */
+/** Never deletes: items on one side are kept; where both have it, the newer updatedAt wins. */
 export function mergeBackup(
   current: { items: MnemoItem[]; entries: Entry[] },
   incoming: BackupPayload,
@@ -232,7 +205,6 @@ export function mergeBackup(
 
   const items = mergeById(current.items, incoming.items, true);
   const threadIds = new Set(items.map((i) => i.id));
-  // An entry is only kept if its thread exists, so nothing is left orphaned.
   const entries = mergeById(current.entries, incoming.entries, false).filter((e) => threadIds.has(e.threadId));
   return { items, entries, added, updated, unchanged };
 }
@@ -242,41 +214,26 @@ export function backupFileName(now = new Date()): string {
   return `mnemo-backup-${d}.mnemo`;
 }
 
-// ─── Automatic backups ──────────────────────────────────────────
-// lib/auto-backup.ts writes a sealed backup into a folder the person chose,
-// at most once a day and only when something changed. These rules are the
-// pure part (tested in tests/backup.test.ts): names, what's due, what to
-// keep, and when Home should bring backups up.
-
 export const AUTO_EVERY_MS = DAY_MS;
 const AUTO_PREFIX = 'mnemo-auto-';
 const AUTO_NAME = /^mnemo-auto-(\d{4})-(\d{2})-(\d{2})-(\d{6})\.mnemo$/;
-/** Every backup from the last week is kept, then one a month for half a year. */
 const KEEP_DAILY = 7;
 const KEEP_MONTHLY = 6;
 
 const pad = (n: number) => String(n).padStart(2, '0');
 
-/** A new name for every run, so an earlier file is never written over. */
 export function autoBackupName(now = new Date()): string {
   const d = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
   return `${AUTO_PREFIX}${d}-${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}.mnemo`;
 }
 
-/**
- * A file's name from its Android folder-picker URI, which only carries the
- * provider's document id (`primary:Documents/mnemo-auto-….mnemo`, encoded).
- * Providers with opaque ids give something that matches no Mnemo name, so
- * their files are simply never tidied away.
- */
+/** Android folder-picker URIs carry only the encoded document id; opaque ids match no Mnemo name, so those files are never deleted. */
 export function nameFromUri(uri: string): string {
   const last = uri.replace(/\/+$/, '').split('/').pop() ?? '';
   let id = last;
   try {
     id = decodeURIComponent(last);
-  } catch {
-    // Not encoded after all.
-  }
+  } catch {}
   return id.slice(Math.max(id.lastIndexOf('/'), id.lastIndexOf(':')) + 1);
 }
 
@@ -284,14 +241,9 @@ export function isAutoBackupName(name: string): boolean {
   return AUTO_NAME.test(name);
 }
 
-/**
- * Which of Mnemo's own files in the folder can go once a new one is written:
- * the newest few are kept, and the newest of each earlier month, so notes
- * lost slowly (deleted bit by bit) can still be found in an older file.
- * Anything not named by Mnemo is never touched.
- */
+/** Keeps the newest 7 and the newest of each earlier month (6), so slow losses stay recoverable. Non-Mnemo files are never touched. */
 export function autoBackupsToDelete(names: string[]): string[] {
-  const ours = names.filter(isAutoBackupName).sort().reverse(); // newest first: the names sort by time
+  const ours = names.filter(isAutoBackupName).sort().reverse();
   const keep = new Set(ours.slice(0, KEEP_DAILY));
   const months = new Set<string>();
   for (const name of ours.slice(KEEP_DAILY)) {
@@ -304,7 +256,6 @@ export function autoBackupsToDelete(names: string[]): string[] {
   return ours.filter((n) => !keep.has(n));
 }
 
-/** Changes whenever a thread or entry is added, removed or edited. */
 export function backupFingerprint(items: { updatedAt: number }[], entries: { updatedAt: number }[]): string {
   let latest = 0;
   for (const x of items) latest = Math.max(latest, x.updatedAt ?? 0);
@@ -313,17 +264,11 @@ export function backupFingerprint(items: { updatedAt: number }[], entries: { upd
 }
 
 export interface AutoBackupStatus {
-  /** When the last automatic backup was written. */
   lastAt?: number;
-  /** backupFingerprint of what that backup held. */
   lastFingerprint?: string;
 }
 
-/**
- * Due once a day, and only if the notes changed since the last one. Nothing
- * is written while there are no threads: after "Clear all data", empty
- * files would otherwise push the real backups out of the folder.
- */
+/** No threads means no backup: after "Clear all data", empty files would push real backups out of the folder. */
 export function autoBackupDue(status: AutoBackupStatus, fingerprint: string, threads: number, now = Date.now()): boolean {
   if (threads === 0) return false;
   if (status.lastFingerprint === fingerprint) return false;
@@ -332,33 +277,21 @@ export function autoBackupDue(status: AutoBackupStatus, fingerprint: string, thr
 
 export interface BackupNudgeInput {
   threads: number;
-  /** Automatic backups are on (a folder and passphrase are set). */
   autoOn: boolean;
-  /** Automatic backups can run on this platform. */
   autoAvailable: boolean;
-  /** The latest backup of any kind: automatic, or a file exported by hand. */
   lastBackupAt?: number;
-  /** When automatic backups started failing, if they are. */
   failingSince?: number;
   dismissedAt?: number;
   now?: number;
 }
 
-/** Enough threads that losing them would hurt. */
 const NUDGE_MIN_THREADS = 5;
 const NUDGE_AFTER_MS = 14 * DAY_MS;
 const NUDGE_SNOOZE_MS = 30 * DAY_MS;
 /** A day of failures can be a folder briefly offline; three is a broken setup. */
 const FAILING_FOR_MS = 3 * DAY_MS;
 
-/**
- * What Home says about backups, if anything:
- * - 'failing': automatic backups are on but haven't worked for days.
- *   Not snoozable: the person thinks they are covered.
- * - 'turn-on' / 'export': no backup for a while, so suggest one (automatic
- *   where it can run, a file by hand where it can't). "Not now" holds it
- *   off for a month.
- */
+/** 'failing' is not snoozable: the person thinks they are covered. */
 export function backupNudge(input: BackupNudgeInput): 'failing' | 'turn-on' | 'export' | null {
   const now = input.now ?? Date.now();
   if (input.autoOn) {
