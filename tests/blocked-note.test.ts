@@ -41,7 +41,7 @@ vi.mock('@/lib/gemini', () => {
   };
 });
 
-const { resolvePendingEntry, retryWaitingNow } = await import('@/lib/capture');
+const { resolvePendingEntry, retryEntryNow, retryWaitingNow } = await import('@/lib/capture');
 
 // A thread with one note still waiting for Gemini.
 function makeStore(text: string, id: string) {
@@ -78,6 +78,12 @@ describe('a note the safety filter declined', () => {
       await resolvePendingEntry(entry(), store);
     }
     expect(gemini.calls).toBe(1);
+  });
+
+  it('Retry on a declined note finishes it too, without an error to show', async () => {
+    const { store, entry } = makeStore('Remind me when I get to Eastern Housing', 'e2');
+    await expect(retryEntryNow(entry(), store)).resolves.toBeUndefined();
+    expect((entry() as { pending: boolean }).pending).toBe(false);
   });
 });
 
