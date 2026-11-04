@@ -13,13 +13,13 @@ const MODES: { value: Exclude<AiMode, 'unset'>; icon: IconName; title: string; b
     value: 'gemini',
     icon: 'sparkles',
     title: 'Smart, with Gemini',
-    body: 'Your notes are tidied up, numbers and next steps found, and each note filed into the right thread. Each new note (and any photo on it) goes to Google with your key, along with the titles of your recent threads so it can be filed. Notes you wrote offline stay as they are.',
+    body: 'Notes are tidied and filed for you. Sent to Google with your key.',
   },
   {
     value: 'offline',
     icon: 'pin',
     title: 'Offline',
-    body: 'Your notes never leave your phone. Titles, lists, amounts, next steps and dates are still picked out on the phone, and it suggests a thread when a note shares its words. (A link you save is opened by the phone to show its title.)',
+    body: 'Nothing leaves your phone. It still picks out dates, amounts and next steps.',
   },
 ];
 
@@ -32,8 +32,7 @@ function MeaningSearchRow() {
       <View className="flex-1">
         <Text className="font-sans-semi text-sm text-fg">Search by meaning</Text>
         <Text className="font-sans text-sm text-fg-secondary leading-relaxed mt-1">
-          Finds “passport” when you search “travel documents”. It sends each note to Google a second time, so a
-          free key runs out about twice as fast. Off, search matches your words.
+          Uses about twice the free quota.
         </Text>
       </View>
       <Switch
@@ -104,17 +103,6 @@ export function AiModeCard({ children }: { children?: React.ReactNode }) {
       {mode === 'gemini' ? <MeaningSearchRow /> : null}
       {mode === 'gemini' ? children : null}
 
-      <View className="bg-surface rounded-lg p-5 border border-border/50">
-        <View className="flex-row items-center mb-1">
-          <Icon name="mic" size={15} color={colors.accent} />
-          <Text className="font-sans-semi text-sm text-fg ml-2">Voice notes</Text>
-        </View>
-        <Text className="font-sans text-sm text-fg-secondary leading-relaxed">
-          Speak in your own language, or mix them. With Gemini on, the note is recorded and Gemini
-          writes it out, then the recording is deleted. Offline, your phone's speech service writes it out as you
-          talk (on many phones that's Google's, which may work online). Mnemo never keeps the audio.
-        </Text>
-      </View>
     </View>
   );
 }

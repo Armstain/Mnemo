@@ -1,13 +1,11 @@
-import { View, Pressable, Platform, Switch, Linking } from 'react-native';
+import { View, Platform, Switch, Linking } from 'react-native';
 import { Text } from '@/components/ui/Text';
-import { router } from 'expo-router';
 import { Bell } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
 import { useEffect, useState } from 'react';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { Button } from '@/components/ui/Button';
 import { Pill } from '@/components/ui/Pill';
-import { Icon } from '@/components/ui/Icon';
 import { useThemeColors } from '@/hooks/use-theme';
 import { useMnemoStore } from '@/hooks/use-mnemo-store';
 import {
@@ -22,7 +20,6 @@ import {
   type NudgeTime,
 } from '@/lib/nudges';
 import { reviewTimeLabel, scheduleWeeklyReview } from '@/lib/review-notice';
-import { loadSetup, strictPhone } from '@/lib/reliability';
 
 const NUDGE_TIME_KEYS = Object.keys(NUDGE_TIMES) as NudgeTime[];
 
@@ -35,15 +32,12 @@ export function NudgeSettingsCard() {
   // the OS Settings app can change it, so say so instead of silently
   // leaving the switch off.
   const [blocked, setBlocked] = useState(false);
-  const [verified, setVerified] = useState(false);
-  const strict = strictPhone();
   const [pickingTime, setPickingTime] = useState(false);
   const [testSent, setTestSent] = useState(false);
 
   useEffect(() => {
     loadNudgePrefs().then(setPrefs);
     hasNudgePermission().then(setGranted);
-    loadSetup().then((s) => setVerified(!!s.verifiedAt));
   }, []);
 
   const apply = async (next: NudgePrefs) => {
@@ -101,11 +95,6 @@ export function NudgeSettingsCard() {
         />
       </View>
 
-      <Text className="font-sans text-sm text-fg-secondary leading-relaxed">
-        When a thread sits untouched for a couple of days, Mnemo reminds you of it once, with
-        its next step. Never more than one a day.
-      </Text>
-
       {isOn && (
         <View className="flex-row flex-wrap gap-2">
           {NUDGE_TIME_KEYS.map((key) => (
@@ -158,7 +147,7 @@ export function NudgeSettingsCard() {
       {isOn && (
         <View className="flex-row items-center justify-between gap-3">
           <Text className="font-sans text-sm text-fg-tertiary flex-1">
-            {testSent ? 'Sent. It shows up in about 5 seconds, even with the app closed.' : 'Check that nudges reach you.'}
+            {testSent ? 'Sent. It arrives in about 5 seconds.' : 'Test a nudge'}
           </Text>
           <Button variant="quiet" size="sm" onPress={handleTest}>
             Send a test
@@ -171,7 +160,7 @@ export function NudgeSettingsCard() {
           <View className="flex-1 mr-3">
             <Text className="font-sans-semi text-sm text-fg">Weekly review</Text>
             <Text className="font-sans text-sm text-fg-secondary mt-0.5">
-              {reviewTimeLabel()}: your week, what's due and what went quiet.
+              {reviewTimeLabel()}
             </Text>
           </View>
           <Switch
@@ -196,24 +185,6 @@ export function NudgeSettingsCard() {
         </View>
       )}
 
-      {/* Reminders and nudges both depend on it, so it's here whether nudges are on or not. */}
-      <Pressable
-        onPress={() => router.push('/reminders-check')}
-        accessibilityRole="button"
-        className="flex-row items-center justify-between pt-4 border-t border-border/50 active:opacity-70"
-      >
-        <View className="flex-1 mr-3">
-          <Text className="font-sans-semi text-sm text-fg">Make sure reminders arrive</Text>
-          <Text className="font-sans text-sm text-fg-secondary mt-0.5">
-            {verified
-              ? 'Tested on this phone and working.'
-              : strict
-                ? `${strict} phones can hold reminders back. Check the settings and send a test.`
-                : 'Check the settings and send a test reminder.'}
-          </Text>
-        </View>
-        <Icon name="chevronRight" size={16} color={colors.fgTertiary} />
-      </Pressable>
     </View>
   );
 }

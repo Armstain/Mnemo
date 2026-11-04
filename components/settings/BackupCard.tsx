@@ -180,8 +180,7 @@ export function BackupCard() {
         <Text className="font-sans-semi text-sm text-fg ml-2">Encrypted backup</Text>
       </View>
       <Text className="font-sans text-sm text-fg-secondary leading-relaxed mb-4">
-        Save all your notes in one file, locked with a passphrase. Keep it in Drive, email it to
-        yourself, or move it to a new phone and import it there.
+        All your notes in one file, locked with a passphrase.
       </Text>
 
       {step.kind === 'idle' && (
@@ -358,8 +357,7 @@ export function AutoBackupCard() {
       {!on && step.kind === 'idle' && (
         <>
           <Text className="font-sans text-sm text-fg-secondary leading-relaxed mb-4">
-            Once a day, when something changed, Mnemo saves a locked backup into a folder you choose. It
-            keeps the last week, and one from each month before that.
+            Once a day, into a folder you choose.
           </Text>
           <Button variant="primary" size="sm" icon="check" onPress={() => setStep({ kind: 'setup' })}>
             Turn on

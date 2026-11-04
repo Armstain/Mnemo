@@ -6,11 +6,11 @@ import * as Haptics from 'expo-haptics';
 import { Button } from '@/components/ui/Button';
 import { Icon } from '@/components/ui/Icon';
 import { Text } from '@/components/ui/Text';
-import { usePlaceProblems, WarningList } from '@/components/PlaceWarnings';
+import { usePlaceProblems } from '@/components/PlaceWarnings';
 import { useMnemoStore } from '@/hooks/use-mnemo-store';
 import { useThemeColors } from '@/hooks/use-theme';
 import { usePlaces } from '@/lib/place-store';
-import { formatMeters, isArmed, overlaps, overlapText, watchedRadius } from '@/lib/places';
+import { formatMeters, isArmed, watchedRadius } from '@/lib/places';
 import { setPreferences, usePreferences } from '@/lib/preferences';
 import { allowBackground } from '@/lib/geofence';
 import { allowPlaceNotifications, DEFAULT_PLACE_SOUND, PLACE_SOUNDS, ringPlaceReminder } from '@/lib/place-sound';
@@ -73,19 +73,28 @@ export function LocationCard() {
         />
       </View>
 
-      <Text className="font-sans text-sm text-fg-secondary leading-relaxed">
-        {on
-          ? 'A place is a circle on the map; anywhere inside it counts as being there. Your location stays on your phone.'
-          : 'Get reminded when you arrive somewhere or leave. Optional: nothing about your location is used until you turn it on.'}
-      </Text>
+      {!on ? <Text className="font-sans text-sm text-fg-secondary">Ring when you arrive somewhere or leave.</Text> : null}
 
       {on ? (
         <>
-          {problems && problems.length > 0 ? <WarningList lines={problems} tone={colors.error} /> : null}
+          {/* What may stop it lives on the check page; here, just that there is something. */}
+          {problems && problems.length > 0 ? (
+            <Pressable
+              onPress={() => router.push('/reminders-check')}
+              accessibilityRole="button"
+              className="flex-row items-center active:opacity-70"
+              style={{ gap: 8 }}
+            >
+              <Icon name="alert" size={14} color={colors.error} />
+              <Text className="font-sans-medium text-sm flex-1" style={{ color: colors.error }}>
+                {problems.length === 1 ? 'One thing may stop these' : `${problems.length} things may stop these`}
+              </Text>
+              <Icon name="chevronRight" size={14} color={colors.error} />
+            </Pressable>
+          ) : null}
 
           {places.map((p) => {
             const uses = waiting.filter((t) => t.place?.placeId === p.id).length;
-            const overlap = overlapText(overlaps(p, places));
             return (
               <Pressable
                 key={p.id}
@@ -105,7 +114,6 @@ export function LocationCard() {
                   </View>
                   <Icon name="chevronRight" size={16} color={colors.fgTertiary} />
                 </View>
-                {overlap ? <WarningList lines={[{ text: overlap }]} /> : null}
               </Pressable>
             );
           })}
@@ -141,7 +149,7 @@ export function LocationCard() {
               </View>
               <View className="flex-row items-center justify-between gap-3">
                 <Text className="font-sans text-sm text-fg-tertiary flex-1">
-                  {tested ? 'Sent. It rings like a real one, with the app open or closed.' : 'Hear it as it will ring.'}
+                  {tested ? 'Sent.' : 'Hear it'}
                 </Text>
                 <Button
                   variant="quiet"

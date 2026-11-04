@@ -31,6 +31,8 @@ import {
 } from '@/lib/reliability';
 import { rearmReminders } from '@/lib/reminders';
 import { useEnter } from '@/utils/motion';
+import { usePlaceProblems, WarningList } from '@/components/PlaceWarnings';
+import { usePreferences } from '@/lib/preferences';
 
 /** Makers whose recent-apps screen can lock an app open. */
 const LOCKS_IN_RECENTS = new Set(['xiaomi', 'oppo', 'realme', 'oneplus', 'vivo', 'iqoo', 'huawei', 'honor', 'infinix', 'tecno', 'itel']);
@@ -112,9 +114,12 @@ function steps(h: ReminderHealth): Step[] {
 export default function RemindersCheckScreen() {
   const insets = useSafeAreaInsets();
   const colors = useThemeColors();
+  const { places: placesOn } = usePreferences();
   const enter = useEnter();
   const { items } = useMnemoStore();
   const [health, setHealth] = React.useState<ReminderHealth | null>(null);
+  // Rechecked whenever the phone settings are (on focus and on coming back to the app).
+  const placeLines = usePlaceProblems(health);
   const [test, setTest] = React.useState<TestState | null>(null);
   const [now, setNow] = React.useState(() => Date.now());
   const itemsRef = React.useRef(items);
@@ -255,6 +260,22 @@ export default function RemindersCheckScreen() {
                 </Text>
               ) : null}
             </MotiView>
+
+            {/* Place reminders lean on location as well: what Settings → Location only points to. */}
+            {placesOn && placeLines ? (
+              <MotiView {...enter.rise(1)} className="px-6 mb-8">
+                <Eyebrow>{placeLines.length > 0 ? `Places · ${placeLines.length} to change` : 'Places · looks right'}</Eyebrow>
+                <View className="rounded-lg p-4" style={{ backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border }}>
+                  {placeLines.length > 0 ? (
+                    <WarningList lines={placeLines} tone={colors.error} />
+                  ) : (
+                    <Text className="font-sans text-sm" style={{ color: colors.fgSecondary }}>
+                      Location, “All the time” and Google Location Accuracy are on.
+                    </Text>
+                  )}
+                </View>
+              </MotiView>
+            ) : null}
 
             {/* The proof: a real reminder, with the app closed. */}
             <MotiView {...enter.rise(2)} className="px-6">
