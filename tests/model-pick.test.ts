@@ -21,20 +21,21 @@ const list = [
 ];
 
 describe('choosing models from what the key can use', () => {
-  it('text: newest flash first even as a preview, older ones behind it, lite last; no tts/image/live', () => {
-    expect(pickTextModels(list)).toEqual(['gemini-3-flash-preview', 'gemini-2.5-flash', 'gemini-2.5-flash-lite']);
+  it('text: one full flash (newest, even a preview) and lite after it; no tts/image/live', () => {
+    expect(pickTextModels(list)).toEqual(['gemini-3-flash-preview', 'gemini-2.5-flash-lite']);
   });
   it('text: a newer stable generation beats everything older', () => {
     const newer = [...list, m('gemini-3.5-flash'), m('gemini-3.5-flash-lite')];
-    // Three Flash models, then the best Flash-Lite as the last rung (it has its own quota).
-    expect(pickTextModels(newer)).toEqual(['gemini-3.5-flash', 'gemini-3-flash-preview', 'gemini-2.5-flash', 'gemini-3.5-flash-lite']);
+    // The best Flash, then the best Flash-Lite as the last rung (it has its own quota).
+    expect(pickTextModels(newer)).toEqual(['gemini-3.5-flash', 'gemini-3.5-flash-lite']);
   });
-  it('text: Flash-Lite is kept even when more than three full Flash models are listed', () => {
+  it('text: Flash-Lite is kept however many full Flash models are listed; only one of those is tried', () => {
     const many = [m('gemini-3.5-flash'), m('gemini-3-flash'), m('gemini-2.5-flash'), m('gemini-2.0-flash'), m('gemini-2.5-flash-lite'), m('gemini-2.0-flash-lite')];
-    expect(pickTextModels(many)).toEqual(['gemini-3.5-flash', 'gemini-3-flash', 'gemini-2.5-flash', 'gemini-2.5-flash-lite']);
+    expect(pickTextModels(many)).toEqual(['gemini-3.5-flash', 'gemini-2.5-flash-lite']);
+    expect(pickTextModels(many, 3)).toEqual(['gemini-3.5-flash', 'gemini-3-flash', 'gemini-2.5-flash', 'gemini-2.5-flash-lite']);
   });
   it('text: at the same version, stable goes before preview', () => {
-    expect(pickTextModels([m('gemini-3-flash-preview'), m('gemini-3-flash')])).toEqual(['gemini-3-flash', 'gemini-3-flash-preview']);
+    expect(pickTextModels([m('gemini-3-flash-preview'), m('gemini-3-flash')])).toEqual(['gemini-3-flash']);
   });
   it('an alias that always points at the newest wins', () => {
     expect(pickTextModels([...list, m('gemini-flash-latest')])[0]).toBe('gemini-flash-latest');

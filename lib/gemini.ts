@@ -82,7 +82,6 @@ function noteModelUsed(model: string, models: string[]): void {
   }
 }
 
-const OVERLOAD_PAUSE_MS = 1500;
 /** Without a limit, a request that never returned kept its note "in progress" and skipped by every retry until the app closed. */
 const REQUEST_TIMEOUT_MS = 90_000;
 
@@ -110,9 +109,9 @@ async function generateText(
   let lastWasEmpty = false;
   let sawMissing = false;
   let tried = false;
-  // Two passes: "high demand" comes in spikes, so one pause and retry beats failing.
-  for (let pass = 0; pass < 2; pass++) {
-    let overloaded = false;
+  // One pass: a busy or out-of-quota model hands over to the next. Retrying the whole ladder
+  // doubled the requests on every busy spell; the waiting note is retried later with back-off.
+  {
     const models = await textModels();
     for (const model of models) {
       if (isResting(model)) continue;
@@ -136,11 +135,11 @@ async function generateText(
           }
         }
         if (!response.text || unreadable) {
-          // A safety block is final for this note: retrying later is pointless, only other models are tried.
           const empty = describeEmpty(response, model, unreadable);
           empties.push(empty);
           lastWasEmpty = true;
-          if (!isBlocked(empty)) overloaded = true;
+          // A safety block is about the content: another model would only spend quota to say the same.
+          if (isBlocked(empty)) break;
           continue;
         }
         noteModelUsed(model, models);
@@ -152,12 +151,9 @@ async function generateText(
         const pause = quotaPause(e);
         if (pause !== undefined) resting.set(model, { until: Date.now() + pause, daily: quotaInfo(e)?.daily ?? false });
         else if (isMissingModel(e)) sawMissing = true;
-        else if (isOverloaded(e)) overloaded = true;
-        else throw e;
+        else if (!isOverloaded(e)) throw e;
       }
     }
-    if (!overloaded) break;
-    if (pass === 0) await new Promise((resolve) => setTimeout(resolve, OVERLOAD_PAUSE_MS));
   }
   if (sawMissing) refreshModels();
   if (!tried) throw new Error(allRestingError());

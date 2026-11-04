@@ -34,7 +34,10 @@ function byQuality(a: string, b: string): number {
 }
 
 /**
- * Text models, best first: a "flash" model (fast and cheap enough for one
+ * Text models, best first, one full Flash and one Flash-Lite by default: the
+ * "-latest" alias, the stable name and a preview of one generation share a
+ * quota, so trying them in turn spent the day's allowance three times over.
+ * Each is a "flash" model (fast and cheap enough for one
  * call per note), newest first (a preview of a newer generation beats an
  * older stable one; at the same version stable goes first), "lite" last.
  * The older ones behind it are what a busy or retired newest falls back
@@ -42,7 +45,7 @@ function byQuality(a: string, b: string): number {
  * allowance, so it still answers when every Flash is out of quota).
  * Falls back to any general Gemini model when the key lists no flash.
  */
-export function pickTextModels(models: ModelInfo[], limit = 3): string[] {
+export function pickTextModels(models: ModelInfo[], limit = 1): string[] {
   const general = models
     .filter((m) => m.actions.includes('generateContent'))
     .map((m) => m.name.toLowerCase())

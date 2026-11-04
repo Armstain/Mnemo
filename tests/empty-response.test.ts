@@ -3,7 +3,7 @@ import { aiErrorText, classifyAiError } from '@/lib/api-key';
 import { describeEmpty, EmptyResponseError, emptyKindOf, topSafety } from '@/lib/empty-response';
 import { processAudioDump, processVoiceDump } from '@/lib/gemini';
 
-// A pretend Google: three flash models; each answers as `behaviour` says.
+// A pretend Google: two flash models and a lite; only the best flash and the lite are used.
 const calls = vi.hoisted(() => [] as string[]);
 // The config each request was sent with.
 const configs = vi.hoisted(() => [] as Record<string, unknown>[]);
@@ -67,7 +67,7 @@ describe('an answer that has text but not the JSON asked for', () => {
     behaviour.set('gemini-3-flash-preview', cutOff);
     const note = await processVoiceDump('call the plumber');
     expect(note.title).toBe('Plumber');
-    expect(calls).toEqual(['gemini-3-flash-preview', 'gemini-2.5-flash']);
+    expect(calls).toEqual(['gemini-3-flash-preview', 'gemini-2.5-flash-lite']);
   });
 
   it('cut off everywhere: says it was cut off, with the finishReason', async () => {
@@ -89,20 +89,14 @@ describe('an answer with no text', () => {
     behaviour.set('gemini-3-flash-preview', empty);
     const note = await processVoiceDump('call the plumber');
     expect(note.title).toBe('Plumber');
-    expect(calls).toEqual(['gemini-3-flash-preview', 'gemini-2.5-flash']);
+    // One Flash only: older Flash names often share its quota.
+    expect(calls).toEqual(['gemini-3-flash-preview', 'gemini-2.5-flash-lite']);
   });
 
-  it('empty on every Flash falls to Flash-Lite', async () => {
-    behaviour.set('gemini-3-flash-preview', empty);
-    behaviour.set('gemini-2.5-flash', truncated);
-    await processVoiceDump('call the plumber');
-    expect(calls).toEqual(['gemini-3-flash-preview', 'gemini-2.5-flash', 'gemini-2.5-flash-lite']);
-  });
-
-  it('empty everywhere gets a second pass (like a busy model), then says why', async () => {
+  it('empty everywhere: each model is asked once (no second pass), then says why', async () => {
     for (const m of ['gemini-3-flash-preview', 'gemini-2.5-flash', 'gemini-2.5-flash-lite']) behaviour.set(m, truncated);
     const error = await processVoiceDump('call the plumber').catch((e) => e);
-    expect(calls).toHaveLength(6);
+    expect(calls).toHaveLength(2);
     expect(error.message).toContain('MAX_TOKENS');
     expect(emptyKindOf(error)).toBe('truncated');
     expect(classifyAiError(error)).toBe('truncated');
@@ -111,11 +105,11 @@ describe('an answer with no text', () => {
   it('a safety block names its finishReason, blockReason, candidates, model and input, and is not asked again', async () => {
     for (const m of ['gemini-3-flash-preview', 'gemini-2.5-flash', 'gemini-2.5-flash-lite']) behaviour.set(m, safety);
     const error = await processVoiceDump('call the plumber').catch((e) => e);
-    expect(calls).toHaveLength(3); // each model once, no second pass
+    expect(calls).toHaveLength(1); // a block is about the content: no other model is asked
     expect(error.message).toContain('finish=SAFETY');
     expect(error.message).toContain('block=PROHIBITED_CONTENT');
     expect(error.message).toContain('candidates=1');
-    expect(error.message).toContain('gemini-2.5-flash');
+    expect(error.message).toContain('gemini-3-flash-preview');
     expect(error.message).toContain('transcript 16 chars');
     expect(classifyAiError(error)).toBe('blocked');
     expect(aiErrorText(error)).toMatch(/safety filter/);
