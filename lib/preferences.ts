@@ -28,6 +28,11 @@ export interface Preferences {
   earlierNotesBefore?: number;
   /** Whether they've been asked about those earlier notes since the switch. */
   earlierNotesAsked?: boolean;
+  /**
+   * Search by meaning (Settings → How Mnemo thinks). Off by default: it sends every note to
+   * Google a second time (an embedding), which used up the free quota for little gain.
+   */
+  meaningSearch?: boolean;
   /** Place reminders (Settings → Location). Off until turned on: nothing is watched or asked for. */
   places?: boolean;
   /** What a place reminder sounds like (lib/place-sound.ts). */
