@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect, useDeferredValue, useCallback } from 'react';
+import React, { useState, useMemo, useEffect, useDeferredValue, useCallback, useRef } from 'react';
 import { FlatList, Pressable, View } from 'react-native';
 import { Text } from '@/components/ui/Text';
 import { router, useLocalSearchParams } from 'expo-router';
@@ -95,7 +95,12 @@ export default function LibraryScreen() {
   const { period, rest: words } = useMemo(() => readPeriod(deferredQuery), [deferredQuery]);
   const periodKey = period ? `${period.from}-${period.to}` : '';
   const inPeriod = useMemo(
-    () => (period ? scopedItems.filter((i) => threadsInPeriod(scopedItems, entries, period).has(i.id)) : scopedItems),
+    () => {
+      if (!period) return scopedItems;
+      // Once, not once per thread (that was items × entries on every keystroke).
+      const ids = threadsInPeriod(scopedItems, entries, period);
+      return scopedItems.filter((i) => ids.has(i.id));
+    },
     [periodKey, scopedItems, entries], // eslint-disable-line react-hooks/exhaustive-deps
   );
   const keywordResults = useMemo(
@@ -109,6 +114,13 @@ export default function LibraryScreen() {
   // so "travel documents" still finds the passport note. null = not ready
   // for this query yet.
   const [hybridResults, setHybridResults] = useState<MnemoItem[] | null>(null);
+  // Keyed on which threads are in scope, not the array: any background save made a new array,
+  // which cleared the results (the list jumped) and sent the search to Google again.
+  const scopeKey = useMemo(() => inPeriod.map((i) => i.id).join(','), [inPeriod]);
+  const inPeriodRef = useRef(inPeriod);
+  useEffect(() => {
+    inPeriodRef.current = inPeriod;
+  }, [inPeriod]);
   useEffect(() => {
     const trimmed = words.trim();
     // Clear immediately so a new query never shows the last one's results.
@@ -117,14 +129,22 @@ export default function LibraryScreen() {
 
     let cancelled = false;
     const handle = setTimeout(async () => {
-      const fused = await hybridSearch(trimmed, inPeriod);
+      const fused = await hybridSearch(trimmed, inPeriodRef.current);
       if (!cancelled) setHybridResults(fused);
     }, SEMANTIC_DEBOUNCE_MS);
     return () => {
       cancelled = true;
       clearTimeout(handle);
     };
-  }, [words, inPeriod, ai]);
+  }, [words, scopeKey, ai]);
+
+  // Rows play their entrance when the screen first appears, not again on every filter tap
+  // (ten animated rings redrawing at once was most of the lag).
+  const [entered, setEntered] = useState(false);
+  useEffect(() => {
+    const t = setTimeout(() => setEntered(true), 900);
+    return () => clearTimeout(t);
+  }, []);
 
   // A thread behind a total is a result even when its words don't match
   // ("spent" adds up amounts whose label is "lunch").
@@ -143,7 +163,7 @@ export default function LibraryScreen() {
         index={index}
         last={index === filteredItems.length - 1}
         // Only the first screenful plays the entrance; rows scrolled in just appear.
-        cell={{ first: index === 0, animate: index < 10 }}
+        cell={{ first: index === 0, animate: !entered && index < 10 }}
         onPress={() => router.push(`/(tabs)/context?id=${item.id}`)}
         onSwipeDelete={() => {
           deleteItem(item.id);
@@ -151,7 +171,7 @@ export default function LibraryScreen() {
         }}
       />
     ),
-    [filteredItems.length, deleteItem, undoDelete, showUndoToast],
+    [filteredItems.length, entered, deleteItem, undoDelete, showUndoToast],
   );
 
   if (!isLoaded) {
