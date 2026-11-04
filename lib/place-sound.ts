@@ -29,7 +29,12 @@ export const PLACE_SOUNDS: { key: PlaceSound; label: string; file?: string }[] =
 
 export const DEFAULT_PLACE_SOUND: PlaceSound = 'chime';
 
-const channelId = (s: PlaceSound) => `place-${s}`;
+// Android brings a deleted channel back with its old settings, sound included, when the same id is
+// made again, so a channel first made with the default sound kept it however it was set after. New ids
+// (bump CHANNEL_VERSION when a channel's sound or importance changes), and the old ones are removed.
+const CHANNEL_VERSION = 2;
+const channelId = (s: PlaceSound) => `place-${s}-v${CHANNEL_VERSION}`;
+const OLD_CHANNEL_IDS = PLACE_SOUNDS.map((p) => `place-${p.key}`);
 const LONG_BUZZ = [0, 500, 250, 500, 250, 500];
 
 /**
@@ -64,6 +69,7 @@ export async function ensurePlaceChannel(sound: PlaceSound): Promise<string> {
   for (const other of PLACE_SOUNDS) {
     if (other.key !== sound && other.key !== 'custom') await Notifications.deleteNotificationChannelAsync(channelId(other.key)).catch(() => {});
   }
+  for (const old of OLD_CHANNEL_IDS) await Notifications.deleteNotificationChannelAsync(old).catch(() => {});
   return id;
 }
 
