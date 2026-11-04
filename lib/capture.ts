@@ -697,7 +697,23 @@ function clearBlocked(entryId: string): void {
   if (blocked.delete(entryId)) saveBlocked();
 }
 
-/** Sends now, safety block included; re-blocks if declined again. Throws like structurePendingEntry. */
+/**
+ * Google's filter misfires on ordinary notes ("remind me when I get to …"). Text the phone can
+ * read is finished here, like offline, instead of waiting on a warning; a recording stays blocked
+ * for Retry. True when it was finished.
+ */
+function declined(entryId: string, store: CaptureStore): boolean {
+  const now = store.snapshot().entries.find((x) => x.id === entryId);
+  if (now && !now.pendingAudioUri && (now.pendingRawText ?? textOf(now)).trim()) {
+    clearBlocked(entryId);
+    finishOnDevice(now, store);
+    return true;
+  }
+  markBlocked(entryId, store);
+  return false;
+}
+
+/** Sends now, safety block included. Throws like structurePendingEntry, except for a declined note the phone finished. */
 export async function retryEntryNow(entry: PendingEntry, store: CaptureStore): Promise<void> {
   await blockedLoaded;
   clearBlocked(entry.id);
@@ -705,7 +721,7 @@ export async function retryEntryNow(entry: PendingEntry, store: CaptureStore): P
   try {
     await structurePendingEntry(entry, store);
   } catch (e) {
-    if (classifyAiError(e) === 'blocked') markBlocked(entry.id, store);
+    if (classifyAiError(e) === 'blocked' && declined(entry.id, store)) return;
     throw e;
   }
 }
@@ -714,7 +730,11 @@ export async function retryEntryNow(entry: PendingEntry, store: CaptureStore): P
 export async function resolvePendingEntry(entry: PendingEntry, store: CaptureStore): Promise<boolean> {
   await blockedLoaded;
   const current = store.snapshot().entries.find((x) => x.id === entry.id) ?? entry;
-  if (isBlockedNote(current)) return false;
+  // Declined before this version left it waiting; finish it now if the phone can.
+  if (isBlockedNote(current)) {
+    declined(entry.id, store);
+    return false;
+  }
   clearBlocked(entry.id);
   const previous = attempts.get(entry.id);
   if (previous && Date.now() < previous.nextAt) return false;
@@ -734,11 +754,7 @@ export async function resolvePendingEntry(entry: PendingEntry, store: CaptureSto
     if (problem === 'blocked') {
       attempts.delete(entry.id);
       logError('ai', e);
-      // Google's filter misfires on ordinary notes ("remind me when I get to …"). Text the phone
-      // can read is finished here, like offline, instead of waiting on a warning; a recording stays.
-      const now = store.snapshot().entries.find((x) => x.id === entry.id);
-      if (now && !now.pendingAudioUri && (now.pendingRawText ?? textOf(now)).trim()) finishOnDevice(now, store);
-      else markBlocked(entry.id, store);
+      declined(entry.id, store);
       return false;
     }
     const count = (previous?.count ?? 0) + 1;
