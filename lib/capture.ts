@@ -733,8 +733,12 @@ export async function resolvePendingEntry(entry: PendingEntry, store: CaptureSto
     const problem = classifyAiError(e);
     if (problem === 'blocked') {
       attempts.delete(entry.id);
-      markBlocked(entry.id, store);
       logError('ai', e);
+      // Google's filter misfires on ordinary notes ("remind me when I get to …"). Text the phone
+      // can read is finished here, like offline, instead of waiting on a warning; a recording stays.
+      const now = store.snapshot().entries.find((x) => x.id === entry.id);
+      if (now && !now.pendingAudioUri && (now.pendingRawText ?? textOf(now)).trim()) finishOnDevice(now, store);
+      else markBlocked(entry.id, store);
       return false;
     }
     const count = (previous?.count ?? 0) + 1;
