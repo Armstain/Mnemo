@@ -72,7 +72,7 @@ export function PlaceReminderField({ thread, onChange }: { thread: MnemoItem; on
           if (!next) return onChange(undefined);
           // Only how often changed: it keeps where the phone is and when it last rang.
           if (waiting && next.placeId === waiting.placeId && next.on === waiting.on) {
-            return onChange({ ...waiting, repeat: next.repeat });
+            return onChange({ ...waiting, repeat: next.repeat, days: next.days });
           }
           // A new place or direction starts over: where the phone is gets read again.
           onChange({ ...next, step: r?.step, setAt: Date.now() });

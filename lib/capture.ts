@@ -84,7 +84,7 @@ interface NoteInput {
   links?: string[];
   title?: string;
   audio?: string[];
-  place?: Pick<PlaceReminder, 'placeId' | 'on' | 'repeat'>;
+  place?: Pick<PlaceReminder, 'placeId' | 'on' | 'repeat' | 'days'>;
   store: CaptureStore;
 }
 
@@ -531,7 +531,7 @@ async function structure(entry: PendingEntry, store: CaptureStore): Promise<void
   const remindFromSound = (threadId: string) => {
     const t = store.getThread(threadId);
     if (!t) return;
-    if (heardPlace && !(t.place && !t.place.firedAt && t.place.placeId === heardPlace.placeId && t.place.on === heardPlace.on && t.place.repeat === heardPlace.repeat)) {
+    if (heardPlace && !(t.place && !t.place.firedAt && t.place.placeId === heardPlace.placeId && t.place.on === heardPlace.on && t.place.repeat === heardPlace.repeat && String(t.place.days) === String(heardPlace.days))) {
       store.updateItem(threadId, { place: { ...heardPlace, step: nextStep ?? heard?.nextStep, setAt: Date.now() } });
     }
     if (heardPlace?.repeat && heard?.repeat) return;

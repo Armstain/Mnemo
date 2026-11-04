@@ -54,7 +54,7 @@ const TOPICS: { title: string; body: string[] }[] = [
     body: [
       'A place is a circle on the map; anywhere inside it counts as being there. Your location stays on your phone.',
       '"When I get to" rings when you cross into the circle. Set it while you are already there and it waits until you leave and come back. "When I leave" works the other way round.',
-      'A place reminder rings once, or repeats: every time, on weekdays, or at weekends, at most once a day. The weekend is your region\'s (Friday–Saturday in Bangladesh), and the chip shows the days. Saying "every weekday when I get to the office…" sets it for you.',
+      'A place reminder rings once, or repeats: every time, on weekdays, at weekends, or on days you pick, at most once a day. The weekend is your region\'s (Friday–Saturday in Bangladesh), and the chip shows the days. Saying "every weekday when I get to the office…" or "every Monday and Thursday…" sets it for you.',
       'To ring with Mnemo closed, the phone needs location "All the time", Google Location Accuracy on, and the battery saver to leave Mnemo alone. Android can be a few minutes late; opening Mnemo catches anything it held back.',
     ],
   },

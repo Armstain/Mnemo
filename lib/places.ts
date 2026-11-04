@@ -66,13 +66,15 @@ export function isArmed(t: Pick<MnemoItem, 'place' | 'status'>): t is Pick<Mnemo
   return !!t.place && !t.place.firedAt && (t.status === 'active' || t.status === 'paused');
 }
 
-export function placeLabel(r: Pick<PlaceReminder, 'on' | 'repeat'>, place?: Pick<Place, 'name'>): string {
+export function placeLabel(r: Pick<PlaceReminder, 'on' | 'repeat' | 'days'>, place?: Pick<Place, 'name'>): string {
   const name = place?.name ?? 'a place no longer saved';
   const when = r.on === 'arrive' ? `When you get to ${name}` : `When you leave ${name}`;
-  return r.repeat ? `${when}, ${REPEAT_WORDS[r.repeat]}` : when;
+  if (!r.repeat) return when;
+  if (r.repeat === 'days') return `${when}, on ${formatDays(ringDays(r))}`;
+  return `${when}, ${REPEAT_WORDS[r.repeat]}`;
 }
 
-const REPEAT_WORDS: Record<PlaceRepeat, string> = { always: 'every time', weekdays: 'on weekdays', weekends: 'at weekends' };
+const REPEAT_WORDS: Record<Exclude<PlaceRepeat, 'days'>, string> = { always: 'every time', weekdays: 'on weekdays', weekends: 'at weekends' };
 
 /** Most recently set reminders win the MAX_WATCHED slots; the rest are `overflow`. */
 export function pickWatched(items: Pick<MnemoItem, 'place' | 'status'>[], places: Place[]): { watched: Place[]; overflow: Set<string> } {
@@ -170,15 +172,38 @@ export function phoneWeekend(): number[] {
 
 const DAY_SHORT = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
+/** The week as this phone counts it: from the day after the weekend (Sunday in Bangladesh, Monday in most places). */
+export function weekOrder(weekend: number[] = phoneWeekend()): number[] {
+  const last = weekend.find((d) => !weekend.includes((d + 1) % 7)) ?? 6;
+  return Array.from({ length: 7 }, (_, i) => (last + 1 + i) % 7);
+}
+
+/** "Mon–Fri", "Fri", "Sun, Tue, Thu": a run of days as a range, otherwise listed in the phone's week order. */
+export function formatDays(days: number[], weekend: number[] = phoneWeekend()): string {
+  const set = new Set(days);
+  if (set.size === 0) return '';
+  if (set.size === 7) return 'every day';
+  // A single run (wrapping past Saturday) reads as a range.
+  const start = [...set].find((d) => !set.has((d + 6) % 7));
+  if (start !== undefined) {
+    const run = Array.from({ length: set.size }, (_, i) => (start + i) % 7);
+    if (run.every((d) => set.has(d))) {
+      return run.length === 1 ? DAY_SHORT[run[0]] : `${DAY_SHORT[run[0]]}–${DAY_SHORT[run[run.length - 1]]}`;
+    }
+  }
+  return weekOrder(weekend).filter((d) => set.has(d)).map((d) => DAY_SHORT[d]).join(', ');
+}
+
 /** "Sun–Thu" / "Fri–Sat": the days a choice covers, shown on its chip so a wrong guess is visible. */
 export function repeatDays(repeat: 'weekdays' | 'weekends', weekend: number[] = phoneWeekend()): string {
   const days = repeat === 'weekends' ? weekend : [0, 1, 2, 3, 4, 5, 6].filter((d) => !weekend.includes(d));
-  // Runs of consecutive days (wrapping past Saturday), shown as "Mon–Fri" or "Fri".
-  const start = days.find((d) => !days.includes((d + 6) % 7)) ?? days[0];
-  const ordered = Array.from({ length: days.length }, (_, i) => (start + i) % 7);
-  const contiguous = ordered.every((d) => days.includes(d));
-  if (!contiguous) return days.map((d) => DAY_SHORT[d]).join(', ');
-  return ordered.length === 1 ? DAY_SHORT[ordered[0]] : `${DAY_SHORT[ordered[0]]}–${DAY_SHORT[ordered[ordered.length - 1]]}`;
+  return formatDays(days, weekend);
+}
+
+/** A 'days' reminder's days, cleaned up (stored JSON may hold anything). None left: every day, never silence. */
+export function ringDays(r: Pick<PlaceReminder, 'days'>): number[] {
+  const days = [...new Set((r.days ?? []).filter((d) => Number.isInteger(d) && d >= 0 && d <= 6))];
+  return days.length > 0 ? days : [0, 1, 2, 3, 4, 5, 6];
 }
 
 const localDay = (at: number) => {
@@ -187,10 +212,11 @@ const localDay = (at: number) => {
 };
 
 /** Whether a crossing that would ring rings now. */
-export function ringNow(r: Pick<PlaceReminder, 'repeat' | 'lastFiredAt'>, now: number, weekend: number[] = phoneWeekend()): boolean {
+export function ringNow(r: Pick<PlaceReminder, 'repeat' | 'lastFiredAt' | 'days'>, now: number, weekend: number[] = phoneWeekend()): boolean {
   if (!r.repeat) return true;
   if (r.lastFiredAt !== undefined && now - r.lastFiredAt < DAY_MS && localDay(r.lastFiredAt) === localDay(now)) return false;
   if (r.repeat === 'always') return true;
+  if (r.repeat === 'days') return ringDays(r).includes(new Date(now).getDay());
   const isWeekend = weekend.includes(new Date(now).getDay());
   return r.repeat === 'weekends' ? isWeekend : !isWeekend;
 }
@@ -228,16 +254,46 @@ const WEEKENDS = /\b(?:weekends?|week ends?|on my days? off|chhutir dine)\b|ছ�
 const EVERY_TIME =
   /\b(?:every ?time|each time|whenever|always|every day|everyday|daily|protidin|protibar|proti bar|roj)\b|প্রতিদিন|প্রতিবার|রোজ|যখনই/i;
 
+// Day names, English, Banglish and Bangla (0 = Sunday). A day counts as "every" only when said so:
+// "every Monday", "on Mondays", "প্রতি সোমবার", "proti sombar". A bare "on Monday" is one Monday.
+const DAY_NAMES: [number, RegExp][] = [
+  [0, /sunday|robibar|robbar|rabibar|রবিবার|রোববার/],
+  [1, /monday|sombar|shombar|somobar|সোমবার/],
+  [2, /tuesday|mongolbar|mangalbar|মঙ্গলবার/],
+  [3, /wednesday|budhbar|budhbaar|বুধবার/],
+  [4, /thursday|brihospotibar|brihaspatibar|bishudbar|বৃহস্পতিবার/],
+  [5, /friday|shukrobar|sukrobar|শুক্রবার/],
+  [6, /saturday|shonibar|sanibar|শনিবার/],
+];
+const DAY_WORD = new RegExp(`(every\\s+|proti\\s+|প্রতি\\s*)?(${DAY_NAMES.map(([, r]) => r.source).join('|')})(s)?`, 'giu');
+
+/** The days named, when at least one is said to repeat ("every Monday and Thursday"). */
+export function readPlaceDays(text: string): number[] | undefined {
+  const found: { day: number; every: boolean }[] = [];
+  for (const m of text.toLowerCase().matchAll(DAY_WORD)) {
+    const day = DAY_NAMES.find(([, r]) => r.test(m[2]))?.[0];
+    if (day !== undefined) found.push({ day, every: !!m[1] || !!m[3] });
+  }
+  if (!found.some((f) => f.every)) return undefined;
+  return [...new Set(found.map((f) => f.day))].sort((a, b) => a - b);
+}
+
 /** "every weekday when I get to the office": how a place reminder repeats, or undefined (once). */
-export function readPlaceRepeat(text: string): PlaceRepeat | undefined {
-  if (WEEKDAYS.test(text)) return 'weekdays';
-  if (WEEKENDS.test(text)) return 'weekends';
-  if (EVERY_TIME.test(text)) return 'always';
+export function readPlaceSchedule(text: string): Pick<PlaceReminder, 'repeat' | 'days'> | undefined {
+  const days = readPlaceDays(text);
+  if (days) return days.length === 7 ? { repeat: 'always' } : { repeat: 'days', days };
+  if (WEEKDAYS.test(text)) return { repeat: 'weekdays' };
+  if (WEEKENDS.test(text)) return { repeat: 'weekends' };
+  if (EVERY_TIME.test(text)) return { repeat: 'always' };
   return undefined;
 }
 
+export function readPlaceRepeat(text: string): PlaceRepeat | undefined {
+  return readPlaceSchedule(text)?.repeat;
+}
+
 /** Undefined when the note names no saved place, names two, or doesn't say when. */
-export function readPlaceReminder(text: string, places: Place[]): Pick<PlaceReminder, 'placeId' | 'on' | 'repeat'> | undefined {
+export function readPlaceReminder(text: string, places: Place[]): Pick<PlaceReminder, 'placeId' | 'on' | 'repeat' | 'days'> | undefined {
   if (!text.trim() || places.length === 0) return undefined;
   const leave = LEAVE.test(text);
   if (!leave && !ARRIVE.test(text)) return undefined;
@@ -245,6 +301,5 @@ export function readPlaceReminder(text: string, places: Place[]): Pick<PlaceRemi
   // "Office canteen" also mentions "Office": the longer name is the one meant.
   const meant = hits.filter((p) => !hits.some((q) => q !== p && norm(q.name).includes(norm(p.name))));
   if (meant.length !== 1) return undefined;
-  const repeat = readPlaceRepeat(text);
-  return { placeId: meant[0].id, on: leave ? 'leave' : 'arrive', ...(repeat ? { repeat } : {}) };
+  return { placeId: meant[0].id, on: leave ? 'leave' : 'arrive', ...readPlaceSchedule(text) };
 }
