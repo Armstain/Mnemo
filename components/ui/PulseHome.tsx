@@ -29,8 +29,7 @@ import { useReduceMotion } from '@/hooks/use-accessibility-motion';
 import { flightsEnabled, launchFlight } from '@/lib/card-flight';
 import { awayDigest, awayFor, shortWhen, type AwayRow } from '@/lib/away';
 import { useAwaySince } from '@/hooks/use-away';
-import { KIND_LABEL, kindOf } from '@/lib/kind';
-import type { MnemoItem, ThreadKind } from '@/types/mnemo';
+import type { MnemoItem } from '@/types/mnemo';
 
 /** How far ahead "Coming up" looks for due dates. */
 const COMING_UP_DAYS = 7;
@@ -66,7 +65,7 @@ function reasonChip(reason: NonNullable<ResumeReason>, repeats: boolean): { icon
  * back up, why it's first, and its next step. Kept short so what's next
  * shows without scrolling.
  */
-function ResumeCard({ item, reason, kind }: { item: MnemoItem; reason: ResumeReason; kind?: ThreadKind }) {
+function ResumeCard({ item, reason }: { item: MnemoItem; reason: ResumeReason }) {
   const colors = useThemeColors();
   const categories = useCategories();
   const category = categories[item.category];
@@ -105,7 +104,7 @@ function ResumeCard({ item, reason, kind }: { item: MnemoItem; reason: ResumeRea
   const aside =
     dueAt !== undefined && reason?.kind !== 'due' && reason?.kind !== 'missed'
       ? formatReminder(dueAt)
-      : `${item.status === 'paused' ? 'Paused' : kind ? `${KIND_LABEL[kind].one} · ${category.label}` : category.label} · ${formatCompactDistance(item.updatedAt)}`;
+      : `${item.status === 'paused' ? 'Paused' : category.label} · ${formatCompactDistance(item.updatedAt)}`;
 
   return (
     // Lifted off the page by a shadow in its own colour; the card inside clips.
@@ -221,7 +220,7 @@ function awayTrailing(row: AwayRow): { label: string; tone?: 'error' | 'accent' 
     case 'due':
       return { label: shortWhen(row.reason.at), tone: 'accent' };
     case 'step':
-      return { label: row.kind ? KIND_LABEL[row.kind].one : 'Next' };
+      return { label: 'Next' };
     case 'leftOff':
       return { label: 'Left off' };
   }
@@ -238,7 +237,7 @@ export function PulseHome() {
   const aiProblemText = useAiProblemDetail() ?? (aiProblem ? AI_PROBLEM_TEXT[aiProblem] : '');
   const aiNotice = useAiNotice();
   const insets = useSafeAreaInsets();
-  const { items, entries, getActiveItems, getEntries, focusThreadId, setFocusThread } = useMnemoStore();
+  const { items, entries, getActiveItems, focusThreadId, setFocusThread } = useMnemoStore();
   const focusThread = focusThreadId ? items.find((i) => i.id === focusThreadId) : undefined;
   const colors = useThemeColors();
   const categories = useCategories();
@@ -425,7 +424,7 @@ export function PulseHome() {
         {/* Hero */}
         {latestItem ? (
           <MotiView {...enter.rise(1)}>
-            <ResumeCard item={latestItem} reason={reason} kind={kindOf(latestItem, getEntries(latestItem.id).length)} />
+            <ResumeCard item={latestItem} reason={reason} />
           </MotiView>
         ) : (
           <MotiView {...enter.rise(1)}>
@@ -478,7 +477,7 @@ export function PulseHome() {
             ) : null}
             {away.ideas > 0 ? (
               <Pressable
-                onPress={() => router.push('/(tabs)/library?kind=idea')}
+                onPress={() => router.push('/(tabs)/library?category=ideas')}
                 accessibilityRole="button"
                 accessibilityLabel={`${away.ideas} ${away.ideas === 1 ? 'idea' : 'ideas'} kept. Open them.`}
                 className="flex-row items-center h-11 mt-2 active:opacity-70"

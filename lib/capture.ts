@@ -17,7 +17,7 @@ import {
   EMBEDDING_DIMS,
 } from '@/lib/embeddings';
 import { getVectors, upsertEmbedding } from '@/lib/db';
-import type { Block, Category, ChecklistItem, Entry, Filing, LaterStep, MnemoItem, PlaceReminder } from '@/types/mnemo';
+import type { Block, Category, ChecklistItem, Entry, Filing, LaterStep, MnemoItem, PlaceReminder, ThreadKind } from '@/types/mnemo';
 import { queueSteps } from '@/lib/when';
 import type { CaptureStore } from '@/hooks/use-mnemo-store';
 import { buildBlocks } from '@/lib/threads';
@@ -298,6 +298,11 @@ export function saveSharedNote(params: NoteInput) {
 }
 
 /** For a pending note whose AI won't come (switched offline). */
+/** An idea is filed under Ideas: one place for them, not a kind and a category that disagree. */
+function ideaCategory(category: Category | undefined, kind: ThreadKind | undefined): Category | undefined {
+  return kind === 'idea' && (!category || category === 'general') ? 'ideas' : category;
+}
+
 export function finishOnDevice(entry: Entry, store: CaptureStore): void {
   deleteAudio(entry.pendingAudioUri);
   const words = (entry.pendingRawText ?? textOf(entry)).trim();
@@ -321,7 +326,7 @@ export function finishOnDevice(entry: Entry, store: CaptureStore): void {
   if (thread?.pending) {
     store.updateItem(thread.id, {
       title: thread.pinned?.title ? thread.title : reading.title || thread.title,
-      category: thread.category === 'general' ? reading.category ?? 'general' : thread.category,
+      category: thread.category === 'general' ? ideaCategory(reading.category, reading.kind) ?? 'general' : thread.category,
       kind: thread.kind ?? reading.kind,
       pending: false,
     });
@@ -510,9 +515,9 @@ async function structure(entry: PendingEntry, store: CaptureStore): Promise<void
   });
 
   const tags = processed.tags ?? [];
-  const aiCategory = asCategory(processed.suggestedCategory);
   // "note" comes back as no kind, which is an answer too.
   const aiKind = asKind(processed.kind);
+  const aiCategory = ideaCategory(asCategory(processed.suggestedCategory), aiKind);
 
   // A recording had no words to find a reminder in at save time; the written-out words do.
   const heard =

@@ -16,7 +16,6 @@ import { useMnemoStore } from '@/hooks/use-mnemo-store';
 import { useThemeColors } from '@/hooks/use-theme';
 import { useUndoToast } from '@/hooks/use-undo-toast';
 import { awayDigest, awayFor, leftOn, shortWhen, type AwayRow } from '@/lib/away';
-import { KIND_LABEL, kindOf } from '@/lib/kind';
 import { resumeOrder } from '@/lib/when';
 import { sameWords } from '@/utils/text';
 import { formatCompactDistance } from '@/utils/time';
@@ -39,7 +38,7 @@ export default function WelcomeScreen() {
   const insets = useSafeAreaInsets();
   const colors = useThemeColors();
   const enter = useEnter();
-  const { items, entries, getActiveItems, getEntries, focusThreadId, completeNextStep } = useMnemoStore();
+  const { items, entries, getActiveItems, focusThreadId, completeNextStep } = useMnemoStore();
   const { showUndoToast } = useUndoToast();
   const { since, dismiss } = useAwaySince();
   const [all, setAll] = React.useState({ steps: false, leftOff: false, ideas: false });
@@ -74,7 +73,6 @@ export default function WelcomeScreen() {
   const nothing = d.total === 0 && g.ideas.length === 0 && !first;
   let section = 0;
 
-  const firstKind = first ? kindOf(first, getEntries(first.id).length) : undefined;
   const firstStep = first?.nextStep && !sameWords(first.nextStep, first.title) ? first.nextStep : undefined;
   const firstLeftOff = first?.whereLeftOff && !sameWords(first.whereLeftOff, first.title) ? first.whereLeftOff : undefined;
 
@@ -135,7 +133,7 @@ export default function WelcomeScreen() {
               >
                 <View className="flex-1" style={{ minWidth: 0 }}>
                   <Text className="font-sans-semi text-xs uppercase tracking-caps mb-1" style={{ color: colors.heroAccent }}>
-                    Start with{firstKind ? ` · ${KIND_LABEL[firstKind].one}` : ''}
+                    Start with
                   </Text>
                   <Text className="font-display text-title leading-tight" style={{ color: colors.onHero }} numberOfLines={2}>
                     {first.title}
@@ -202,7 +200,6 @@ export default function WelcomeScreen() {
                       {r.text}
                     </Text>
                     <Text className="font-sans text-sm mt-0.5" style={{ color: colors.fgTertiary }} numberOfLines={1}>
-                      {r.kind ? `${KIND_LABEL[r.kind].one} · ` : ''}
                       {r.item.title}
                     </Text>
                   </Pressable>

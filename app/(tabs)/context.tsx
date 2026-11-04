@@ -24,7 +24,6 @@ import { Icon } from '@/components/ui/Icon';
 import { DoneCheck } from '@/components/ui/DoneCheck';
 import { ThreadList, ThreadRow } from '@/components/ui/ThreadRow';
 import { CategoryPicker } from '@/components/ui/CategoryPicker';
-import { KindPicker } from '@/components/ui/KindPicker';
 import { TagEditor } from '@/components/ui/TagEditor';
 import { LabeledInput } from '@/components/ui/LabeledInput';
 import { noFocusRing } from '@/utils/web';
@@ -59,7 +58,6 @@ import { useCategories, useStatusConfig } from '@/utils/categories';
 import { DUR_BASE, EASE_IN_OUT, useEnter } from '@/utils/motion';
 import { freshness } from '@/utils/time';
 import { reportFlightTarget } from '@/lib/card-flight';
-import { KIND_LABEL, kindOf } from '@/lib/kind';
 
 /** Route stays `context` so existing links and notifications work. */
 export default function ThreadScreen() {
@@ -182,7 +180,6 @@ export default function ThreadScreen() {
   }
 
   const category = categories[thread.category];
-  const kind = kindOf(thread, entries.length);
   const CategoryIcon = category.icon;
   const status = statusColors[thread.status];
   const pendingEntries = entries.filter((e) => e.pending);
@@ -428,7 +425,6 @@ export default function ThreadScreen() {
               <View className="ml-3 flex-1">
                 <Text className="font-sans-semi text-sm" style={{ color: colors.fg }}>
                   {category.label}
-                  {kind ? `  ·  ${KIND_LABEL[kind].one}` : ''}
                   <Text className="font-sans-medium" style={{ color: status.color }}>
                     {'  ·  '}
                     {status.label}
@@ -456,14 +452,6 @@ export default function ThreadScreen() {
                 <View>
                   <Eyebrow className="mb-2">Category</Eyebrow>
                   <CategoryPicker value={thread.category} onChange={(cat) => updateItem(thread.id, { category: cat })} />
-                </View>
-                <View>
-                  <Eyebrow className="mb-2">This is a</Eyebrow>
-                  {/* Set by hand, it stays: nothing re-guesses it. */}
-                  <KindPicker
-                    value={kind}
-                    onChange={(k) => updateItem(thread.id, { kind: k, pinned: { ...thread.pinned, kind: true } })}
-                  />
                 </View>
                 <View>
                   <Eyebrow className="mb-2">Tags</Eyebrow>
