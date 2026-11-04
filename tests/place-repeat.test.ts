@@ -1,14 +1,18 @@
 import { describe, expect, it } from 'vitest';
 import {
   afterCrossing,
+  formatDays,
   isArmed,
   onPlaceEvent,
   placeLabel,
   readPlaceReminder,
+  readPlaceDays,
   readPlaceRepeat,
   repeatDays,
+  ringDays,
   ringNow,
   weekendDays,
+  weekOrder,
 } from '@/lib/places';
 import type { Place, PlaceReminder } from '@/types/mnemo';
 
@@ -148,5 +152,42 @@ describe('reading how often from the note', () => {
   it('the label says it', () => {
     expect(placeLabel({ on: 'arrive', repeat: 'weekdays' }, { name: 'Office' })).toBe('When you get to Office, on weekdays');
     expect(placeLabel({ on: 'leave' }, { name: 'Home' })).toBe('When you leave Home');
+  });
+});
+
+describe('specific days', () => {
+  it('rings only on the days picked, still once a day', () => {
+    const r = arrive({ repeat: 'days', days: [1, 4] });
+    expect(ringNow(r, on(1), BD)).toBe(true);
+    expect(ringNow(r, on(4), BD)).toBe(true);
+    expect(ringNow(r, on(2), BD)).toBe(false);
+    expect(ringNow({ ...r, lastFiredAt: on(1, 8) }, on(1, 18), BD)).toBe(false);
+  });
+  it('stored days that make no sense ring every day rather than never', () => {
+    expect(ringDays({ days: [] })).toEqual([0, 1, 2, 3, 4, 5, 6]);
+    expect(ringDays({ days: [9, -1, 2.5] as number[] })).toEqual([0, 1, 2, 3, 4, 5, 6]);
+    expect(ringDays({ days: [3, 3, 1] })).toEqual([3, 1]);
+  });
+  it('the week starts after the weekend, and days read in that order', () => {
+    expect(weekOrder(BD)).toEqual([0, 1, 2, 3, 4, 5, 6]);
+    expect(weekOrder(WEST)).toEqual([1, 2, 3, 4, 5, 6, 0]);
+    expect(formatDays([1, 2, 3], WEST)).toBe('Mon–Wed');
+    expect(formatDays([0, 2, 4], BD)).toBe('Sun, Tue, Thu');
+    expect(formatDays([0, 3], WEST)).toBe('Wed, Sun');
+    expect(formatDays([6, 0], WEST)).toBe('Sat–Sun');
+    expect(formatDays([0, 1, 2, 3, 4, 5, 6])).toBe('every day');
+  });
+  it('the label names them', () => {
+    expect(placeLabel({ on: 'arrive', repeat: 'days', days: [1, 4] }, { name: 'Gym' })).toBe('When you get to Gym, on Mon, Thu');
+  });
+  it('read from the note only when said to repeat', () => {
+    expect(readPlaceDays('every Monday and Thursday when I get to the gym')).toEqual([1, 4]);
+    expect(readPlaceDays('on Sundays when I get home call mum')).toEqual([0]);
+    expect(readPlaceDays('when I get to the office on Monday')).toBeUndefined();
+    expect(readPlaceDays('প্রতি শুক্রবার বাসায় গেলে')).toEqual([5]);
+    expect(readPlaceDays('proti sombar office e gele')).toEqual([1]);
+    const gym: Place = { id: 'g', name: 'Gym', latitude: 0, longitude: 0, radius: 150, accuracy: 20, savedAt: 0 };
+    expect(readPlaceReminder('every Tuesday and Friday when I get to the gym stretch', [gym])).toEqual({ placeId: 'g', on: 'arrive', repeat: 'days', days: [2, 5] });
+    expect(readPlaceRepeat('every monday when I leave home')).toBe('days');
   });
 });

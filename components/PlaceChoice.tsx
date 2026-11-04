@@ -6,10 +6,10 @@ import { WarningList } from '@/components/PlaceWarnings';
 import { Pill } from '@/components/ui/Pill';
 import { useThemeColors } from '@/hooks/use-theme';
 import { usePlaces } from '@/lib/place-store';
-import { overlaps, overlapText, repeatDays } from '@/lib/places';
+import { formatDays, overlaps, overlapText, repeatDays, weekOrder } from '@/lib/places';
 import type { PlaceReminder, PlaceRepeat } from '@/types/mnemo';
 
-export type PlacePick = Pick<PlaceReminder, 'placeId' | 'on' | 'repeat'>;
+export type PlacePick = Pick<PlaceReminder, 'placeId' | 'on' | 'repeat' | 'days'>;
 type Line = { text: string; action?: string; fix?: () => void };
 
 // The days are on the chip: the weekend is read from the phone's region (Fri–Sat in Bangladesh), so a wrong guess shows.
@@ -18,7 +18,10 @@ const REPEATS: { key: PlaceRepeat | 'once'; label: () => string }[] = [
   { key: 'always', label: () => 'Every time' },
   { key: 'weekdays', label: () => `Weekdays · ${repeatDays('weekdays')}` },
   { key: 'weekends', label: () => `Weekends · ${repeatDays('weekends')}` },
+  { key: 'days', label: () => 'Pick days' },
 ];
+
+const DAY_LETTER = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
 /**
  * Pick a saved place (or add one), then "when I get there" or "when I
@@ -59,7 +62,7 @@ export function PlaceChoice({
               dot={false}
               outline={!selected}
               selected={selected}
-              onPress={() => onChange(selected ? undefined : { placeId: p.id, on: value?.on ?? 'arrive', repeat: value?.repeat })}
+              onPress={() => onChange(selected ? undefined : { placeId: p.id, on: value?.on ?? 'arrive', repeat: value?.repeat, days: value?.days })}
             >
               {p.name}
             </Pill>
@@ -98,9 +101,42 @@ export function PlaceChoice({
                 dot={false}
                 outline={!selected}
                 selected={selected}
-                onPress={() => !selected && onChange({ ...value, repeat: key === 'once' ? undefined : key })}
+                onPress={() => {
+                  if (selected) return;
+                  if (key === 'days') {
+                    // Starts from today, the likeliest day they mean; they add the rest.
+                    return onChange({ ...value, repeat: 'days', days: value.days?.length ? value.days : [new Date().getDay()] });
+                  }
+                  onChange({ ...value, repeat: key === 'once' ? undefined : key, days: undefined });
+                }}
               >
-                {label()}
+                {key === 'days' && selected && value.days?.length ? `Days · ${formatDays(value.days)}` : label()}
+              </Pill>
+            );
+          })}
+        </View>
+      ) : null}
+      {value?.repeat === 'days' ? (
+        <View className="flex-row flex-wrap gap-2">
+          {weekOrder().map((d) => {
+            const days = value.days ?? [];
+            const on = days.includes(d);
+            return (
+              <Pill
+                key={d}
+                tone={colors.accent}
+                size="md"
+                dot={false}
+                outline={!on}
+                selected={on}
+                onPress={() => {
+                  // At least one day: an empty set would mean a reminder that never rings.
+                  if (on && days.length === 1) return;
+                  const next = on ? days.filter((x) => x !== d) : [...days, d].sort((a, b) => a - b);
+                  onChange({ ...value, days: next });
+                }}
+              >
+                {DAY_LETTER[d]}
               </Pill>
             );
           })}
