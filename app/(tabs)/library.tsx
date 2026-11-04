@@ -44,8 +44,9 @@ export default function LibraryScreen() {
   const enter = useEnter();
   const { items, entries, isLoaded, deleteItem, undoDelete } = useMnemoStore();
   const { showUndoToast } = useUndoToast();
-  usePreferences(); // AI on or off changes what's offered
-  const ai = aiEnabled();
+  // AI on or off, and search by meaning, change what's offered.
+  const { meaningSearch } = usePreferences();
+  const ai = aiEnabled() && meaningSearch === true;
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<Category | 'all'>('all');
   const [selectedStatus, setSelectedStatus] = useState<FilterStatus>('open');

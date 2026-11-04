@@ -1,5 +1,5 @@
 import React from 'react';
-import { Pressable, View } from 'react-native';
+import { Platform, Pressable, Switch, View } from 'react-native';
 import { Text } from '@/components/ui/Text';
 import * as Haptics from 'expo-haptics';
 
@@ -22,6 +22,34 @@ const MODES: { value: Exclude<AiMode, 'unset'>; icon: IconName; title: string; b
     body: 'Your notes never leave your phone. Titles, lists, amounts, next steps and dates are still picked out on the phone, and it suggests a thread when a note shares its words. (A link you save is opened by the phone to show its title.)',
   },
 ];
+
+/** Off by default: each note is sent once, to be written up; on, a second time to be found by meaning. */
+function MeaningSearchRow() {
+  const colors = useThemeColors();
+  const { meaningSearch } = usePreferences();
+  return (
+    <View className="bg-surface rounded-lg p-5 border border-border/50 flex-row items-start" style={{ gap: 12 }}>
+      <View className="flex-1">
+        <Text className="font-sans-semi text-sm text-fg">Search by meaning</Text>
+        <Text className="font-sans text-sm text-fg-secondary leading-relaxed mt-1">
+          Finds “passport” when you search “travel documents”. It sends each note to Google a second time, so a
+          free key runs out about twice as fast. Off, search matches your words.
+        </Text>
+      </View>
+      <Switch
+        value={meaningSearch === true}
+        onValueChange={(on) => {
+          Haptics.selectionAsync();
+          setPreferences({ meaningSearch: on });
+        }}
+        accessibilityLabel="Search by meaning"
+        trackColor={{ false: colors.border, true: colors.accent }}
+        thumbColor={Platform.OS === 'android' ? colors.surfaceLowest : undefined}
+        ios_backgroundColor={colors.border}
+      />
+    </View>
+  );
+}
 
 /** Settings → How Mnemo thinks: AI or offline. */
 export function AiModeCard({ children }: { children?: React.ReactNode }) {
@@ -73,6 +101,7 @@ export function AiModeCard({ children }: { children?: React.ReactNode }) {
         })}
       </View>
 
+      {mode === 'gemini' ? <MeaningSearchRow /> : null}
       {mode === 'gemini' ? children : null}
 
       <View className="bg-surface rounded-lg p-5 border border-border/50">

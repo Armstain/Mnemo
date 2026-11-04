@@ -8,7 +8,7 @@ import { getPreferences, setPreferences, usePreferences } from '@/lib/preference
 import { confirmAction } from '@/utils/confirm';
 import { onApiKeyChanged } from '@/lib/api-key';
 import { aiEnabled, appReady } from '@/lib/ai-mode';
-import { embedBatch, embeddableText, embeddingModel, toBlob, EMBEDDING_DIMS } from '@/lib/embeddings';
+import { embedBatch, embeddableText, embeddingModel, meaningSearchOn, toBlob, EMBEDDING_DIMS } from '@/lib/embeddings';
 import { getEmbeddedItemIds, upsertEmbedding } from '@/lib/db';
 import type { MnemoItem } from '@/types/mnemo';
 
@@ -128,7 +128,7 @@ async function sendWaiting(pending: Waiting[0][], store: Waiting[1]): Promise<vo
 export function PendingProcessor() {
   const store = useMnemoStore();
   const { isLoaded } = store;
-  const { aiMode } = usePreferences();
+  const { aiMode, meaningSearch } = usePreferences();
   const storeRef = useRef(store);
   storeRef.current = store;
 
@@ -154,7 +154,7 @@ export function PendingProcessor() {
         return;
       }
       void sendWaiting(pending, current);
-      if (!backfilled) {
+      if (!backfilled && meaningSearchOn()) {
         backfilled = true;
         backfillEmbeddings(items);
         askAboutEarlierNotes(items, () => backfillEmbeddings(storeRef.current.snapshot().items));
@@ -183,7 +183,7 @@ export function PendingProcessor() {
       clearInterval(timer);
       subscription.remove();
     };
-  }, [isLoaded, aiMode]);
+  }, [isLoaded, aiMode, meaningSearch]);
 
   return null;
 }

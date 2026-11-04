@@ -1,4 +1,5 @@
 import { getAIClient, modelCatalog, refreshModels } from '@/lib/gemini';
+import { getPreferences } from '@/lib/preferences';
 import { isMissingModel, pickEmbeddingModel } from '@/lib/model-pick';
 import type { MnemoItem } from '@/types/mnemo';
 
@@ -16,7 +17,14 @@ export async function embeddingModel(): Promise<string> {
   return (list && pickEmbeddingModel(list, EMBEDDING_MODEL)) || EMBEDDING_MODEL;
 }
 
+/** Search by meaning, chosen in Settings. Off: no embedding is ever requested, so a note costs one request. */
+export function meaningSearchOn(): boolean {
+  return getPreferences().meaningSearch === true;
+}
+
 async function embed(contents: string | string[], taskType: EmbeddingTaskType) {
+  // Every caller treats a failure as "keyword search only", so this is the one gate.
+  if (!meaningSearchOn()) throw new Error('Search by meaning is off');
   try {
     return await getAIClient().models.embedContent({
       model: await embeddingModel(),
