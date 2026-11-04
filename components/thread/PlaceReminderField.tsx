@@ -37,6 +37,12 @@ function useWarnings(thread: MnemoItem): Line[] {
   const place = places.find((p) => p.id === r.placeId);
   if (!place) return [{ text: "That place was removed, so this can't go off.", action: 'Places', fix: () => router.push('/modal') }];
   const lines: Line[] = [];
+  // Set where the phone already is: it can't ring until the next crossing, which looked like "not working".
+  if (r.on === 'arrive' && r.insideAtSet) {
+    lines.push({ text: `You're at ${place.name} now, so this goes off the next time you arrive, after leaving.` });
+  } else if (r.on === 'leave' && r.insideAtSet === false) {
+    lines.push({ text: `You're not at ${place.name} now, so this goes off after you get there and then leave.` });
+  }
   const overlap = overlapText(overlaps(place, places));
   if (overlap) lines.push({ text: overlap, action: 'Change', fix: () => router.push(`/place?id=${place.id}`) });
   if (pickWatched(items, places).overflow.has(place.id)) {
