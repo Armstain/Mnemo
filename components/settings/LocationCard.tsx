@@ -13,7 +13,7 @@ import { usePlaces } from '@/lib/place-store';
 import { formatMeters, isArmed, overlaps, overlapText, watchedRadius } from '@/lib/places';
 import { setPreferences, usePreferences } from '@/lib/preferences';
 import { allowBackground } from '@/lib/geofence';
-import { allowPlaceNotifications, chooseOwnRingtone, DEFAULT_PLACE_SOUND, PLACE_SOUNDS, ringPlaceReminder } from '@/lib/place-sound';
+import { allowPlaceNotifications, DEFAULT_PLACE_SOUND, PLACE_SOUNDS, ringPlaceReminder } from '@/lib/place-sound';
 import { Pill } from '@/components/ui/Pill';
 import { confirmAction } from '@/utils/confirm';
 
@@ -132,22 +132,13 @@ export function LocationCard() {
                     onPress={() => {
                       setPreferences({ placeSound: p.key });
                       setTested(false);
-                      if (p.key === 'custom') chooseOwnRingtone();
-                      else ringPlaceReminder({ title: p.label, body: 'This is how a place reminder will sound.' }, p.key);
+                      ringPlaceReminder({ title: p.label, body: 'This is how a place reminder will sound.' }, p.key);
                     }}
                   >
                     {p.label}
                   </Pill>
                 ))}
               </View>
-              {sound === 'custom' ? (
-                <Text className="font-sans text-sm leading-relaxed" style={{ color: colors.fgSecondary }}>
-                  Pick any ringtone under “Sound” in the settings that opened.{' '}
-                  <Text className="font-sans-semi" style={{ color: colors.accent }} onPress={chooseOwnRingtone}>
-                    Open again
-                  </Text>
-                </Text>
-              ) : null}
               <View className="flex-row items-center justify-between gap-3">
                 <Text className="font-sans text-sm text-fg-tertiary flex-1">
                   {tested ? 'Sent. It rings like a real one, with the app open or closed.' : 'Hear it as it will ring.'}

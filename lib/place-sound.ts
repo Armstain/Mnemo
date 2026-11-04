@@ -1,6 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import Constants from 'expo-constants';
-import { Linking, Platform } from 'react-native';
+import { Platform } from 'react-native';
 
 import { Notifications, notificationsAvailable } from '@/lib/notifications';
 import { ensureReminderCategory, REMINDER_CATEGORY } from '@/lib/reminders';
@@ -11,20 +10,15 @@ import { ensureReminderCategory, REMINDER_CATEGORY } from '@/lib/reminders';
 // screen.
 //
 // Android fixes a channel's sound when the channel is made, so each choice
-// is its own channel, and the ones not in use are removed. "Your own
-// ringtone" is a channel left on the phone's default sound for the person
-// to change in Android's settings, which offer every ringtone on the
-// phone; it's kept, so their pick stays.
+// is its own channel, and the ones not in use are removed.
 
-export type PlaceSound = 'chime' | 'bells' | 'rise' | 'default' | 'custom';
+export type PlaceSound = 'chime' | 'bells' | 'rise' | 'default';
 
 export const PLACE_SOUNDS: { key: PlaceSound; label: string; file?: string }[] = [
   { key: 'chime', label: 'Chime', file: 'mnemo_chime.wav' },
   { key: 'bells', label: 'Bells', file: 'mnemo_bells.wav' },
   { key: 'rise', label: 'Rise', file: 'mnemo_rise.wav' },
   { key: 'default', label: "Phone's sound" },
-  // Only Android lets an app send someone to pick any ringtone for it.
-  ...(Platform.OS === 'android' ? [{ key: 'custom' as const, label: 'Your own…' }] : []),
 ];
 
 export const DEFAULT_PLACE_SOUND: PlaceSound = 'chime';
@@ -34,7 +28,8 @@ export const DEFAULT_PLACE_SOUND: PlaceSound = 'chime';
 // (bump CHANNEL_VERSION when a channel's sound or importance changes), and the old ones are removed.
 const CHANNEL_VERSION = 2;
 const channelId = (s: PlaceSound) => `place-${s}-v${CHANNEL_VERSION}`;
-const OLD_CHANNEL_IDS = PLACE_SOUNDS.map((p) => `place-${p.key}`);
+// "Your own…" (a channel to change in Android's settings) was removed: its picker fell back to the default sound.
+const OLD_CHANNEL_IDS = [...PLACE_SOUNDS.map((p) => `place-${p.key}`), 'place-custom', 'place-custom-v2'];
 const LONG_BUZZ = [0, 500, 250, 500, 250, 500];
 
 /**
@@ -57,7 +52,7 @@ export async function ensurePlaceChannel(sound: PlaceSound): Promise<string> {
   if (Platform.OS !== 'android') return id;
   const file = PLACE_SOUNDS.find((p) => p.key === sound)?.file;
   await Notifications.setNotificationChannelAsync(id, {
-    name: sound === 'custom' ? 'Place reminders (your ringtone)' : 'Place reminders',
+    name: 'Place reminders',
     description: 'When you arrive at or leave a place you saved',
     importance: Notifications.AndroidImportance.MAX,
     sound: file ?? 'default',
@@ -67,7 +62,7 @@ export async function ensurePlaceChannel(sound: PlaceSound): Promise<string> {
     audioAttributes: { usage: Notifications.AndroidAudioUsage.NOTIFICATION_RINGTONE },
   });
   for (const other of PLACE_SOUNDS) {
-    if (other.key !== sound && other.key !== 'custom') await Notifications.deleteNotificationChannelAsync(channelId(other.key)).catch(() => {});
+    if (other.key !== sound) await Notifications.deleteNotificationChannelAsync(channelId(other.key)).catch(() => {});
   }
   for (const old of OLD_CHANNEL_IDS) await Notifications.deleteNotificationChannelAsync(old).catch(() => {});
   return id;
@@ -91,24 +86,6 @@ export async function ringPlaceReminder(content: { title: string; body: string; 
     },
     trigger: Platform.OS === 'android' ? { channelId: channel } : null,
   });
-}
-
-/**
- * Opens Android's settings for the "your own ringtone" channel, where any
- * ringtone on the phone can be picked. Falls back to the app's settings.
- */
-export async function chooseOwnRingtone(): Promise<void> {
-  if (Platform.OS !== 'android') return;
-  try {
-    const id = await ensurePlaceChannel('custom');
-    const pkg = Constants.expoConfig?.android?.package ?? 'com.mnemo.app';
-    await Linking.sendIntent('android.settings.CHANNEL_NOTIFICATION_SETTINGS', [
-      { key: 'android.provider.extra.APP_PACKAGE', value: pkg },
-      { key: 'android.provider.extra.CHANNEL_ID', value: id },
-    ]);
-  } catch {
-    Linking.openSettings().catch(() => {});
-  }
 }
 
 /** Asks to show notifications (Android 13+ asks only once a channel exists). */
