@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { EmptyResponseError, describeEmpty } from '@/lib/empty-response';
-import { classifyAiError, retryProblemText } from '@/lib/api-key';
+import { retryProblemText } from '@/lib/api-key';
 
 // The phone's storage, in memory: what the sweep remembers across restarts.
 const disk = vi.hoisted(() => new Map<string, string>());
@@ -41,7 +41,7 @@ vi.mock('@/lib/gemini', () => {
   };
 });
 
-const { resolvePendingEntry, retryEntryNow, retryWaitingNow, isBlockedNote } = await import('@/lib/capture');
+const { resolvePendingEntry, retryWaitingNow } = await import('@/lib/capture');
 
 // A thread with one note still waiting for Gemini.
 function makeStore(text: string, id: string) {
@@ -65,55 +65,19 @@ describe('a note the safety filter declined', () => {
     disk.clear();
   });
 
-  it('is not put on the back-off list, and the sweep never sends it again', async () => {
+  it('is finished on the phone, like offline, and never sent again', async () => {
     const { store, entry } = makeStore('Remind me when I get to Eastern', 'e1');
-    // First send (as when it was saved), then the sweep: every minute, on
-    // returning to the app ("try everything now"), and again later.
     await resolvePendingEntry(entry(), store);
     expect(gemini.calls).toBe(1);
-    expect(isBlockedNote(entry())).toBe(true);
+    const done = entry() as { pending: boolean; blocks: { markdown: string }[] };
+    expect(done.pending).toBe(false);
+    // Saved as written.
+    expect(done.blocks[0].markdown).toBe('Remind me when I get to Eastern');
     for (let i = 0; i < 5; i++) {
       retryWaitingNow();
       await resolvePendingEntry(entry(), store);
     }
     expect(gemini.calls).toBe(1);
-    // Still saved as written, still waiting (so Retry stays on it).
-    expect((entry() as { pending: boolean; blocks: { markdown: string }[] }).pending).toBe(true);
-    // Remembered, so a restart doesn't send it either.
-    expect(JSON.parse(disk.get('mnemo-ai-blocked')!)).toHaveProperty('e1');
-  });
-
-  it('Retry sends it at once; declined again, the sweep goes back to leaving it', async () => {
-    const { store, entry } = makeStore('Remind me when I get to Eastern', 'e2');
-    await resolvePendingEntry(entry(), store);
-    const error = await retryEntryNow(entry(), store).catch((e) => e);
-    expect(gemini.calls).toBe(2);
-    expect(classifyAiError(error)).toBe('blocked');
-    await resolvePendingEntry(entry(), store);
-    expect(gemini.calls).toBe(2);
-  });
-
-  it('Retry that goes through clears it', async () => {
-    const { store, entry } = makeStore('Remind me when I get to Eastern', 'e3');
-    await resolvePendingEntry(entry(), store);
-    gemini.answer = 'ok';
-    await retryEntryNow(entry(), store);
-    expect(gemini.calls).toBe(2);
-    expect(isBlockedNote(entry())).toBe(false);
-    expect(JSON.parse(disk.get('mnemo-ai-blocked')!)).not.toHaveProperty('e3');
-  });
-
-  it('an edited note is sent again by the sweep', async () => {
-    const { store, entry } = makeStore('Remind me when I get to Eastern', 'e4');
-    await resolvePendingEntry(entry(), store);
-    // What EntryCard's saveText does to a note still waiting.
-    (store as { updateEntry: (id: string, u: object) => void }).updateEntry('e4', {
-      blocks: [{ kind: 'text', markdown: 'Remind me at Eastern Plaza' }],
-      pendingRawText: 'Remind me at Eastern Plaza',
-    });
-    expect(isBlockedNote(entry())).toBe(false);
-    await resolvePendingEntry(entry(), store);
-    expect(gemini.calls).toBe(2);
   });
 });
 
