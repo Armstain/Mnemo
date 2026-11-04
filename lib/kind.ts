@@ -10,16 +10,12 @@ import type { Category, MnemoItem, ThreadKind } from '@/types/mnemo';
 // - After that, nothing calls the AI about it. The thread's own shape moves
 //   it on: an untyped note or an idea that keeps getting notes and a next
 //   step has become a project.
-// - The person can set it on the thread, and then it's theirs (`pinned.kind`):
-//   nothing changes it again.
+// - It isn't shown or picked any more: an idea is filed under the Ideas
+//   category (lib/capture.ts), and Home uses kind only to sort what's next.
+//   A kind set by hand before that (`pinned.kind`) is still kept.
 
 export const KINDS: ThreadKind[] = ['project', 'task', 'idea'];
 
-export const KIND_LABEL: Record<ThreadKind, { one: string; many: string }> = {
-  project: { one: 'Project', many: 'Projects' },
-  task: { one: 'Task', many: 'Tasks' },
-  idea: { one: 'Idea', many: 'Ideas' },
-};
 
 /** A kind as stored or as Gemini said it; anything else (including "note") is no kind. */
 export function asKind(raw: unknown): ThreadKind | undefined {
@@ -41,7 +37,8 @@ export function kindOf(
   thread: Pick<MnemoItem, 'kind' | 'pinned' | 'category' | 'nextStep' | 'dueDate'>,
   notes: number,
 ): ThreadKind | undefined {
-  const guess = thread.kind;
+  // The Ideas category is the one place for ideas, so a thread filed there is one.
+  const guess = thread.kind ?? (thread.category === 'ideas' ? 'idea' : undefined);
   if (thread.pinned?.kind) return guess;
   if (guess === 'idea') return notes >= PROJECT_NOTES && (thread.nextStep || thread.dueDate) ? 'project' : 'idea';
   if (guess === 'task') {
