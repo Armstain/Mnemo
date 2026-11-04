@@ -5,7 +5,7 @@ import * as Location from 'expo-location';
 import { getAllItems, updatePartialItem } from '@/lib/db';
 import { logError } from '@/lib/errors';
 import { loadPlaces } from '@/lib/place-store';
-import { isArmed, onFix, onPlaceEvent, pickWatched, placeLabel, watchedRadius, type PlaceEvent } from '@/lib/places';
+import { afterCrossing, isArmed, onFix, onPlaceEvent, pickWatched, placeLabel, ringNow, watchedRadius, type PlaceEvent } from '@/lib/places';
 import { ringPlaceReminder } from '@/lib/place-sound';
 import { getPreferences } from '@/lib/preferences';
 import { openSettings, reminderHealth, type CheckState } from '@/lib/reliability';
@@ -255,12 +255,22 @@ async function show(item: MnemoItem, placeName: string | undefined, note?: strin
 /** So two quick reports can't ring one reminder twice. */
 const rung = new Set<string>();
 
-async function fire(item: MnemoItem, place: Place | undefined, note?: string, late = false): Promise<void> {
-  const key = `${item.id}:${item.place!.setAt}`;
-  if (rung.has(key)) return;
-  rung.add(key);
-  await show(item, place?.name, note);
-  await save(item, { ...item.place!, firedAt: Date.now(), ...(late ? { caughtLate: true } : {}) });
+/**
+ * A crossing that would ring. A repeating reminder on the wrong day, or one that already rang today,
+ * only notes the side the phone is on (lib/places.ts `ringNow`, `afterCrossing`). True when it rang.
+ */
+async function fire(item: MnemoItem, place: Place | undefined, note?: string, late = false): Promise<boolean> {
+  const r = item.place!;
+  const now = Date.now();
+  const rang = ringNow(r, now);
+  if (rang) {
+    const key = `${item.id}:${r.setAt}:${r.lastFiredAt ?? 0}`;
+    if (rung.has(key)) return false;
+    rung.add(key);
+    await show(item, place?.name, note);
+  }
+  await save(item, afterCrossing(r, now, rang, late));
+  return rang;
 }
 
 /** Runs with the app closed, so it reads the threads itself. */
@@ -292,8 +302,8 @@ async function applyFix(items: MnemoItem[], here: Fix, opening: boolean): Promis
       await save(item, { ...r, insideAtSet: action === 'inside' });
     } else if (action === 'fire' && opening) {
       // Watched and still missed: the phone held it back. Unwatched: only noticeable now.
-      await fire(item, place, watching ? 'late: your phone held it back' : 'noticed when you opened Mnemo', watching);
-      if (watching) await AsyncStorage.setItem(LATE_KEY, String(Date.now())).catch(() => {});
+      const rang = await fire(item, place, watching ? 'late: your phone held it back' : 'noticed when you opened Mnemo', watching);
+      if (rang && watching) await AsyncStorage.setItem(LATE_KEY, String(Date.now())).catch(() => {});
     } else if (action === 'fire') {
       await fire(item, place);
     }

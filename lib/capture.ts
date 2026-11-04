@@ -84,7 +84,7 @@ interface NoteInput {
   links?: string[];
   title?: string;
   audio?: string[];
-  place?: Pick<PlaceReminder, 'placeId' | 'on'>;
+  place?: Pick<PlaceReminder, 'placeId' | 'on' | 'repeat'>;
   store: CaptureStore;
 }
 
@@ -148,8 +148,10 @@ function saveNote(source: Entry['source'], params: NoteInput): { threadId: strin
     pendingRawText: ai ? words : undefined,
     pendingAudioUri: joinAudio(audio),
   };
-  const due = params.dueDate ?? reading.due;
   const placeHit = getPreferences().places ? (params.place ?? readPlaceReminder(words, getPlaces())) : undefined;
+  // "every day when I get home": the place repeats it, not a daily time at a guessed hour too.
+  const placeRepeats = !!placeHit?.repeat && !!reading.repeat;
+  const due = params.dueDate ?? (placeRepeats ? undefined : reading.due);
   const place = placeHit ? { ...placeHit, step: params.nextStep?.trim() || reading.nextStep, setAt: Date.now() } : undefined;
 
   let saved: { threadId: string; entry: Entry };
@@ -162,7 +164,7 @@ function saveNote(source: Entry['source'], params: NoteInput): { threadId: strin
             due,
             step: reading.nextStep,
             later,
-            repeat: params.dueDate ? thread.repeat : reading.repeat,
+            repeat: params.dueDate ? thread.repeat : placeRepeats ? undefined : reading.repeat,
             force: !!params.dueDate,
           })
         : {};
@@ -187,7 +189,7 @@ function saveNote(source: Entry['source'], params: NoteInput): { threadId: strin
         status: 'active',
         dueDate: due,
         laterSteps: later.length > 0 ? later : undefined,
-        repeat: params.dueDate ? undefined : reading.repeat,
+        repeat: params.dueDate || placeRepeats ? undefined : reading.repeat,
         place,
         pending: ai,
       },
@@ -371,7 +373,8 @@ function nameFromWords(store: CaptureStore, threadId: string, words: string): vo
   const reading = understand(words, { monthFirst: monthFirst(), currency: localCurrency() });
   const updates: Partial<MnemoItem> = {};
   if (thread.pending && !thread.pinned?.title && reading.title) updates.title = reading.title.slice(0, 80);
-  if (reading.due && reading.due > Date.now() && !(thread.dueDate && thread.dueDate > Date.now())) {
+  const placeRepeats = !!reading.repeat && !!readPlaceReminder(words, getPlaces())?.repeat;
+  if (reading.due && !placeRepeats && reading.due > Date.now() && !(thread.dueDate && thread.dueDate > Date.now())) {
     updates.dueDate = reading.due;
     updates.repeat = reading.repeat;
   }
@@ -528,9 +531,10 @@ async function structure(entry: PendingEntry, store: CaptureStore): Promise<void
   const remindFromSound = (threadId: string) => {
     const t = store.getThread(threadId);
     if (!t) return;
-    if (heardPlace && !(t.place && !t.place.firedAt && t.place.placeId === heardPlace.placeId && t.place.on === heardPlace.on)) {
+    if (heardPlace && !(t.place && !t.place.firedAt && t.place.placeId === heardPlace.placeId && t.place.on === heardPlace.on && t.place.repeat === heardPlace.repeat)) {
       store.updateItem(threadId, { place: { ...heardPlace, step: nextStep ?? heard?.nextStep, setAt: Date.now() } });
     }
+    if (heardPlace?.repeat && heard?.repeat) return;
     if (!heard?.due || heard.due < Date.now() || (t.dueDate && t.dueDate > Date.now())) return;
     store.updateItem(threadId, { dueDate: heard.due, repeat: heard.repeat });
     reminderSet({ threadId, at: heard.due, previous: t.dueDate });
