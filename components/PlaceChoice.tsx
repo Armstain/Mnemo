@@ -6,15 +6,23 @@ import { WarningList } from '@/components/PlaceWarnings';
 import { Pill } from '@/components/ui/Pill';
 import { useThemeColors } from '@/hooks/use-theme';
 import { usePlaces } from '@/lib/place-store';
-import { overlaps, overlapText } from '@/lib/places';
-import type { PlaceReminder } from '@/types/mnemo';
+import { overlaps, overlapText, repeatDays } from '@/lib/places';
+import type { PlaceReminder, PlaceRepeat } from '@/types/mnemo';
 
-export type PlacePick = Pick<PlaceReminder, 'placeId' | 'on'>;
+export type PlacePick = Pick<PlaceReminder, 'placeId' | 'on' | 'repeat'>;
 type Line = { text: string; action?: string; fix?: () => void };
+
+// The days are on the chip: the weekend is read from the phone's region (Fri–Sat in Bangladesh), so a wrong guess shows.
+const REPEATS: { key: PlaceRepeat | 'once'; label: () => string }[] = [
+  { key: 'once', label: () => 'Once' },
+  { key: 'always', label: () => 'Every time' },
+  { key: 'weekdays', label: () => `Weekdays · ${repeatDays('weekdays')}` },
+  { key: 'weekends', label: () => `Weekends · ${repeatDays('weekends')}` },
+];
 
 /**
  * Pick a saved place (or add one), then "when I get there" or "when I
- * leave". The same chips wherever a place reminder is set: the Write
+ * leave", and how often (once by default). The same chips wherever a place reminder is set: the Write
  * screen and a thread's edit view. Says at once if the place's circle
  * overlaps another.
  */
@@ -51,7 +59,7 @@ export function PlaceChoice({
               dot={false}
               outline={!selected}
               selected={selected}
-              onPress={() => onChange(selected ? undefined : { placeId: p.id, on: value?.on ?? 'arrive' })}
+              onPress={() => onChange(selected ? undefined : { placeId: p.id, on: value?.on ?? 'arrive', repeat: value?.repeat })}
             >
               {p.name}
             </Pill>
@@ -76,6 +84,26 @@ export function PlaceChoice({
               {on === 'arrive' ? 'When I get there' : 'When I leave'}
             </Pill>
           ))}
+        </View>
+      ) : null}
+      {value ? (
+        <View className="flex-row flex-wrap gap-2">
+          {REPEATS.map(({ key, label }) => {
+            const selected = (value.repeat ?? 'once') === key;
+            return (
+              <Pill
+                key={key}
+                tone={colors.fgSecondary}
+                size="md"
+                dot={false}
+                outline={!selected}
+                selected={selected}
+                onPress={() => !selected && onChange({ ...value, repeat: key === 'once' ? undefined : key })}
+              >
+                {label()}
+              </Pill>
+            );
+          })}
         </View>
       ) : null}
       <WarningList lines={lines} />

@@ -70,6 +70,10 @@ export function PlaceReminderField({ thread, onChange }: { thread: MnemoItem; on
         value={waiting}
         onChange={(next) => {
           if (!next) return onChange(undefined);
+          // Only how often changed: it keeps where the phone is and when it last rang.
+          if (waiting && next.placeId === waiting.placeId && next.on === waiting.on) {
+            return onChange({ ...waiting, repeat: next.repeat });
+          }
           // A new place or direction starts over: where the phone is gets read again.
           onChange({ ...next, step: r?.step, setAt: Date.now() });
           // Without "all the time", nothing goes off while Mnemo is closed.
@@ -84,6 +88,12 @@ export function PlaceReminderField({ thread, onChange }: { thread: MnemoItem; on
         <Text className="font-sans text-sm" style={{ color: colors.fgTertiary }}>
           {placeLabel(r, places.find((p) => p.id === r.placeId))}: went off {formatReminder(r.firedAt)}
           {r.caughtLate ? ', late' : ''}. Pick a place to set another.
+        </Text>
+      ) : null}
+      {waiting?.repeat && waiting.lastFiredAt ? (
+        <Text className="font-sans text-sm" style={{ color: colors.fgTertiary }}>
+          Last went off {formatReminder(waiting.lastFiredAt)}
+          {waiting.caughtLate ? ', late' : ''}.
         </Text>
       ) : null}
     </View>

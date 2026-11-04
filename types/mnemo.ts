@@ -63,8 +63,10 @@ export interface Place {
 
 /**
  * "When I get to the market": a reminder that fires on arriving at, or
- * leaving, a saved place instead of at a time. One-shot: it fires once.
+ * leaving, a saved place instead of at a time. Once by default; it can repeat.
  */
+export type PlaceRepeat = 'always' | 'weekdays' | 'weekends';
+
 export interface PlaceReminder {
   placeId: string;
   on: 'arrive' | 'leave';
@@ -77,8 +79,12 @@ export interface PlaceReminder {
    * leaving first; leaving only counts once inside.
    */
   insideAtSet?: boolean;
-  /** When it fired. Set: it's done. */
+  /** When it fired. Set: it's done. A repeating reminder never sets it (see lastFiredAt). */
   firedAt?: number;
+  /** Rings on every crossing (on these days, at most once a day) instead of once. Unset: once. */
+  repeat?: PlaceRepeat;
+  /** A repeating reminder's last ring. */
+  lastFiredAt?: number;
   /** It fired only when Mnemo was opened there: the phone never said. */
   caughtLate?: boolean;
 }
