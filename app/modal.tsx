@@ -5,16 +5,13 @@ import { Text } from '@/components/ui/Text';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { MotiView } from 'moti';
-import { Info, Moon, Shield, Smartphone, Sun } from 'lucide-react-native';
+import { Moon, Smartphone, Sun } from 'lucide-react-native';
 import Constants from 'expo-constants';
 import * as Haptics from 'expo-haptics';
-import { useState } from 'react';
 import { Eyebrow } from '@/components/ui/Eyebrow';
 import { AutoBackupCard, BackupCard } from '@/components/settings/BackupCard';
 import { AiModeCard } from '@/components/settings/AiModeCard';
-import { clearErrors, problemReport } from '@/lib/errors';
-import * as Clipboard from 'expo-clipboard';
-import { Icon } from '@/components/ui/Icon';
+import { Icon, type IconName } from '@/components/ui/Icon';
 import { useThemeColors, useThemeName, useThemePreference, type ThemePreference } from '@/hooks/use-theme';
 import { NudgeSettingsCard } from '@/components/settings/NudgeSettingsCard';
 import { LocationCard } from '@/components/settings/LocationCard';
@@ -26,14 +23,30 @@ const THEME_OPTIONS: { key: ThemePreference; label: string; icon: typeof Sun }[]
   { key: 'dark', label: 'Dark', icon: Moon },
 ];
 
+function LinkRow({ icon, title, onPress }: { icon: IconName; title: string; onPress: () => void }) {
+  const colors = useThemeColors();
+  return (
+    <Pressable
+      onPress={() => {
+        Haptics.selectionAsync();
+        onPress();
+      }}
+      accessibilityRole="button"
+      className="bg-surface rounded-lg px-5 py-4 border border-border/50 flex-row items-center active:opacity-80"
+    >
+      <Icon name={icon} size={15} color={colors.accent} />
+      <Text className="font-sans-semi text-sm text-fg ml-2 flex-1">{title}</Text>
+      <Icon name="chevronRight" size={16} color={colors.fgTertiary} />
+    </Pressable>
+  );
+}
+
 export default function ModalScreen() {
   const enter = useEnter();
   const insets = useSafeAreaInsets();
   const colors = useThemeColors();
   const theme = useThemeName();
   const { preference, setPreference } = useThemePreference();
-  const [reportCopied, setReportCopied] = useState(false);
-  const [logCleared, setLogCleared] = useState(false);
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.bg }}>
@@ -130,107 +143,23 @@ export default function ModalScreen() {
             <BackupCard />
           </MotiView>
 
-          {/* Privacy */}
-          <MotiView {...enter.rise(2)} className="gap-3 mb-10">
-            <Eyebrow className="mb-1">Privacy</Eyebrow>
-            <Pressable
+          {/* Everything that explains rather than sets: one row each, on its own page. */}
+          <MotiView {...enter.rise(2)} className="gap-3">
+            <Eyebrow className="mb-1">Help</Eyebrow>
+            <LinkRow icon="sparkles" title="How Mnemo works" onPress={() => router.push('/help')} />
+            {Platform.OS !== 'web' ? (
+              <LinkRow icon="alert" title="Check that reminders arrive" onPress={() => router.push('/reminders-check')} />
+            ) : null}
+            <LinkRow icon="pin" title="Privacy and your data" onPress={() => router.push('/privacy')} />
+            <LinkRow
+              icon="repeat"
+              title="Go through setup again"
               onPress={() => {
-                Haptics.selectionAsync();
-                router.push('/privacy');
-              }}
-              accessibilityRole="button"
-              className="bg-surface rounded-lg p-5 border border-border/50 flex-row items-center active:opacity-80"
-            >
-              <Shield size={15} color={colors.accent} />
-              <View className="ml-2 flex-1">
-                <Text className="font-sans-semi text-sm text-fg">Your data and what leaves the phone</Text>
-                <Text className="font-sans text-sm text-fg-tertiary mt-0.5">
-                  What is shared, when, and how to clear everything
-                </Text>
-              </View>
-              <Icon name="chevronRight" size={16} color={colors.fgTertiary} />
-            </Pressable>
-          </MotiView>
-
-          {/* Problems */}
-          <MotiView {...enter.rise(2)} className="gap-3 mb-10">
-            <Eyebrow className="mb-1">Something not working?</Eyebrow>
-            <Pressable
-              onPress={async () => {
-                await Clipboard.setStringAsync(await problemReport());
-                Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-                setReportCopied(true);
-                setLogCleared(false);
-              }}
-              accessibilityRole="button"
-              className="bg-surface rounded-lg p-5 border border-border/50 flex-row items-center active:opacity-80"
-            >
-              <Icon name="copy" size={15} color={colors.accent} />
-              <View className="ml-2 flex-1">
-                <Text className="font-sans-semi text-sm text-fg">
-                  {reportCopied ? 'Problem report copied' : 'Copy problem report'}
-                </Text>
-                <Text className="font-sans text-sm text-fg-tertiary mt-0.5">
-                  The app version and its recent error messages, to paste into a message. No notes.
-                </Text>
-              </View>
-            </Pressable>
-            <Pressable
-              onPress={async () => {
-                await clearErrors();
-                Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-                setLogCleared(true);
-                setReportCopied(false);
-              }}
-              accessibilityRole="button"
-              className="bg-surface rounded-lg p-5 border border-border/50 flex-row items-center active:opacity-80"
-            >
-              <Icon name="trash" size={15} color={colors.accent} />
-              <View className="ml-2 flex-1">
-                <Text className="font-sans-semi text-sm text-fg">{logCleared ? 'Error log cleared' : 'Clear error log'}</Text>
-                <Text className="font-sans text-sm text-fg-tertiary mt-0.5">
-                  Removes the saved error messages from this phone, so the next report starts fresh.
-                </Text>
-              </View>
-            </Pressable>
-          </MotiView>
-
-          {/* About */}
-          <MotiView {...enter.rise(2)}
-            className="gap-3"
-          >
-            <Eyebrow className="mb-1">About</Eyebrow>
-
-            <Pressable
-              onPress={() => {
-                Haptics.selectionAsync();
                 // Nothing is cleared: onboarding only rewrites the choices it asks about.
                 router.dismissAll();
                 router.replace('/onboarding');
               }}
-              accessibilityRole="button"
-              className="bg-surface rounded-lg p-5 border border-border/50 flex-row items-center active:opacity-80"
-            >
-              <Icon name="repeat" size={15} color={colors.accent} />
-              <View className="ml-2 flex-1">
-                <Text className="font-sans-semi text-sm text-fg">Go through setup again</Text>
-                <Text className="font-sans text-sm text-fg-tertiary mt-0.5">
-                  Your name, AI or offline, and nudges. Your notes stay as they are.
-                </Text>
-              </View>
-            </Pressable>
-
-            <View className="bg-surface rounded-lg p-5 border border-border/50">
-              <View className="flex-row items-center mb-2">
-                <Info size={15} color={colors.accent} />
-                <Text className="font-sans-semi text-sm text-fg ml-2">Mnemo</Text>
-              </View>
-              <Text className="font-sans text-sm text-fg-secondary leading-relaxed">
-                Named after Mnemosyne, the Greek goddess of memory. Mnemo helps you leave a mental
-                breadcrumb before stepping away from deep work, so you can pick up exactly where you
-                left off.
-              </Text>
-            </View>
+            />
           </MotiView>
         </ScrollView>
 
