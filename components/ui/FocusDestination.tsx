@@ -1,7 +1,7 @@
 import React from 'react';
 import { Pressable, View } from 'react-native';
 import { Text } from '@/components/ui/Text';
-import * as Haptics from 'expo-haptics';
+import { haptic } from '@/utils/haptics';
 
 import { Icon } from '@/components/ui/Icon';
 import { useThemeColors } from '@/hooks/use-theme';
@@ -36,7 +36,7 @@ export function FocusDestination({
       </Text>
       <Pressable
         onPress={() => {
-          Haptics.selectionAsync();
+          haptic.select();
           onToggle(!separate);
         }}
         hitSlop={10}

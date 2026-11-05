@@ -2,7 +2,7 @@ import React from 'react';
 import { PanResponder, Pressable, StyleSheet, View } from 'react-native';
 import { Text } from '@/components/ui/Text';
 import { AnimatePresence, MotiView } from 'moti';
-import * as Haptics from 'expo-haptics';
+import { haptic } from '@/utils/haptics';
 import { Extrapolation, interpolate, useAnimatedStyle, useSharedValue, withSpring, withTiming } from 'react-native-reanimated';
 import { Animated, usePressScale } from '@/hooks/use-press-scale';
 import { Icon } from '@/components/ui/Icon';
@@ -90,8 +90,8 @@ function useSwipeDelete(onDelete?: () => void) {
           const nowArmed = -g.dx > width.value * SWIPE_ARM;
           if (nowArmed !== armed.current) {
             armed.current = nowArmed;
-            if (nowArmed) Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-            else Haptics.selectionAsync();
+            if (nowArmed) haptic.press();
+            else haptic.select();
           }
         },
         onPanResponderRelease: (_, g) => {
@@ -102,7 +102,7 @@ function useSwipeDelete(onDelete?: () => void) {
             x.value = withSpring(0, SWIPE_BACK);
             return;
           }
-          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
+          haptic.heavy();
           x.value = withTiming(-width.value, { duration: SWIPE_OUT_MS, easing: EASE_OUT });
           setTimeout(() => onDeleteRef.current?.(), SWIPE_OUT_MS);
         },

@@ -8,7 +8,7 @@ import Animated, {
   withSpring,
   withTiming,
 } from 'react-native-reanimated';
-import * as Haptics from 'expo-haptics';
+import { haptic } from '@/utils/haptics';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router, usePathname } from 'expo-router';
 
@@ -235,7 +235,7 @@ export function FloatingTabBar() {
             onPress={() => {
               if (captureActive) closeCapture();
               if (onTab(tab, pathname)) return;
-              Haptics.selectionAsync();
+              haptic.select();
               router.push(tab.route);
             }}
           />

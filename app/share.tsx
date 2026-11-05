@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Image, KeyboardAvoidingView, Platform, Pressable, ScrollView, View } from 'react-native';
 import { router } from 'expo-router';
 import { MotiView } from 'moti';
-import * as Haptics from 'expo-haptics';
+import { haptic } from '@/utils/haptics';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Button, IconButton } from '@/components/ui/Button';
@@ -96,7 +96,7 @@ export default function ShareScreen() {
       title: preview?.title ?? share.title,
       store,
     });
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    haptic.success();
     router.replace(`/(tabs)/context?id=${saved.threadId}`);
   };
 
@@ -200,7 +200,7 @@ export default function ShareScreen() {
                     <Pressable
                       key={c.id ?? 'new'}
                       onPress={() => {
-                        Haptics.selectionAsync();
+                        haptic.select();
                         setThreadId(c.id);
                       }}
                       accessibilityRole="radio"

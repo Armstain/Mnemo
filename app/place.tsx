@@ -1,7 +1,7 @@
 import React from 'react';
 import { ActivityIndicator, KeyboardAvoidingView, Platform, Pressable, ScrollView, View } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
-import * as Haptics from 'expo-haptics';
+import { haptic } from '@/utils/haptics';
 import * as Location from 'expo-location';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -122,7 +122,7 @@ export default function PlaceScreen() {
         if (isArmed(t) && t.place.placeId === place.id) updateItem(t.id, { place: { ...t.place, insideAtSet: undefined, setAt: Date.now() } }, { touch: false });
       }
     }
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    haptic.success();
     router.back();
   };
 

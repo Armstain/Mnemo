@@ -3,7 +3,7 @@ import { View, ScrollView, Pressable, ActivityIndicator, Alert, Platform } from 
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import * as SecureStore from 'expo-secure-store';
-import * as Haptics from 'expo-haptics';
+import { haptic } from '@/utils/haptics';
 import { MotiView } from 'moti';
 import { Shield } from 'lucide-react-native';
 import { useState } from 'react';
@@ -62,12 +62,12 @@ export default function PrivacyScreen() {
           } else {
             await SecureStore.deleteItemAsync(ONBOARDING_KEY);
           }
-          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+          haptic.success();
           router.dismissAll();
           router.replace('/onboarding');
         } catch (e) {
           console.error('Failed to clear all data', e);
-          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+          haptic.error();
           Alert.alert('Something went wrong', 'Not everything could be deleted. Please try again.');
         } finally {
           setIsClearing(false);

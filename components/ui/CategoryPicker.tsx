@@ -1,7 +1,7 @@
 import React from 'react';
 import { Pressable, ScrollView, View } from 'react-native';
 import { Text } from '@/components/ui/Text';
-import * as Haptics from 'expo-haptics';
+import { haptic } from '@/utils/haptics';
 
 import { useThemeColors } from '@/hooks/use-theme';
 import { Animated, usePressScale } from '@/hooks/use-press-scale';
@@ -48,7 +48,7 @@ export function CategoryPicker<T extends Category | 'all'>({
             dot={dot}
             selected={selected}
             onPress={() => {
-              Haptics.selectionAsync();
+              haptic.select();
               onChange(option);
             }}
           />

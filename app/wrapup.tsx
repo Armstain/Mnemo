@@ -2,7 +2,7 @@ import React from 'react';
 import { Platform, ScrollView, Share, View } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { MotiView } from 'moti';
-import * as Haptics from 'expo-haptics';
+import { haptic } from '@/utils/haptics';
 import * as Sharing from 'expo-sharing';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -88,7 +88,7 @@ export default function WrapUpScreen() {
     const mine = entries.filter((e) => e.threadId === thread.id);
     // A real task gets the ring closing (and its haptics); anything else a plain success.
     if (isRealTask(thread, mine)) celebrate({ title: thread.title, detail: doneSummary(thread, mine) });
-    else Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    else haptic.success();
     const before = thread;
     const wasFocus = getFocusThreadId() === thread.id;
     completeItem(thread.id);

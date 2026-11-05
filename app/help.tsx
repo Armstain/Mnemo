@@ -3,7 +3,7 @@ import { Pressable, ScrollView, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import * as Clipboard from 'expo-clipboard';
-import * as Haptics from 'expo-haptics';
+import { haptic } from '@/utils/haptics';
 import { MotiView } from 'moti';
 import { useState } from 'react';
 
@@ -138,7 +138,7 @@ export default function HelpScreen() {
             detail="The app version and its recent error messages, to paste into a message. No notes."
             onPress={async () => {
               await Clipboard.setStringAsync(await problemReport());
-              Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+              haptic.success();
               setReportCopied(true);
               setLogCleared(false);
             }}
@@ -149,7 +149,7 @@ export default function HelpScreen() {
             detail="So the next report starts fresh."
             onPress={async () => {
               await clearErrors();
-              Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+              haptic.success();
               setLogCleared(true);
               setReportCopied(false);
             }}

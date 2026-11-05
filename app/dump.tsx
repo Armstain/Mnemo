@@ -4,7 +4,7 @@ import { TextInput } from '@/components/ui/TextInput';
 import { Text } from '@/components/ui/Text';
 import { router, useLocalSearchParams } from 'expo-router';
 import { MotiView } from 'moti';
-import * as Haptics from 'expo-haptics';
+import { haptic } from '@/utils/haptics';
 import { Easing } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -60,7 +60,7 @@ export default function DumpScreen() {
   async function startListening() {
     const result = await speech.start();
     if (result !== 'ok') {
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      haptic.error();
       Alert.alert(
         result === 'permission-denied' ? 'Microphone is off' : "Can't listen on this phone",
         result === 'permission-denied'
@@ -69,7 +69,7 @@ export default function DumpScreen() {
       );
       return;
     }
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Rigid);
+    haptic.firm();
     setPhase('listening');
   }
 
@@ -90,7 +90,7 @@ export default function DumpScreen() {
     // written out on the thread.
     if (audio.length > 0) {
       const saved = saveVoiceNote({ text: '', audio, category, threadId: targetThread?.id, filing: target.filing, store });
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      haptic.success();
       router.replace(`/(tabs)/context?id=${saved.threadId}`);
       return;
     }
@@ -99,7 +99,7 @@ export default function DumpScreen() {
     setDraft(next);
     setPhase(next ? 'review' : 'ready');
     if (!next) {
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+      haptic.warning();
       Alert.alert("Didn't catch that", 'Nothing was heard. Try again a little closer to the phone.');
     }
   }
@@ -108,7 +108,7 @@ export default function DumpScreen() {
     const text = draft.trim();
     if (!text) return;
     const saved = saveVoiceNote({ text, category, threadId: targetThread?.id, filing: target.filing, store });
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    haptic.success();
     router.replace(`/(tabs)/context?id=${saved.threadId}`);
   }
 

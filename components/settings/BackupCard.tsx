@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { ActivityIndicator, Platform, View } from 'react-native';
 import { TextInput } from '@/components/ui/TextInput';
 import { Text } from '@/components/ui/Text';
-import * as Haptics from 'expo-haptics';
+import { haptic } from '@/utils/haptics';
 import * as DocumentPicker from 'expo-document-picker';
 import * as Sharing from 'expo-sharing';
 import { File, Paths } from 'expo-file-system';
@@ -101,7 +101,7 @@ export function BackupCard() {
   };
 
   const fail = (message: string) => {
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+    haptic.error();
     setStep({ kind: 'error', message });
   };
 
@@ -112,7 +112,7 @@ export function BackupCard() {
       const text = await sealWithImages(payload, pass);
       await deliver(backupFileName(), text);
       noteManualBackup();
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      haptic.success();
       setPass('');
       setConfirm('');
       setStep({
@@ -144,7 +144,7 @@ export function BackupCard() {
     } catch (e) {
       if (e instanceof BackupError && e.reason === 'wrong-passphrase') {
         // Let them try the passphrase again without picking the file again.
-        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+        haptic.error();
         setStep({ kind: 'import', fileText, fileName: '' });
         setPassError(e.message);
         return;
@@ -157,7 +157,7 @@ export function BackupCard() {
     setStep({ kind: 'working', label: 'Importing…' });
     try {
       const r = await importBackup(payload);
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      haptic.success();
       const parts = [
         r.added ? `${r.added} new ${r.added === 1 ? 'thread' : 'threads'}` : '',
         r.updated ? `${r.updated} updated` : '',
@@ -325,9 +325,8 @@ export function AutoBackupCard() {
   const backUpNow = async (label: string) => {
     setStep({ kind: 'working', label });
     const result = await runAutoBackup(exportBackup(), { force: true });
-    Haptics.notificationAsync(
-      result === 'failed' ? Haptics.NotificationFeedbackType.Error : Haptics.NotificationFeedbackType.Success,
-    );
+    if (result === 'failed') haptic.error();
+    else haptic.success();
     setStep({ kind: 'idle' });
   };
 
@@ -337,7 +336,7 @@ export function AutoBackupCard() {
     try {
       picked = await turnOnAutoBackup(pass);
     } catch {
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      haptic.error();
       setSetupError("The passphrase couldn't be kept on this phone, so automatic backups are still off.");
       return;
     }
@@ -445,7 +444,7 @@ export function AutoBackupCard() {
             variant="ghost"
             size="sm"
             onPress={() => {
-              Haptics.selectionAsync();
+              haptic.select();
               turnOffAutoBackup();
             }}
           >

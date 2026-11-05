@@ -3,7 +3,7 @@ import { Modal, Pressable, ScrollView, View } from 'react-native';
 import { TextInput } from '@/components/ui/TextInput';
 import { Text } from '@/components/ui/Text';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import * as Haptics from 'expo-haptics';
+import { haptic } from '@/utils/haptics';
 
 import { IconButton } from '@/components/ui/Button';
 import { Icon } from '@/components/ui/Icon';
@@ -43,7 +43,7 @@ export function MoveSheet({
     : [...open].sort((a, b) => b.updatedAt - a.updatedAt);
 
   const finish = (threadId: string) => {
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    haptic.success();
     // The thread it left is gone if this was its only entry.
     const from = entry.threadId;
     if (!snapshot().entries.some((e) => e.threadId === from)) removeThreadNow(from);

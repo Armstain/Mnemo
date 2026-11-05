@@ -1,7 +1,7 @@
 import { View, Platform, Switch, Linking } from 'react-native';
 import { Text } from '@/components/ui/Text';
 import { Bell } from 'lucide-react-native';
-import * as Haptics from 'expo-haptics';
+import { haptic } from '@/utils/haptics';
 import { useEffect, useState } from 'react';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { Button } from '@/components/ui/Button';
@@ -57,7 +57,7 @@ export function NudgeSettingsCard() {
     setGranted(ok);
     setBlocked(!ok);
     if (ok) {
-      Haptics.selectionAsync();
+      haptic.select();
       await apply({ ...prefs, enabled: true });
     }
   };

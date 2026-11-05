@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { View, Pressable, Platform } from 'react-native';
-import * as Haptics from 'expo-haptics';
+import { haptic } from '@/utils/haptics';
 import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
 
 import { Text } from '@/components/ui/Text';
@@ -40,7 +40,7 @@ function Chip({
   return (
     <Pressable
       onPress={() => {
-        Haptics.selectionAsync();
+        haptic.select();
         onPress();
       }}
       accessibilityRole="button"

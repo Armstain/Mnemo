@@ -1,6 +1,6 @@
 import React from 'react';
 import { Pressable, View } from 'react-native';
-import * as Haptics from 'expo-haptics';
+import { haptic } from '@/utils/haptics';
 
 import { Icon } from '@/components/ui/Icon';
 import { Text } from '@/components/ui/Text';
@@ -23,7 +23,7 @@ export function TagEditor({ tags, onChange }: { tags: string[]; onChange: (tags:
     const tag = clean(raw);
     setDraft('');
     if (!tag || tags.includes(tag) || tags.length >= MAX_TAGS) return;
-    Haptics.selectionAsync();
+    haptic.select();
     onChange([...tags, tag]);
   };
 

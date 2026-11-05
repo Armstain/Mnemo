@@ -1,6 +1,8 @@
 import { Platform } from 'react-native';
 import * as Haptics from 'expo-haptics';
 
+import { hapticsOn } from '@/utils/haptics';
+
 // How finishing something feels in the hand, timed to the ring closing on
 // screen (components/CelebrationHost, components/ui/DoneCheck): small ticks
 // while it closes, one firm confirm the moment the ends meet. Android uses
@@ -13,12 +15,14 @@ const ignore = () => {};
 
 /** A soft tick: the ring moving. */
 function tick() {
+  if (!hapticsOn()) return;
   if (ANDROID) Haptics.performAndroidHapticsAsync(Haptics.AndroidHaptics.Clock_Tick).catch(ignore);
   else Haptics.selectionAsync().catch(ignore);
 }
 
 /** The ends meet. CONFIRM came in Android 11; older phones get the success buzz. */
 function confirm() {
+  if (!hapticsOn()) return;
   if (ANDROID >= 30) Haptics.performAndroidHapticsAsync(Haptics.AndroidHaptics.Confirm).catch(ignore);
   else Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(ignore);
 }

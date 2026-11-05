@@ -35,6 +35,8 @@ export interface Preferences {
   meaningSearch?: boolean;
   /** Place reminders (Settings → Location). Off until turned on: nothing is watched or asked for. */
   places?: boolean;
+  /** Vibration feedback on taps and results (Settings → Appearance). On unless turned off. */
+  haptics?: boolean;
   /** What a place reminder sounds like (lib/place-sound.ts). */
   placeSound?: 'chime' | 'bells' | 'rise' | 'default';
 }

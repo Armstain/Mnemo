@@ -4,7 +4,7 @@ import { TextInput } from '@/components/ui/TextInput';
 import { noFocusRing } from '@/utils/web';
 import type { TextInput as RNTextInput } from 'react-native';
 import { Text } from '@/components/ui/Text';
-import * as Haptics from 'expo-haptics';
+import { haptic } from '@/utils/haptics';
 import { useThemeColors } from '@/hooks/use-theme';
 import { useStatusConfig } from '@/utils/categories';
 import { Icon } from '@/components/ui/Icon';
@@ -37,7 +37,7 @@ export function ChecklistEditor({
   const statusColors = useStatusConfig();
 
   const toggleItem = (id: string) => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    haptic.tap();
     onChange(
       items.map((item) =>
         item.id === id ? { ...item, checked: !item.checked } : item,
@@ -49,7 +49,7 @@ export function ChecklistEditor({
     const text = newItemText.trim();
     if (!text) return;
 
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    haptic.tap();
     onChange([
       ...items,
       { id: generateItemId(), text, checked: false },
@@ -59,7 +59,7 @@ export function ChecklistEditor({
   };
 
   const removeItem = (id: string) => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    haptic.tap();
     onChange(items.filter((item) => item.id !== id));
   };
 

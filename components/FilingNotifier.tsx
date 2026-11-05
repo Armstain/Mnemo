@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { router, useGlobalSearchParams, usePathname } from 'expo-router';
-import * as Haptics from 'expo-haptics';
+import { haptic } from '@/utils/haptics';
 
 import { useMnemoStore } from '@/hooks/use-mnemo-store';
 import { useUndoToast } from '@/hooks/use-undo-toast';
@@ -65,7 +65,7 @@ export function FilingNotifier() {
     const stopFiling = onFiling((event) => {
       const s = storeRef.current;
       if (event.type === 'attached') {
-        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        haptic.success();
         if (viewing(event.fromThreadId)) open(event.toThreadId);
         showToast({
           message: `Added to ${event.toTitle}`,

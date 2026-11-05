@@ -2,7 +2,7 @@ import React from 'react';
 import { Pressable, ScrollView, View } from 'react-native';
 import { router } from 'expo-router';
 import { MotiView } from 'moti';
-import * as Haptics from 'expo-haptics';
+import { haptic } from '@/utils/haptics';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Button, IconButton } from '@/components/ui/Button';
@@ -195,7 +195,7 @@ export default function ReviewScreen() {
                       variant="quiet"
                       size="sm"
                       onPress={() => {
-                        Haptics.selectionAsync();
+                        haptic.select();
                         // Not activity: it shouldn't jump to the top of Home.
                         updateItem(item.id, { quietUntil: Date.now() + STILL_ON_IT_DAYS * DAY_MS }, { touch: false });
                         showUndoToast(`Won't ask about it for a month`, () => restoreItem(item));
@@ -208,7 +208,7 @@ export default function ReviewScreen() {
                       size="sm"
                       icon="pause"
                       onPress={() => {
-                        Haptics.selectionAsync();
+                        haptic.select();
                         pauseItem(item.id);
                         showUndoToast(`Paused ${item.title}`, () => restoreItem(item));
                       }}

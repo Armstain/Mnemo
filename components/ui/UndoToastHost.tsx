@@ -3,7 +3,7 @@ import { Pressable } from 'react-native';
 import { Text } from '@/components/ui/Text';
 import { AnimatePresence, MotiView } from 'moti';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import * as Haptics from 'expo-haptics';
+import { haptic } from '@/utils/haptics';
 
 import { useUndoToast } from '@/hooks/use-undo-toast';
 import { useThemeColors } from '@/hooks/use-theme';
@@ -55,7 +55,7 @@ export function UndoToastHost() {
           {toast.onAction ? (
           <Pressable
             onPress={() => {
-              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              haptic.tap();
               toast.onAction?.();
               dismiss();
             }}

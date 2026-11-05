@@ -1,7 +1,7 @@
 import React from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 import { AnimatePresence, MotiView } from 'moti';
-import * as Haptics from 'expo-haptics';
+import { haptic } from '@/utils/haptics';
 
 import { Icon, type IconName } from '@/components/ui/Icon';
 import { Text } from '@/components/ui/Text';
@@ -69,7 +69,7 @@ export function ThreadMenu({
               <Pressable
                 key={item.label}
                 onPress={() => {
-                  Haptics.selectionAsync();
+                  haptic.select();
                   onClose();
                   item.onPress();
                 }}
