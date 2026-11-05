@@ -1,13 +1,17 @@
 import { StatusBar } from 'expo-status-bar';
 import { useEnter } from '@/utils/motion';
-import { View, ScrollView, Pressable, Platform } from 'react-native';
+import { useState } from 'react';
+import { View, ScrollView, Pressable, Platform, Switch } from 'react-native';
+import * as Clipboard from 'expo-clipboard';
+import { clearErrors, problemReport } from '@/lib/errors';
+import { setPreferences, usePreferences } from '@/lib/preferences';
 import { Text } from '@/components/ui/Text';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { MotiView } from 'moti';
 import { Moon, Smartphone, Sun } from 'lucide-react-native';
 import Constants from 'expo-constants';
-import * as Haptics from 'expo-haptics';
+import { haptic } from '@/utils/haptics';
 import { Eyebrow } from '@/components/ui/Eyebrow';
 import { AutoBackupCard, BackupCard } from '@/components/settings/BackupCard';
 import { AiModeCard } from '@/components/settings/AiModeCard';
@@ -23,12 +27,12 @@ const THEME_OPTIONS: { key: ThemePreference; label: string; icon: typeof Sun }[]
   { key: 'dark', label: 'Dark', icon: Moon },
 ];
 
-function LinkRow({ icon, title, onPress }: { icon: IconName; title: string; onPress: () => void }) {
+function LinkRow({ icon, title, onPress, silent = false, chevron = true }: { icon: IconName; title: string; onPress: () => void; silent?: boolean; chevron?: boolean }) {
   const colors = useThemeColors();
   return (
     <Pressable
       onPress={() => {
-        Haptics.selectionAsync();
+        if (!silent) haptic.select();
         onPress();
       }}
       accessibilityRole="button"
@@ -36,8 +40,30 @@ function LinkRow({ icon, title, onPress }: { icon: IconName; title: string; onPr
     >
       <Icon name={icon} size={15} color={colors.accent} />
       <Text className="font-sans-semi text-sm text-fg ml-2 flex-1">{title}</Text>
-      <Icon name="chevronRight" size={16} color={colors.fgTertiary} />
+      {chevron ? <Icon name="chevronRight" size={16} color={colors.fgTertiary} /> : null}
     </Pressable>
+  );
+}
+
+function HapticsRow() {
+  const colors = useThemeColors();
+  const { haptics } = usePreferences();
+  return (
+    <View className="bg-surface rounded-lg px-5 py-3 border border-border/50 flex-row items-center">
+      <Text className="font-sans-semi text-sm text-fg flex-1">Vibration feedback</Text>
+      <Switch
+        value={haptics !== false}
+        onValueChange={(on) => {
+          if (!on) haptic.toggle(false);
+          setPreferences({ haptics: on });
+          if (on) haptic.toggle(true);
+        }}
+        accessibilityLabel="Vibration feedback"
+        trackColor={{ false: colors.border, true: colors.accent }}
+        thumbColor={Platform.OS === 'android' ? colors.surfaceLowest : undefined}
+        ios_backgroundColor={colors.border}
+      />
+    </View>
   );
 }
 
@@ -47,6 +73,8 @@ export default function ModalScreen() {
   const colors = useThemeColors();
   const theme = useThemeName();
   const { preference, setPreference } = useThemePreference();
+  const [reportCopied, setReportCopied] = useState(false);
+  const [logCleared, setLogCleared] = useState(false);
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.bg }}>
@@ -105,6 +133,7 @@ export default function ModalScreen() {
                 );
               })}
             </View>
+            <HapticsRow />
           </MotiView>
 
           {/* Nudges — local notifications, so there's nothing to show on web. */}
@@ -141,6 +170,34 @@ export default function ModalScreen() {
             <Eyebrow className="mb-1">Backup</Eyebrow>
             <AutoBackupCard />
             <BackupCard />
+          </MotiView>
+
+          <MotiView {...enter.rise(2)} className="gap-3 mb-10">
+            <Eyebrow className="mb-1">Something not working?</Eyebrow>
+            <LinkRow
+              icon="copy"
+              title={reportCopied ? 'Problem report copied' : 'Copy problem report'}
+              silent
+              chevron={false}
+              onPress={async () => {
+                await Clipboard.setStringAsync(await problemReport());
+                haptic.success();
+                setReportCopied(true);
+                setLogCleared(false);
+              }}
+            />
+            <LinkRow
+              icon="trash"
+              title={logCleared ? 'Error log cleared' : 'Clear error log'}
+              silent
+              chevron={false}
+              onPress={async () => {
+                await clearErrors();
+                haptic.success();
+                setLogCleared(true);
+                setReportCopied(false);
+              }}
+            />
           </MotiView>
 
           {/* Everything that explains rather than sets: one row each, on its own page. */}
