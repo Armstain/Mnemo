@@ -13,7 +13,7 @@ import { TextInput } from '@/components/ui/TextInput';
 import { Text } from '@/components/ui/Text';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams } from 'expo-router';
-import * as Haptics from 'expo-haptics';
+import { haptic } from '@/utils/haptics';
 import { AnimatePresence, MotiView } from 'moti';
 import { formatDistanceToNow } from 'date-fns';
 
@@ -255,7 +255,7 @@ export default function ThreadScreen() {
   const waiting = (thread.laterSteps ?? []).filter((l) => !thread.repeat || l.at > Date.now());
 
   const handleReminderDone = () => {
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    haptic.success();
     if (thread.nextStep) return handleStepDone();
     const { dueDate, laterSteps, nextStep, pinned } = thread;
     updateItem(thread.id, afterReminder(thread));
@@ -263,7 +263,7 @@ export default function ThreadScreen() {
   };
 
   const handleReminderLater = () => {
-    Haptics.selectionAsync();
+    haptic.select();
     updateItem(thread.id, rescheduled(thread, quickTimes().find((q) => q.key === 'tomorrow')!.at));
   };
 
@@ -300,7 +300,7 @@ export default function ThreadScreen() {
       const notes = notesToOrganise(entries);
       const overview = cleanOverview(await organiseNotes(thread.title, notes), notes.length, Date.now());
       if (!overview) throw new Error('Nothing to organise');
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      haptic.success();
       updateItem(thread.id, { overview });
     } catch (e) {
       Alert.alert('Could not organise the notes', aiErrorText(e));
@@ -387,7 +387,7 @@ export default function ThreadScreen() {
                 variant="bare"
                 active={!!thread.starred}
                 onPress={() => {
-                  Haptics.selectionAsync();
+                  haptic.select();
                   updateItem(thread.id, { starred: !thread.starred });
                 }}
               />
@@ -397,7 +397,7 @@ export default function ThreadScreen() {
                 variant="bare"
                 active={menuOpen}
                 onPress={() => {
-                  Haptics.selectionAsync();
+                  haptic.select();
                   setMenuOpen((v) => !v);
                 }}
               />
@@ -516,7 +516,7 @@ export default function ThreadScreen() {
                     <Button size="sm" variant="quiet" onPress={handleReminderLater}>
                       Tomorrow
                     </Button>
-                    <Button size="sm" variant="primary" icon="check" onPress={handleReminderDone}>
+                    <Button size="sm" variant="primary" icon="check" haptic={false} onPress={handleReminderDone}>
                       Done
                     </Button>
                   </View>

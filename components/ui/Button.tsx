@@ -1,7 +1,7 @@
 import React from 'react';
 import { Pressable, View } from 'react-native';
 import { Text } from '@/components/ui/Text';
-import * as Haptics from 'expo-haptics';
+import { haptic } from '@/utils/haptics';
 
 import { useThemeColors } from '@/hooks/use-theme';
 import { Animated, usePressScale } from '@/hooks/use-press-scale';
@@ -22,6 +22,8 @@ interface ButtonProps {
   /** Push label left and trailing icon right — for full-width nav-style buttons. */
   spread?: boolean;
   disabled?: boolean;
+  /** Override the press haptic: quiet and ghost are silent unless true; pass false when onPress plays its own. */
+  haptic?: boolean;
   onPress: () => void;
   className?: string;
 }
@@ -47,6 +49,7 @@ export function Button({
   fullWidth = false,
   spread = false,
   disabled = false,
+  haptic: feel = variant !== 'quiet' && variant !== 'ghost',
   onPress,
   className = '',
 }: ButtonProps) {
@@ -55,12 +58,10 @@ export function Button({
 
   const handlePress = () => {
     if (disabled) return;
-    if (variant === 'danger') {
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
-    } else if (variant === 'primary') {
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    } else {
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    if (feel) {
+      if (variant === 'danger') haptic.warning();
+      else if (variant === 'primary') haptic.press();
+      else haptic.tap();
     }
     onPress();
   };
@@ -147,7 +148,7 @@ export function IconButton({ icon, label, variant = 'default', size = 44, disabl
 
   const handlePress = () => {
     if (disabled) return;
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    if (variant !== 'bare') haptic.tap();
     onPress();
   };
 

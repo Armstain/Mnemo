@@ -1,7 +1,7 @@
 import React from 'react';
 import { AppState, Platform, Pressable, Switch, View } from 'react-native';
 import { router } from 'expo-router';
-import * as Haptics from 'expo-haptics';
+import { haptic } from '@/utils/haptics';
 
 import { Button } from '@/components/ui/Button';
 import { Icon } from '@/components/ui/Icon';
@@ -40,7 +40,7 @@ export function LocationCard() {
 
   const toggle = (next: boolean) => {
     if (next || waiting.length === 0) {
-      Haptics.selectionAsync();
+      haptic.toggle(next);
       setPreferences({ places: next });
       // Turning on asks right away: while in use, then "all the time",
       // without which nothing rings while Mnemo is closed.

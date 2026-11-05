@@ -1,7 +1,7 @@
 import React from 'react';
 import { Pressable, View } from 'react-native';
 import { Text } from '@/components/ui/Text';
-import * as Haptics from 'expo-haptics';
+import { haptic } from '@/utils/haptics';
 
 import { useThemeColors } from '@/hooks/use-theme';
 
@@ -50,7 +50,7 @@ export function Pill({
 
   const handlePress = () => {
     if (!onPress) return;
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    haptic.select();
     onPress();
   };
 

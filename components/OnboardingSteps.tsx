@@ -12,7 +12,7 @@ import { TextInput } from '@/components/ui/TextInput';
 import { Text } from '@/components/ui/Text';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { MotiView } from 'moti';
-import * as Haptics from 'expo-haptics';
+import { haptic } from '@/utils/haptics';
 import * as Clipboard from 'expo-clipboard';
 import * as WebBrowser from 'expo-web-browser';
 import { Bell } from 'lucide-react-native';
@@ -294,7 +294,7 @@ export function KeyStep({ onDone, onOffline, onBack }: { onDone: () => void; onO
       if (text) {
         setKeyText(text);
         setError(null);
-        Haptics.selectionAsync();
+        haptic.select();
       } else {
         setError('Your clipboard is empty. Copy the key in AI Studio first.');
       }
@@ -309,13 +309,13 @@ export function KeyStep({ onDone, onOffline, onBack }: { onDone: () => void; onO
     const result = await validateApiKey(key);
     setChecking(false);
     if (!result.valid) {
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      haptic.error();
       setError(result.error ?? 'That key did not work.');
       return;
     }
     await saveApiKey(key);
     setPreferences({ aiMode: 'gemini' });
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    haptic.success();
     onDone();
   };
 
@@ -330,7 +330,6 @@ export function KeyStep({ onDone, onOffline, onBack }: { onDone: () => void; onO
         lastSeenClipboard.current = text;
         if (text && looksLikeGeminiKey(text) && !keyRef.current.trim()) {
           setSpottedKey(text);
-          Haptics.selectionAsync();
         }
       } catch {
         // Clipboard unreadable — the manual paste path still works.
@@ -351,7 +350,7 @@ export function KeyStep({ onDone, onOffline, onBack }: { onDone: () => void; onO
     setKeyText(spottedKey);
     setSpottedKey(null);
     setError(null);
-    Haptics.selectionAsync();
+    haptic.select();
   };
 
   const stepRow = (n: number, text: string, action?: React.ReactNode) => (
@@ -486,10 +485,10 @@ export function FirstCaptureStep({
       setHint(null);
       const result = await speech.start();
       if (result === 'ok') {
-        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+        haptic.press();
         return;
       }
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+      haptic.warning();
       setHint(
         result === 'permission-denied'
           ? "Mnemo can't use the microphone, so type it instead."
@@ -504,14 +503,14 @@ export function FirstCaptureStep({
       return;
     }
     const saved = saveVoiceNote({ text: words, audio, category: 'general', store });
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    haptic.success();
     onCaptured(saved.threadId);
   };
 
   const saveText = () => {
     if (!text.trim()) return;
     const saved = saveTextNote({ text, category: 'general', store });
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    haptic.success();
     onCaptured(saved.threadId);
   };
 
@@ -616,7 +615,7 @@ export function RevealStep({ itemId, onContinue }: { itemId: string; onContinue:
   const stillWorking = !!item?.pending && !waitedOut;
 
   useEffect(() => {
-    if (structured) Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    if (structured) haptic.success();
   }, [structured]);
 
   const headline = structured ? "Here's how Mnemo remembers it" : stillWorking ? 'Got it.' : 'Saved.';

@@ -1,7 +1,7 @@
 import React from 'react';
 import { Platform, Pressable, Switch, View } from 'react-native';
 import { Text } from '@/components/ui/Text';
-import * as Haptics from 'expo-haptics';
+import { haptic } from '@/utils/haptics';
 
 import { Icon, type IconName } from '@/components/ui/Icon';
 import { useThemeColors } from '@/hooks/use-theme';
@@ -38,7 +38,7 @@ function MeaningSearchRow() {
       <Switch
         value={meaningSearch === true}
         onValueChange={(on) => {
-          Haptics.selectionAsync();
+          haptic.toggle(on);
           setPreferences({ meaningSearch: on });
         }}
         accessibilityLabel="Search by meaning"
@@ -66,7 +66,7 @@ export function AiModeCard({ children }: { children?: React.ReactNode }) {
               key={m.value}
               onPress={() => {
                 if (selected) return;
-                Haptics.selectionAsync();
+                haptic.select();
                 setPreferences({ aiMode: m.value });
               }}
               accessibilityRole="radio"

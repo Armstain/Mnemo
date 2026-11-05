@@ -2,7 +2,7 @@ import React from 'react';
 import { AppState, Platform, ScrollView, View } from 'react-native';
 import { router, useFocusEffect } from 'expo-router';
 import { MotiView } from 'moti';
-import * as Haptics from 'expo-haptics';
+import { haptic } from '@/utils/haptics';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Button, IconButton } from '@/components/ui/Button';
@@ -174,14 +174,12 @@ export default function RemindersCheckScreen() {
   }, [waiting]);
 
   const send = async () => {
-    Haptics.selectionAsync();
     const t = await sendTestReminder();
     setNow(Date.now());
     setTest(t);
   };
 
   const answer = async (a: 'yes' | 'no') => {
-    Haptics.selectionAsync();
     await answerTest(a);
     setTest(await loadTest());
   };
@@ -314,7 +312,7 @@ export default function RemindersCheckScreen() {
                       <Button variant="tonal" size="sm" icon="check" onPress={() => answer('yes')}>
                         Yes, it came
                       </Button>
-                      <Button variant="quiet" size="sm" onPress={() => answer('no')}>
+                      <Button variant="quiet" size="sm" haptic onPress={() => answer('no')}>
                         No
                       </Button>
                     </View>

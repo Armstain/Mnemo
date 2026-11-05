@@ -19,7 +19,7 @@ import Animated, {
   withTiming,
   type SharedValue,
 } from 'react-native-reanimated';
-import * as Haptics from 'expo-haptics';
+import { haptic } from '@/utils/haptics';
 import Svg, { Circle } from 'react-native-svg';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router, useGlobalSearchParams, usePathname } from 'expo-router';
@@ -159,18 +159,18 @@ export function ActionCluster({ visible = true }: { visible?: boolean }) {
   }, [visible]);
 
   const closeMenu = () => {
-    Haptics.selectionAsync();
+    haptic.select();
     setExpanded(false);
   };
 
   const goRecordScreen = () => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    haptic.tap();
     setExpanded(false);
     router.push({ pathname: '/dump', params: threadParams });
   };
 
   const goNote = () => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    haptic.tap();
     setExpanded(false);
     router.push({ pathname: '/capture', params: threadParams });
   };
@@ -185,7 +185,7 @@ export function ActionCluster({ visible = true }: { visible?: boolean }) {
     const result = await speech.start();
     if (result !== 'ok') {
       setPhase('idle');
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      haptic.error();
       if (result === 'permission-denied') {
         Alert.alert('Microphone is off', 'Allow the microphone and speech recognition in Settings to record thoughts.');
       } else {
@@ -204,7 +204,7 @@ export function ActionCluster({ visible = true }: { visible?: boolean }) {
     recordingSince.current = Date.now();
     setPhase('recording');
     if (showHoldHint) retireHoldHint();
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Rigid);
+    haptic.firm();
   };
 
   const endHold = (phaseAtRelease: HoldPhase) => {
@@ -218,7 +218,7 @@ export function ActionCluster({ visible = true }: { visible?: boolean }) {
     setPhase('idle');
     if (!wantsSave) {
       speech.cancel();
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+      haptic.warning();
       showTail({ kind: 'discarded' });
       return;
     }
@@ -229,7 +229,7 @@ export function ActionCluster({ visible = true }: { visible?: boolean }) {
     const saveTo = currentThread ?? focusNow;
     speech.stop().then(({ words, audio }) => {
       if (!words.trim() && audio.length === 0) {
-        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+        haptic.warning();
         showTail({ kind: 'tooShort' });
         return;
       }
@@ -241,7 +241,7 @@ export function ActionCluster({ visible = true }: { visible?: boolean }) {
         filing: currentThread ? { by: 'user' } : focusNow ? { by: 'focus' } : undefined,
         store,
       });
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      haptic.success();
       showTail({ kind: 'saved', where: saveTo?.title ?? '' });
     });
   };
@@ -255,17 +255,17 @@ export function ActionCluster({ visible = true }: { visible?: boolean }) {
       const step = DETENTS_PX.filter((d) => raw >= d).length;
       if (step !== detent.current) {
         detent.current = step;
-        Haptics.selectionAsync();
+        haptic.detent();
       }
     }
 
     if (current === 'recording' && raw > CANCEL_ENTER_PX) {
       setPhase('cancelling');
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
+      haptic.heavy();
       dragY.value = reduceMotion ? CANCEL_DISTANCE : withSpring(CANCEL_DISTANCE, SNAP);
     } else if (current === 'cancelling' && raw < CANCEL_EXIT_PX) {
       setPhase('recording');
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      haptic.tap();
       dragY.value = reduceMotion ? raw : withSpring(raw, SNAP);
     } else if (current === 'recording') {
       dragY.value = Math.min(raw, CANCEL_DISTANCE);
@@ -280,7 +280,7 @@ export function ActionCluster({ visible = true }: { visible?: boolean }) {
     detent.current = 0;
     startTouchY.current = e.nativeEvent.pageY;
     setPhase('charging');
-    Haptics.selectionAsync();
+    haptic.select();
     if (longPressTimer.current) clearTimeout(longPressTimer.current);
     longPressTimer.current = setTimeout(() => {
       longPressFired.current = true;
@@ -302,14 +302,7 @@ export function ActionCluster({ visible = true }: { visible?: boolean }) {
     const wasLongPress = longPressFired.current;
     longPressFired.current = false;
     endHold(holdPhaseRef.current);
-    if (!wasLongPress) {
-      if (expanded) {
-        Haptics.selectionAsync();
-      } else {
-        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-      }
-      setExpanded((v) => !v);
-    }
+    if (!wasLongPress) setExpanded((v) => !v);
   };
 
   // The OS took the gesture (no release arrives): discard rather than save something nobody released.
