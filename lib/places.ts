@@ -212,8 +212,10 @@ const localDay = (at: number) => {
 };
 
 /** Whether a crossing that would ring rings now. */
-export function ringNow(r: Pick<PlaceReminder, 'repeat' | 'lastFiredAt' | 'days'>, now: number, weekend: number[] = phoneWeekend()): boolean {
+export function ringNow(r: Pick<PlaceReminder, 'repeat' | 'lastFiredAt' | 'days' | 'doneAt'>, now: number, weekend: number[] = phoneWeekend()): boolean {
   if (!r.repeat) return true;
+  // Today's was already marked done (before it rang): the next one is another day.
+  if (r.doneAt !== undefined && localDay(r.doneAt) === localDay(now)) return false;
   if (r.lastFiredAt !== undefined && now - r.lastFiredAt < DAY_MS && localDay(r.lastFiredAt) === localDay(now)) return false;
   if (r.repeat === 'always') return true;
   if (r.repeat === 'days') return ringDays(r).includes(new Date(now).getDay());
@@ -231,6 +233,50 @@ export function afterCrossing(r: PlaceReminder, now: number, rang: boolean, late
   if (!rang) return { ...r, ...side };
   if (!r.repeat) return { ...r, firedAt: now, ...(late ? { caughtLate: true } : {}) };
   return { ...r, ...side, lastFiredAt: now, ...(late ? { caughtLate: true } : { caughtLate: undefined }) };
+}
+
+// ─── Occurrences ────────────────────────────────────────────────
+// A repeating reminder is a definition (place, side, days: kept until the person changes or
+// removes it) that rings at most once a day. Each ring is an occurrence, identified by its day
+// (`lastFiredAt`); marking it done (`doneAt`) completes that occurrence only. A one-shot
+// reminder has a single occurrence, the ring that set `firedAt`.
+
+export type Occurrence =
+  /** Nothing today: it hasn't rung, or its last ring was on an earlier day (a lapsed one is not still due). */
+  | { state: 'none' }
+  /** Rang today and not marked done. */
+  | { state: 'due'; at: number }
+  /** Today's is done: it rang and was marked done, or (repeating) was done before it rang. */
+  | { state: 'done'; at?: number; doneAt: number };
+
+/** Today's occurrence of a place reminder, in the phone's local day. */
+export function occurrenceOf(r: Pick<PlaceReminder, 'repeat' | 'firedAt' | 'lastFiredAt' | 'doneAt'>, now = Date.now()): Occurrence {
+  const ring = r.repeat ? r.lastFiredAt : r.firedAt;
+  const at = ring !== undefined && localDay(ring) === localDay(now) ? ring : undefined;
+  const doneToday = r.doneAt !== undefined && localDay(r.doneAt) === localDay(now) && (at === undefined || r.doneAt >= at);
+  if (doneToday && (at !== undefined || r.repeat)) return { state: 'done', ...(at !== undefined ? { at } : {}), doneAt: r.doneAt! };
+  return at !== undefined ? { state: 'due', at } : { state: 'none' };
+}
+
+/**
+ * Marks today's occurrence done. Only `doneAt` changes: the repeat, the days, the place and the
+ * side the phone is on stay exactly as they were, so the next occurrence rings as usual. A
+ * repeating one can be done before it rings (did it early: today's ring is skipped, `ringNow`).
+ * Null when there is nothing to complete (already done today, or a one-shot that hasn't rung),
+ * so a second tap or a replayed notification changes nothing.
+ */
+export function completeOccurrence(r: PlaceReminder, now: number): PlaceReminder | null {
+  const state = occurrenceOf(r, now).state;
+  if (state === 'done' || (state === 'none' && !r.repeat)) return null;
+  return { ...r, doneAt: now };
+}
+
+/** Marks a notification as a place reminder's (lib/geofence.ts), so its buttons act on that reminder only (components/ReminderActions.tsx). */
+export const PLACE_NOTIFICATION = 'place';
+
+/** A place reminder that rings again after it rings (as opposed to once). */
+export function repeatsAtPlace(t: Pick<MnemoItem, 'place' | 'status'>): boolean {
+  return isArmed(t) && !!t.place.repeat;
 }
 
 const LEAVE = /\b(?:when(?:ever)? i leave|when i'm leaving|before i leave|after i leave|on leaving|leaving|theke ber|ber hole|ber hoye|ber hobar)\b|থেকে বের|বের হলে|বের হয়ে|বের হওয়ার|ছাড়লে|ছেড়ে যাওয়ার/i;

@@ -17,8 +17,8 @@ import {
   EMBEDDING_DIMS,
 } from '@/lib/embeddings';
 import { getVectors, upsertEmbedding } from '@/lib/db';
-import type { Block, Category, ChecklistItem, Entry, Filing, LaterStep, MnemoItem, PlaceReminder, ThreadKind } from '@/types/mnemo';
-import { queueSteps } from '@/lib/when';
+import type { Block, Category, ChecklistItem, Entry, Filing, MnemoItem, PlaceReminder, ThreadKind } from '@/types/mnemo';
+import { armedPlace, mayAutoFile, replacesPlaceReminder, samePlaceReminder, withReminders } from '@/lib/reminder-ownership';
 import type { CaptureStore } from '@/hooks/use-mnemo-store';
 import { buildBlocks } from '@/lib/threads';
 import { summarizeMeasures, trackedMetrics, verifyMeasures } from '@/lib/measures';
@@ -107,26 +107,15 @@ export function onReminderSet(listener: (event: ReminderSetEvent) => void): () =
 }
 const reminderSet = (event: ReminderSetEvent) => reminderListeners.forEach((l) => l(event));
 
-function withReminders(
-  thread: MnemoItem,
-  add: { due: number; step?: string; later: LaterStep[]; repeat?: MnemoItem['repeat']; force?: boolean },
-): Partial<MnemoItem> {
-  if (add.force || !thread.dueDate || thread.dueDate < Date.now()) {
-    return { dueDate: add.due, repeat: add.repeat, ...(add.later.length > 0 ? { laterSteps: queueSteps(thread.laterSteps, add.later) } : {}) };
-  }
-  const queued = [{ at: add.due, step: add.step }, ...add.later].filter((l) => l.at !== thread.dueDate && (!thread.repeat || l.at > Date.now()));
-  return queued.length > 0 ? { laterSteps: queueSteps(thread.laterSteps, queued) } : {};
-}
-
 function saveNote(source: Entry['source'], params: NoteInput): { threadId: string; entry: Entry } {
-  const { category, threadId, store } = params;
+  const { category, store } = params;
   const words = params.text.trim();
   const images = params.images ?? [];
   const recorded = params.audio ?? [];
   const ai = aiEnabled() && (words.length > 0 || images.length > 0 || recorded.length > 0 || (params.links?.length ?? 0) > 0);
   const audio = ai ? recorded : [];
   if (!ai) deleteAudio(recorded);
-  const reading = understand(words, { known: knownMetrics(store, threadId), monthFirst: monthFirst(), currency: localCurrency() });
+  const reading = understand(words, { known: knownMetrics(store, params.threadId), monthFirst: monthFirst(), currency: localCurrency() });
 
   // With AI on the text stays as said, so an edit made meanwhile is detected against it.
   const later = params.dueDate ? [] : reading.later;
@@ -153,6 +142,10 @@ function saveNote(source: Entry['source'], params: NoteInput): { threadId: strin
   const placeRepeats = !!placeHit?.repeat && !!reading.repeat;
   const due = params.dueDate ?? (placeRepeats ? undefined : reading.due);
   const place = placeHit ? { ...placeHit, step: params.nextStep?.trim() || reading.nextStep, setAt: Date.now() } : undefined;
+  // A thread holds one place reminder. A note bringing a different one (added to the thread, or
+  // a focus capture) starts its own thread, so both ring: nothing is overwritten or dropped.
+  const into = params.threadId ? store.getThread(params.threadId) : undefined;
+  const threadId = place && into && replacesPlaceReminder(into, place) ? undefined : params.threadId;
 
   let saved: { threadId: string; entry: Entry };
   if (threadId) {
@@ -529,11 +522,21 @@ async function structure(entry: PendingEntry, store: CaptureStore): Promise<void
       : undefined;
   const heardPlace = said && !editedMeanwhile && getPreferences().places ? readPlaceReminder(said, getPlaces()) : undefined;
   const remindFromSound = (threadId: string) => {
-    const t = store.getThread(threadId);
+    let t = store.getThread(threadId);
     if (!t) return;
-    if (heardPlace && !(t.place && !t.place.firedAt && t.place.placeId === heardPlace.placeId && t.place.on === heardPlace.on && t.place.repeat === heardPlace.repeat && String(t.place.days) === String(heardPlace.days))) {
-      store.updateItem(threadId, { place: { ...heardPlace, step: nextStep ?? heard?.nextStep, setAt: Date.now() } });
+    if (heardPlace && !(armedPlace(t) && samePlaceReminder(armedPlace(t)!, heardPlace))) {
+      const shared = store.snapshot().entries.some((e) => e.threadId === threadId && e.id !== entry.id);
+      if (shared && replacesPlaceReminder(t, heardPlace)) {
+        // Said into a thread that already reminds at another place (the focus thread, one picked
+        // to add to): this note becomes its own thread with its own reminder; neither is lost.
+        const created = store.moveEntryToNewThread(entry.id, { title: processed.title, category: aiCategory ?? t.category, tags });
+        if (!created) return;
+        emitFiling({ type: 'released', entryId: entry.id, fromThreadId: t.id, fromTitle: t.title, toThreadId: created.id });
+        t = created;
+      }
+      store.updateItem(t.id, { place: { ...heardPlace, step: nextStep ?? heard?.nextStep, setAt: Date.now() } });
     }
+    threadId = t.id;
     if (heardPlace?.repeat && heard?.repeat) return;
     if (!heard?.due || heard.due < Date.now() || (t.dueDate && t.dueDate > Date.now())) return;
     store.updateItem(threadId, { dueDate: heard.due, repeat: heard.repeat });
@@ -558,44 +561,43 @@ async function structure(entry: PendingEntry, store: CaptureStore): Promise<void
         // The model's answer stands alone.
       }
     }
-    decision = decideFiling({ filedBy, match: processed.thread, candidates, similarity });
+    decision = decideFiling({
+      filedBy,
+      match: processed.thread,
+      candidates,
+      similarity,
+      // A place or repeating reminder of its own: connected by a suggestion, never merged.
+      ownsReminder: !mayAutoFile(store.getThread(now.threadId), heardPlace),
+    });
   }
 
   if (decision.action === 'attach') {
     const own = store.getThread(now.threadId);
-    store.moveEntry(entry.id, decision.threadId, { by: 'auto', confidence: decision.confidence });
-    const emptied = own && !store.snapshot().entries.some((e) => e.threadId === own.id) ? own : undefined;
-    if (emptied) store.removeThreadNow(emptied.id);
-    const target = store.getThread(decision.threadId);
-    if (!target) return;
-    if (emptied?.dueDate) {
-      const carried = withReminders(target, {
-        due: emptied.dueDate,
-        step: nextStep ?? emptied.nextStep,
-        later: emptied.laterSteps ?? [],
-        repeat: emptied.repeat,
-      });
-      if (Object.keys(carried).length > 0) store.updateItem(target.id, carried);
-      if (carried.dueDate) reminderSet({ threadId: target.id, at: carried.dueDate, previous: target.dueDate });
-    }
-    if (emptied?.place && !emptied.place.firedAt && !(target.place && !target.place.firedAt)) {
-      store.updateItem(target.id, { place: emptied.place });
-    }
-    if (tags.length > 0) {
+    const before = store.getThread(decision.threadId);
+    // Moves the note, and its thread's reminders with it when the thread is left empty (or refuses).
+    const filed = store.fileEntry(entry.id, decision.threadId, { by: 'auto', confidence: decision.confidence });
+    if (filed.moved) {
+      const target = store.getThread(decision.threadId);
+      if (!target) return;
+      if (filed.carried?.dueDate) reminderSet({ threadId: target.id, at: filed.carried.dueDate, previous: before?.dueDate });
+      if (tags.length > 0) {
       store.updateItem(target.id, { tags: [...new Set([...target.tags, ...tags])].slice(0, 8) });
     }
-    remindFromSound(target.id);
-    emitFiling({
-      type: 'attached',
-      entryId: entry.id,
-      fromThreadId: now.threadId,
-      toThreadId: target.id,
-      toTitle: target.title,
-      ownTitle: processed.title,
-      ownCategory: aiCategory ?? own?.category ?? 'general',
-    });
-    await embedThread(store, target.id);
-    return;
+      remindFromSound(target.id);
+      emitFiling({
+        type: 'attached',
+        entryId: entry.id,
+        fromThreadId: now.threadId,
+        toThreadId: target.id,
+        toTitle: target.title,
+        ownTitle: processed.title,
+        ownCategory: aiCategory ?? own?.category ?? 'general',
+      });
+      await embedThread(store, target.id);
+      return;
+    }
+    // It would have cost a reminder: offer it instead, and keep the note where it is.
+    decision = { ...decision, action: 'suggest' };
   }
 
   if (decision.action === 'release') {

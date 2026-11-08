@@ -10,7 +10,7 @@ import { useMnemoStore } from '@/hooks/use-mnemo-store';
 import { useThemeColors } from '@/hooks/use-theme';
 import { allowBackground } from '@/lib/geofence';
 import { usePlaces } from '@/lib/place-store';
-import { MAX_WATCHED, overlaps, overlapText, pickWatched, placeLabel } from '@/lib/places';
+import { isArmed, MAX_WATCHED, occurrenceOf, overlaps, overlapText, pickWatched, placeLabel } from '@/lib/places';
 import { usePreferences } from '@/lib/preferences';
 import { formatReminder } from '@/lib/when';
 import type { MnemoItem, PlaceReminder } from '@/types/mnemo';
@@ -107,15 +107,20 @@ export function PlaceReminderLabel({ thread }: { thread: MnemoItem }) {
   const { places: on } = usePreferences();
   const warnings = useWarnings(thread);
   const r = thread.place;
-  if (!on || !r || r.firedAt) return null;
+  // A finished or archived thread's reminder no longer rings: not shown as if it would.
+  if (!on || !r || !isArmed(thread)) return null;
   const shaky = warnings.length > 0;
   const tone = shaky ? colors.accentWarm : colors.accent;
+  // A repeating one: today's ring, so it's plain that Done finished today and not the reminder.
+  const today = r.repeat ? occurrenceOf(r) : null;
+  const todayText = today?.state === 'done' ? 'Done for today' : today?.state === 'due' ? `Went off ${formatReminder(today.at).toLowerCase()}` : null;
   return (
     <View className="mt-2 gap-1.5">
       <View className="flex-row items-center" style={{ gap: 6 }}>
         <Icon name="mapPin" size={14} color={tone} stroke={2} />
-        <Text className="font-sans-medium text-sm" style={{ color: tone }}>
+        <Text className="font-sans-medium text-sm shrink" style={{ color: tone }}>
           {placeLabel(r, places.find((p) => p.id === r.placeId))}
+          {todayText ? <Text className="font-sans text-sm" style={{ color: colors.fgTertiary }}>{`  ·  ${todayText}`}</Text> : null}
         </Text>
       </View>
       {shaky ? <WarningList lines={warnings.slice(0, 2)} /> : null}

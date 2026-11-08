@@ -87,6 +87,12 @@ export interface PlaceReminder {
   days?: number[];
   /** A repeating reminder's last ring. */
   lastFiredAt?: number;
+  /**
+   * When the person marked the latest ring done (the notification's Done, or
+   * the thread's Done on a repeating reminder). It completes that one
+   * occurrence only; the reminder itself stays set. See `occurrenceOf` in lib/places.ts.
+   */
+  doneAt?: number;
   /** It fired only when Mnemo was opened there: the phone never said. */
   caughtLate?: boolean;
 }

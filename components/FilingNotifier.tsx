@@ -33,10 +33,11 @@ export function FilingNotifier() {
     const viewing = (threadId: string) =>
       routeRef.current.pathname.includes('context') && routeRef.current.id === threadId;
     const open = (threadId: string) => router.replace(`/(tabs)/context?id=${threadId}`);
-    /** Drops a thread an entry just left, if that left it empty. */
-    const dropIfEmpty = (threadId: string) => {
-      const s = storeRef.current;
-      if (!s.snapshot().entries.some((e) => e.threadId === threadId)) s.removeThreadNow(threadId);
+    /** Moves a note back or on; says why when that would have cost a reminder (the store's fileEntry). */
+    const move = (entryId: string, toThreadId: string): boolean => {
+      const filed = storeRef.current.fileEntry(entryId, toThreadId, { by: 'user' });
+      if (!filed.moved && filed.reason) showToast({ message: filed.reason });
+      return filed.moved;
     };
 
     // A note that set a reminder says when, so there's no guessing; and if
@@ -85,9 +86,7 @@ export function FilingNotifier() {
           actionLabel: 'Move',
           durationMs: FILED_TOAST_MS,
           onAction: () => {
-            s.moveEntry(event.entryId, event.toThreadId, { by: 'user' });
-            dropIfEmpty(event.threadId);
-            if (viewing(event.threadId)) open(event.toThreadId);
+            if (move(event.entryId, event.toThreadId) && viewing(event.threadId)) open(event.toThreadId);
           },
         });
       } else {
@@ -95,9 +94,7 @@ export function FilingNotifier() {
           message: `Kept apart from ${event.fromTitle}`,
           durationMs: FILED_TOAST_MS,
           onAction: () => {
-            s.moveEntry(event.entryId, event.fromThreadId, { by: 'user' });
-            dropIfEmpty(event.toThreadId);
-            if (viewing(event.toThreadId)) open(event.fromThreadId);
+            if (move(event.entryId, event.fromThreadId) && viewing(event.toThreadId)) open(event.fromThreadId);
           },
         });
       }

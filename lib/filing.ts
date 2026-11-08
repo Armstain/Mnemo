@@ -192,7 +192,17 @@ export function decideFiling(input: {
   match?: ThreadMatch;
   candidates: ThreadCandidate[];
   similarity?: Map<string, number>;
+  /**
+   * The capture owns a reminder that filing must not move (lib/reminder-ownership.ts `mayAutoFile`):
+   * an automatic attach becomes a suggestion, and it keeps its own thread.
+   */
+  ownsReminder?: boolean;
 }): FilingDecision {
+  const decision = decide(input);
+  return decision.action === 'attach' && input.ownsReminder ? { ...decision, action: 'suggest' } : decision;
+}
+
+function decide(input: Parameters<typeof decideFiling>[0]): FilingDecision {
   const { match, candidates, similarity } = input;
   if (!match) return { action: 'stay' };
   const confidence = Math.max(0, Math.min(1, Number(match.confidence) || 0));
