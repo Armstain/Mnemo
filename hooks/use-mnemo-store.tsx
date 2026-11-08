@@ -25,6 +25,8 @@ import { deleteAllRecordings } from '@/lib/capture';
 import { syncReminderForItem, cancelReminder, cancelAllReminders } from '@/lib/reminders';
 import { removeAllPlaces } from '@/lib/place-store';
 import { afterReminder, nextOccurrence } from '@/lib/when';
+import { completeOccurrence } from '@/lib/places';
+import { foldReminders } from '@/lib/reminder-ownership';
 import { deleteAllImages, forgetImages, restoreImage } from '@/lib/images';
 import { UNDO_WINDOW_MS } from '@/hooks/use-undo-toast';
 import { focusIsIdle } from '@/lib/filing';
@@ -84,13 +86,19 @@ interface MnemoStoreType {
   snapshot: () => { items: MnemoItem[]; entries: Entry[] };
   /** Moves an entry into another thread; both threads' text and next step follow. */
   moveEntry: (entryId: string, toThreadId: string, filing: Entry['filing']) => void;
-  /** Gives an entry a thread of its own (Undo of an auto-file, or "Keep separate"). */
+  /** Gives an entry a thread of its own (Undo of an auto-file, or "Keep separate"); a thread it empties hands over its reminders and goes. */
   moveEntryToNewThread: (
     entryId: string,
     thread: Pick<MnemoItem, 'title' | 'category' | 'tags'>,
   ) => MnemoItem | undefined;
   /** Deletes a thread at once, without the undo window. For a thread left empty by a move. */
   removeThreadNow: (id: string) => void;
+  /**
+   * Moves a note into another thread: the one way to connect notes by moving them. When it was
+   * its thread's last note, that thread goes and its reminders move along, or, if they would
+   * overwrite the other thread's, nothing moves and `reason` says why (lib/reminder-ownership.ts).
+   */
+  fileEntry: (entryId: string, toThreadId: string, filing: Entry['filing']) => FileResult;
 
   // Focus: the thread quick captures go to while it's set (a trip, a project).
   focusThreadId: string | null;
@@ -116,7 +124,16 @@ interface MnemoStoreType {
   // Status transitions
   resumeItem: (id: string) => void;
   pauseItem: (id: string) => void;
-  completeItem: (id: string) => void;
+  /**
+   * Marks the thread finished, once: a second call (double tap, two screens) does nothing and
+   * returns null. Otherwise returns the thread as it was, for Undo (`restoreItem`).
+   */
+  completeItem: (id: string) => MnemoItem | null;
+  /**
+   * Marks today's ring of the thread's place reminder done, and nothing else: the reminder, its
+   * repeat and the thread stay as they are. Returns an undo, or null when there's nothing to complete.
+   */
+  completePlaceOccurrence: (id: string) => (() => void) | null;
   archiveItem: (id: string) => void;
   /** Undo for a status change: the thread's status and timestamps as they were in `prev`. */
   restoreItem: (prev: MnemoItem) => void;
@@ -128,6 +145,10 @@ interface MnemoStoreType {
   getTodayItems: () => MnemoItem[];
   getRecentlyCompleted: (limit?: number) => MnemoItem[];
 }
+
+export type FileResult =
+  | { moved: true; removedThreadId?: string; carried?: Partial<MnemoItem> }
+  | { moved: false; reason?: string };
 
 /** The slice of the store the capture pipeline (lib/capture.ts) works through. */
 export type CaptureStore = Pick<
@@ -141,6 +162,7 @@ export type CaptureStore = Pick<
   | 'moveEntry'
   | 'moveEntryToNewThread'
   | 'removeThreadNow'
+  | 'fileEntry'
   | 'getFocusThreadId'
 >;
 
@@ -554,6 +576,28 @@ export function MnemoStoreProvider({ children }: { children: React.ReactNode }) 
     [setFocusThread],
   );
 
+  const fileEntry = useCallback(
+    (entryId: string, toThreadId: string, filing: Entry['filing']): FileResult => {
+      const entry = entriesRef.current.find((e) => e.id === entryId);
+      const to = itemsRef.current.find((i) => i.id === toThreadId);
+      if (!entry || !to || entry.threadId === toThreadId) return { moved: false };
+      const from = itemsRef.current.find((i) => i.id === entry.threadId);
+      const last = !entriesRef.current.some((e) => e.threadId === entry.threadId && e.id !== entryId);
+      if (!last || !from) {
+        moveEntry(entryId, toThreadId, filing);
+        return { moved: true };
+      }
+      // Checked before anything moves, so a refusal leaves both threads exactly as they were.
+      const fold = foldReminders(from, to);
+      if (!fold.ok) return { moved: false, reason: fold.reason };
+      moveEntry(entryId, toThreadId, filing);
+      if (Object.keys(fold.carry).length > 0) updateItem(to.id, fold.carry);
+      removeThreadNow(from.id);
+      return { moved: true, removedThreadId: from.id, carried: fold.carry };
+    },
+    [moveEntry, removeThreadNow, updateItem],
+  );
+
   const moveEntryToNewThread = useCallback(
     (entryId: string, thread: Pick<MnemoItem, 'title' | 'category' | 'tags'>) => {
       const current = entriesRef.current.find((e) => e.id === entryId);
@@ -565,10 +609,11 @@ export function MnemoStoreProvider({ children }: { children: React.ReactNode }) 
         links: [],
         type: 'note',
       });
-      moveEntry(entryId, created.id, { by: 'user' });
+      // A new thread has no reminders, so a thread this empties hands its own over and goes.
+      fileEntry(entryId, created.id, { by: 'user' });
       return itemsRef.current.find((i) => i.id === created.id);
     },
-    [addItem, moveEntry],
+    [addItem, fileEntry],
   );
 
   const getEntries = useCallback(
@@ -678,8 +723,27 @@ export function MnemoStoreProvider({ children }: { children: React.ReactNode }) 
   );
 
   const completeItem = useCallback(
-    (id: string) => {
+    (id: string): MnemoItem | null => {
+      const current = itemsRef.current.find((i) => i.id === id);
+      if (!current || current.status === 'completed') return null;
       updateItem(id, { status: 'completed', completedAt: Date.now() });
+      return current;
+    },
+    [updateItem],
+  );
+
+  const completePlaceOccurrence = useCallback(
+    (id: string) => {
+      const current = itemsRef.current.find((i) => i.id === id);
+      const done = current?.place ? completeOccurrence(current.place, Date.now()) : null;
+      if (!current?.place || !done) return null;
+      const previous = current.place.doneAt;
+      // Not activity on the thread: Home's order stays.
+      updateItem(id, { place: done }, { touch: false });
+      return () => {
+        const place = itemsRef.current.find((i) => i.id === id)?.place;
+        if (place) updateItem(id, { place: { ...place, doneAt: previous } }, { touch: false });
+      };
     },
     [updateItem],
   );
@@ -755,6 +819,7 @@ export function MnemoStoreProvider({ children }: { children: React.ReactNode }) 
       moveEntry,
       moveEntryToNewThread,
       removeThreadNow,
+      fileEntry,
       focusThreadId,
       setFocusThread,
       getFocusThreadId,
@@ -770,6 +835,7 @@ export function MnemoStoreProvider({ children }: { children: React.ReactNode }) 
       resumeItem,
       pauseItem,
       completeItem,
+      completePlaceOccurrence,
       archiveItem,
       restoreItem,
       getActiveItems,
@@ -792,6 +858,7 @@ export function MnemoStoreProvider({ children }: { children: React.ReactNode }) 
       moveEntry,
       moveEntryToNewThread,
       removeThreadNow,
+      fileEntry,
       focusThreadId,
       setFocusThread,
       getFocusThreadId,
@@ -807,6 +874,7 @@ export function MnemoStoreProvider({ children }: { children: React.ReactNode }) 
       resumeItem,
       pauseItem,
       completeItem,
+      completePlaceOccurrence,
       archiveItem,
       restoreItem,
       getActiveItems,

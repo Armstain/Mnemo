@@ -50,8 +50,10 @@ import { entryText } from '@/lib/threads';
 import { matchEntries } from '@/lib/find';
 import { quietDays as quietFor, STILL_ON_IT_DAYS } from '@/lib/review';
 import { openStepsOf } from '@/lib/wrapup';
-import { afterReminder, formatReminder, quickTimes, rescheduled } from '@/lib/when';
-import { celebrate, doneSummary, isRealTask } from '@/lib/done';
+import { afterReminder, formatReminder, nextOccurrence, quickTimes, rescheduled } from '@/lib/when';
+import { occurrenceOf, placeLabel, repeatsAtPlace } from '@/lib/places';
+import { usePlaces } from '@/lib/place-store';
+import { useCompleteThread } from '@/hooks/use-complete-thread';
 import { confirmAction } from '@/utils/confirm';
 import { metricKey, summarizeMeasures, type MetricSummary } from '@/lib/measures';
 import { useCategories, useStatusConfig } from '@/utils/categories';
@@ -72,18 +74,18 @@ export default function ThreadScreen() {
     undoDelete,
     resumeItem,
     pauseItem,
-    completeItem,
     archiveItem,
     restoreItem,
     getEntries,
     isLoaded,
     focusThreadId,
     setFocusThread,
-    moveEntry,
-    removeThreadNow,
+    fileEntry,
+    completePlaceOccurrence,
     snapshot,
   } = store;
-  const { showUndoToast } = useUndoToast();
+  const { showUndoToast, showToast } = useUndoToast();
+  const completeThread = useCompleteThread();
   const rebrief = useRebrief();
   const colors = useThemeColors();
   const statusColors = useStatusConfig();
@@ -93,6 +95,7 @@ export default function ThreadScreen() {
   const threadId = thread?.id;
   const entries = React.useMemo(() => (threadId ? getEntries(threadId) : []), [threadId, getEntries]);
   const { places: placesOn } = usePreferences(); // re-render when AI or place reminders are switched
+  const savedPlaces = usePlaces();
   const [finding, setFinding] = React.useState(false);
   const [findQuery, setFindQuery] = React.useState('');
   const shownEntries = React.useMemo(
@@ -228,19 +231,38 @@ export default function ThreadScreen() {
   };
 
   const hasHistory = entries.length >= 3 || numbers.length > 0;
+
+  // ─── Done ───
+  // One Done on this screen. On a thread with a repeating reminder it completes today's
+  // occurrence only: the reminder stays set and rings again on its next day. Finishing such a
+  // thread (which ends its reminders) is a deliberate choice in the ⋯ menu. Otherwise it finishes
+  // the thread, through Wrap-up when there's a story to sum up. See hooks/use-complete-thread.ts.
+  const placeRepeats = repeatsAtPlace(thread);
+  const timeRepeats = !!thread.repeat && !!thread.dueDate && (thread.status === 'active' || thread.status === 'paused');
+  const recurring = placeRepeats || timeRepeats;
+  const doneToday = placeRepeats && occurrenceOf(thread.place!).state === 'done';
+
+  const finishThread = () => {
+    if (hasHistory) router.push(`/wrapup?id=${thread.id}`);
+    else completeThread(thread.id);
+  };
+
   const handleDone = () => {
-    if (hasHistory) {
-      router.push(`/wrapup?id=${thread.id}`);
+    if (!recurring) return finishThread();
+    if (placeRepeats) {
+      const undo = completePlaceOccurrence(thread.id);
+      // Already done today: the button says so, and nothing happens twice.
+      if (!undo) return;
+      haptic.success();
+      const where = placeLabel(thread.place!, savedPlaces.find((p) => p.id === thread.place!.placeId));
+      showUndoToast(`Done for today. ${where}, it reminds you again.`, undo);
       return;
     }
-    const before = thread;
-    const wasFocus = isFocus;
-    if (isRealTask(thread, entries)) celebrate({ title: thread.title, detail: doneSummary(thread, entries) });
-    completeItem(thread.id);
-    showUndoToast(`"${thread.title}" is done`, () => {
-      restoreItem(before);
-      if (wasFocus) setFocusThread(before.id);
-    });
+    // A repeating time reminder: nothing about it changes (its time, its repeat, the step it
+    // reminds of all stay for the next one), so this only confirms when that is.
+    haptic.success();
+    const next = formatReminder(nextOccurrence(thread.dueDate!, thread.repeat, Date.now() + 60_000)).toLowerCase();
+    showToast({ message: `Done for now. Next reminder ${next}` });
   };
 
   const handleStepDone = () => {
@@ -254,12 +276,12 @@ export default function ThreadScreen() {
   const missed = showDue && !thread.repeat && thread.dueDate! < Date.now();
   const waiting = (thread.laterSteps ?? []).filter((l) => !thread.repeat || l.at > Date.now());
 
-  const handleReminderDone = () => {
-    haptic.success();
-    if (thread.nextStep) return handleStepDone();
+  // Clears the passed reminder only. The step has its own check, and the thread its own Done.
+  const handleReminderDismiss = () => {
+    haptic.select();
     const { dueDate, laterSteps, nextStep, pinned } = thread;
     updateItem(thread.id, afterReminder(thread));
-    showUndoToast('Reminder done', () => updateItem(thread.id, { dueDate, laterSteps, nextStep, pinned }));
+    showUndoToast('Reminder cleared', () => updateItem(thread.id, { dueDate, laterSteps, nextStep, pinned }));
   };
 
   const handleReminderLater = () => {
@@ -332,8 +354,12 @@ export default function ThreadScreen() {
 
   const acceptSuggestion = () => {
     if (!suggestion || !suggestedThread) return;
-    moveEntry(suggestion.id, suggestedThread.id, { by: 'user' });
-    if (!snapshot().entries.some((e) => e.threadId === thread.id)) removeThreadNow(thread.id);
+    // Its reminders move along if this empties the thread; refused (and said why) if they'd overwrite.
+    const filed = fileEntry(suggestion.id, suggestedThread.id, { by: 'user' });
+    if (!filed.moved) {
+      if (filed.reason) showToast({ message: filed.reason });
+      return;
+    }
     followMove(suggestedThread.id);
   };
 
@@ -354,6 +380,9 @@ export default function ThreadScreen() {
             onPress: () => setFocusThread(isFocus ? null : thread.id),
           },
         ]
+      : []),
+    ...(recurring
+      ? [{ icon: 'check' as const, label: 'Finish thread and its reminders', onPress: finishThread }]
       : []),
     ...(thread.status === 'active' ? [{ icon: 'pause' as const, label: 'Pause', onPress: () => pauseItem(thread.id) }] : []),
     ...(thread.status !== 'archived' ? [{ icon: 'archive' as const, label: 'Archive', onPress: () => archiveItem(thread.id) }] : []),
@@ -510,14 +539,14 @@ export default function ThreadScreen() {
                         {formatReminder(thread.dueDate!)}
                       </Text>
                       <Text className="font-sans-medium text-sm" style={{ color: colors.fg }} numberOfLines={2}>
-                        {thread.nextStep ? `${thread.nextStep}?` : 'Done with this?'}
+                        {thread.nextStep ?? 'This reminder has passed'}
                       </Text>
                     </View>
                     <Button size="sm" variant="quiet" onPress={handleReminderLater}>
                       Tomorrow
                     </Button>
-                    <Button size="sm" variant="primary" icon="check" haptic={false} onPress={handleReminderDone}>
-                      Done
+                    <Button size="sm" variant="quiet" haptic={false} onPress={handleReminderDismiss}>
+                      Dismiss
                     </Button>
                   </View>
                 ) : null}
@@ -628,7 +657,6 @@ export default function ThreadScreen() {
                 {thread.status === 'active' ? (
                   <Button
                     variant="quiet"
-                    size="sm"
                     icon={rebrief.state === 'idle' ? 'volume' : 'x'}
                     className="flex-1"
                     onPress={() => (rebrief.state === 'idle' ? rebrief.start(thread) : rebrief.stop())}
@@ -638,7 +666,6 @@ export default function ThreadScreen() {
                 ) : thread.status === 'paused' ? (
                   <Button
                     variant="tonal"
-                    size="sm"
                     icon="play"
                     className="flex-1"
                     onPress={() => {
@@ -651,16 +678,24 @@ export default function ThreadScreen() {
                   </Button>
                 ) : (
                   // No briefing: reopening finished or archived isn't a return to work.
-                  <Button variant="tonal" size="sm" icon="play" className="flex-1" onPress={() => resumeItem(thread.id)}>
+                  <Button variant="tonal" icon="play" className="flex-1" onPress={() => resumeItem(thread.id)}>
                     Reopen
                   </Button>
                 )}
                 {thread.status !== 'completed' ? (
-                  <Button variant="quiet" size="sm" icon="check" className="flex-1" onPress={handleDone}>
-                    Done
+                  // The primary action: full height (44), filled, the completion feedback is its own.
+                  <Button
+                    variant={doneToday ? 'tonal' : 'primary'}
+                    icon="check"
+                    className="flex-1"
+                    haptic={false}
+                    disabled={doneToday}
+                    onPress={handleDone}
+                  >
+                    {recurring ? 'Done for today' : 'Done'}
                   </Button>
                 ) : hasHistory ? (
-                  <Button variant="quiet" size="sm" icon="share" className="flex-1" onPress={() => router.push(`/wrapup?id=${thread.id}`)}>
+                  <Button variant="quiet" icon="share" className="flex-1" onPress={() => router.push(`/wrapup?id=${thread.id}`)}>
                     Summary card
                   </Button>
                 ) : null}

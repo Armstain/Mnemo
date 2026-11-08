@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { celebrate, doneSummary, isRealTask, onCelebrate } from '@/lib/done';
+import { celebrate, completionFeedback, doneSummary, isRealTask, onCelebrate } from '@/lib/done';
 
 const DAY = 24 * 60 * 60 * 1000;
 const text = { kind: 'text', markdown: 'x' } as const;
@@ -41,5 +41,19 @@ describe('announcing it', () => {
     stop();
     celebrate({ title: 'Ignored' });
     expect(heard).toEqual(['Passport']);
+  });
+});
+
+describe('finishing a thread: one feedback, decided in one place', () => {
+  const t = (o: object = {}) => ({ title: 'Renew passport', createdAt: 0, type: 'note', ...o }) as never;
+  it('a real task gets the celebration and one Undo toast', () => {
+    const f = completionFeedback(t({ dueDate: 1 }), [entry({ nextStep: 'a', stepDone: true })], 3 * DAY);
+    expect(f).toEqual({ celebration: { title: 'Renew passport', detail: '1 step · 3 days' }, toast: '"Renew passport" is done' });
+  });
+  it('a plain note gets only the toast (and a haptic), never the full-screen moment', () => {
+    expect(completionFeedback(t(), [entry()], DAY)).toEqual({ toast: '"Renew passport" is done' });
+  });
+  it('nothing to say under "Done": no empty detail line', () => {
+    expect(completionFeedback(t({ dueDate: 1 }), [entry()], 1000).celebration).toEqual({ title: 'Renew passport' });
   });
 });

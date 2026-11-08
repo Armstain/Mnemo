@@ -58,3 +58,19 @@ export function onCelebrate(listener: (c: Celebration) => void): () => void {
   listeners.add(listener);
   return () => listeners.delete(listener);
 }
+
+/**
+ * What finishing this thread looks like, decided in one place for every screen that finishes one
+ * (the thread's Done, Wrap-up): the full moment for a real task, a plain confirm otherwise.
+ * Either way one Undo toast follows (hooks/use-complete-thread.ts); never a second animation.
+ */
+export function completionFeedback(
+  thread: Pick<MnemoItem, 'title' | 'createdAt' | 'type' | 'dueDate' | 'checklistItems' | 'pinned' | 'nextStep'>,
+  entries: Pick<Entry, 'stepDone' | 'blocks' | 'nextStep'>[],
+  now = Date.now(),
+): { celebration?: Celebration; toast: string } {
+  const toast = `"${thread.title}" is done`;
+  if (!isRealTask(thread, entries)) return { toast };
+  const detail = doneSummary(thread, entries, now);
+  return { celebration: { title: thread.title, ...(detail ? { detail } : {}) }, toast };
+}

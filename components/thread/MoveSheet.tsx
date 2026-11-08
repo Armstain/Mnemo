@@ -9,6 +9,7 @@ import { IconButton } from '@/components/ui/Button';
 import { Icon } from '@/components/ui/Icon';
 import { ThreadList, ThreadRow } from '@/components/ui/ThreadRow';
 import { useMnemoStore } from '@/hooks/use-mnemo-store';
+import { useUndoToast } from '@/hooks/use-undo-toast';
 import { useThemeColors } from '@/hooks/use-theme';
 import { bm25Scored } from '@/lib/bm25';
 import { noFocusRing } from '@/utils/web';
@@ -32,7 +33,8 @@ export function MoveSheet({
 }) {
   const colors = useThemeColors();
   const insets = useSafeAreaInsets();
-  const { items, moveEntry, moveEntryToNewThread, removeThreadNow, snapshot, getThread } = useMnemoStore();
+  const { items, fileEntry, moveEntryToNewThread, getThread } = useMnemoStore();
+  const { showToast } = useUndoToast();
   const [query, setQuery] = React.useState('');
 
   const open = items.filter(
@@ -42,19 +44,19 @@ export function MoveSheet({
     ? bm25Scored(query, open).map(({ doc }) => doc)
     : [...open].sort((a, b) => b.updatedAt - a.updatedAt);
 
+  // The thread it left goes if this was its only entry, its reminders moving along (the store's fileEntry).
   const finish = (threadId: string) => {
     haptic.success();
-    // The thread it left is gone if this was its only entry.
-    const from = entry.threadId;
-    if (!snapshot().entries.some((e) => e.threadId === from)) removeThreadNow(from);
     setQuery('');
     onClose();
     onMoved?.(threadId);
   };
 
   const moveTo = (threadId: string) => {
-    moveEntry(entry.id, threadId, { by: 'user' });
-    finish(threadId);
+    const filed = fileEntry(entry.id, threadId, { by: 'user' });
+    if (filed.moved) return finish(threadId);
+    haptic.warning();
+    if (filed.reason) showToast({ message: filed.reason });
   };
 
   const moveToNew = () => {

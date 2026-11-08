@@ -5,7 +5,7 @@ import * as Location from 'expo-location';
 import { getAllItems, updatePartialItem } from '@/lib/db';
 import { logError } from '@/lib/errors';
 import { loadPlaces } from '@/lib/place-store';
-import { afterCrossing, isArmed, onFix, onPlaceEvent, pickWatched, placeLabel, ringNow, watchedRadius, type PlaceEvent } from '@/lib/places';
+import { afterCrossing, isArmed, onFix, onPlaceEvent, pickWatched, placeLabel, PLACE_NOTIFICATION, ringNow, watchedRadius, type PlaceEvent } from '@/lib/places';
 import { ringPlaceReminder } from '@/lib/place-sound';
 import { getPreferences } from '@/lib/preferences';
 import { openSettings, reminderHealth, type CheckState } from '@/lib/reliability';
@@ -201,6 +201,12 @@ export async function forgetWatch(): Promise<void> {
   await AsyncStorage.setItem(WATCH_KEY, JSON.stringify({ signature: '', since: 0 })).catch(() => {});
 }
 
+async function networkLocationOn(): Promise<boolean> {
+  return Location.getProviderStatusAsync()
+    .then((s) => s.networkAvailable !== false)
+    .catch(() => true);
+}
+
 /** Phones drop geofences on restart, so the list is set again once per launch. */
 let setThisLaunch = false;
 
@@ -221,6 +227,14 @@ export async function syncGeofences(items: MnemoItem[], places: Place[]): Promis
     if (!(await Location.getBackgroundPermissionsAsync()).granted) return;
     // With location off, Android quietly sets nothing; wait until it's on (rechecked on return to the app).
     if (!(await Location.hasServicesEnabledAsync().catch(() => true))) return;
+    // Android geofences run on network location ("Google Location Accuracy"). Without it Play
+    // Services rejects the list, and expo-location's start still resolves (it never listens for
+    // the result), so a list recorded as set would never ring and never be set again this launch.
+    // Not recorded: the next sync (any change, or coming back to Mnemo) tries again.
+    if (Platform.OS === 'android' && !(await networkLocationOn())) {
+      await forgetWatch();
+      return;
+    }
     await Location.startGeofencingAsync(GEOFENCE_TASK, regions);
     setThisLaunch = true;
     await AsyncStorage.setItem(WATCH_KEY, JSON.stringify({ signature, since: Date.now() }));
@@ -248,7 +262,7 @@ async function show(item: MnemoItem, placeName: string | undefined, note?: strin
   await ringPlaceReminder({
     title: item.title,
     body: `${where}${note ? ` (${note})` : ''}${step ? `\nNext: ${step}` : ''}`,
-    data: { itemId: item.id },
+    data: { itemId: item.id, kind: PLACE_NOTIFICATION },
   });
 }
 
@@ -259,9 +273,8 @@ const rung = new Set<string>();
  * A crossing that would ring. A repeating reminder on the wrong day, or one that already rang today,
  * only notes the side the phone is on (lib/places.ts `ringNow`, `afterCrossing`). True when it rang.
  */
-async function fire(item: MnemoItem, place: Place | undefined, note?: string, late = false): Promise<boolean> {
+async function fire(item: MnemoItem, place: Place | undefined, now: number, note?: string, late = false): Promise<boolean> {
   const r = item.place!;
-  const now = Date.now();
   const rang = ringNow(r, now);
   if (rang) {
     const key = `${item.id}:${r.setAt}:${r.lastFiredAt ?? 0}`;
@@ -281,7 +294,7 @@ export async function handleGeofenceEvent(event: PlaceEvent, placeId: string, no
     if (!isArmed(item) || item.place.placeId !== placeId) continue;
     const action = onPlaceEvent(item.place, event, now, watch.since);
     if (action === 'fire') {
-      await fire(item, place);
+      await fire(item, place, now);
     } else if (action === 'inside' || action === 'outside') {
       const inside = action === 'inside';
       if (item.place.insideAtSet !== inside) await save(item, { ...item.place, insideAtSet: inside });
@@ -291,6 +304,7 @@ export async function handleGeofenceEvent(event: PlaceEvent, placeId: string, no
 
 /** `opening`: the app just opened, so a ring now is one the phone should have given earlier, and it says so. */
 async function applyFix(items: MnemoItem[], here: Fix, opening: boolean): Promise<void> {
+  const now = Date.now();
   const places = await loadPlaces();
   const watching = opening && (await Location.getBackgroundPermissionsAsync().catch(() => ({ granted: false }))).granted;
   for (const item of items.filter(isArmed)) {
@@ -302,10 +316,10 @@ async function applyFix(items: MnemoItem[], here: Fix, opening: boolean): Promis
       await save(item, { ...r, insideAtSet: action === 'inside' });
     } else if (action === 'fire' && opening) {
       // Watched and still missed: the phone held it back. Unwatched: only noticeable now.
-      const rang = await fire(item, place, watching ? 'late: your phone held it back' : 'noticed when you opened Mnemo', watching);
+      const rang = await fire(item, place, now, watching ? 'late: your phone held it back' : 'noticed when you opened Mnemo', watching);
       if (rang && watching) await AsyncStorage.setItem(LATE_KEY, String(Date.now())).catch(() => {});
     } else if (action === 'fire') {
-      await fire(item, place);
+      await fire(item, place, now);
     }
   }
 }

@@ -2,7 +2,6 @@ import React from 'react';
 import { Platform, ScrollView, Share, View } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { MotiView } from 'moti';
-import { haptic } from '@/utils/haptics';
 import * as Sharing from 'expo-sharing';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -14,7 +13,7 @@ import { useThemeColors } from '@/hooks/use-theme';
 import { useUndoToast } from '@/hooks/use-undo-toast';
 import { formatValue } from '@/lib/measures';
 import { headline, spanLabel, wrapText, wrapThread } from '@/lib/wrapup';
-import { celebrate, doneSummary, isRealTask } from '@/lib/done';
+import { useCompleteThread } from '@/hooks/use-complete-thread';
 import { useCategories } from '@/utils/categories';
 import { useEnter } from '@/utils/motion';
 
@@ -29,7 +28,8 @@ export default function WrapUpScreen() {
   const colors = useThemeColors();
   const enter = useEnter();
   const categories = useCategories();
-  const { getThread, entries, completeItem, restoreItem, getFocusThreadId, setFocusThread } = useMnemoStore();
+  const { getThread, entries } = useMnemoStore();
+  const completeThread = useCompleteThread();
   const { showToast } = useUndoToast();
   const card = React.useRef<View>(null);
   const thread = getThread(String(id));
@@ -85,21 +85,8 @@ export default function WrapUpScreen() {
   };
 
   const finish = () => {
-    const mine = entries.filter((e) => e.threadId === thread.id);
-    // A real task gets the ring closing (and its haptics); anything else a plain success.
-    if (isRealTask(thread, mine)) celebrate({ title: thread.title, detail: doneSummary(thread, mine) });
-    else haptic.success();
-    const before = thread;
-    const wasFocus = getFocusThreadId() === thread.id;
-    completeItem(thread.id);
-    showToast({
-      message: `"${thread.title}" is done`,
-      actionLabel: 'Undo',
-      onAction: () => {
-        restoreItem(before);
-        if (wasFocus) setFocusThread(before.id);
-      },
-    });
+    // The same completion as the thread's Done (state once, one feedback, one Undo).
+    if (!completeThread(thread.id)) return;
     // Back to the review it came from; otherwise Home, since the thread is finished.
     if (from === 'review') router.back();
     else router.dismissTo('/');
@@ -214,7 +201,7 @@ export default function WrapUpScreen() {
                   Open steps stay in the thread. You can reopen it any time from the Library.
                 </Text>
               ) : null}
-              <Button variant="primary" size="lg" icon="check" fullWidth onPress={finish}>
+              <Button variant="primary" size="lg" icon="check" fullWidth haptic={false} onPress={finish}>
                 Mark as done
               </Button>
               <View className="flex-row gap-3">
