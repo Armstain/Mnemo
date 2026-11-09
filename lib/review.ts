@@ -1,4 +1,4 @@
-import { metricKey, summarizeMeasures } from '@/lib/measures';
+import { countsAsHappened, metricKey, summarizeMeasures } from '@/lib/measures';
 import { nextOccurrence } from '@/lib/when';
 import type { Entry, MnemoItem } from '@/types/mnemo';
 import { DAY_MS } from '@/utils/time';
@@ -138,7 +138,8 @@ export function weekReview(items: MnemoItem[], entries: Entry[], now = Date.now(
     const week = list.filter((e) => inWeek(e.createdAt));
     if (week.length === 0) continue;
     for (const s of summarizeMeasures(week)) {
-      if (s.rollup !== 'sum' || !s.total) continue;
+      // A debt or a payment still to make didn't happen this week (lib/measures.ts countsAsHappened).
+      if (s.rollup !== 'sum' || !s.total || !countsAsHappened(s.metric)) continue;
       const key = `${metricKey(s.metric)}|${s.unit ?? ''}`;
       const t = totals.get(key) ?? { metric: s.metric, unit: s.unit, total: 0, count: 0, threads: 0, ids: new Set<string>() };
       t.total += s.total;

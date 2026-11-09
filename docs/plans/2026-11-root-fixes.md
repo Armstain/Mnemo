@@ -111,7 +111,12 @@ today, but now visible).
 
 Three independent pieces, smallest data change first.
 
-### B1. Money gets a direction (data; do first)
+### B1. Money gets a direction (data; do first) — done
+
+Decided: money counts when it's paid. Implemented in `lib/understand.ts`
+(`moneyWay`), `lib/measures.ts` (`countsAsHappened`, `numbersToShow`, Gemini
+synonyms), `lib/review.ts`, `lib/wrapup.ts`, the thread screen and
+`MEASURE_RULES`; tests in `tests/money-direction.test.ts`.
 
 Today every money amount that isn't income or a price becomes `spent`
 (`metricFor` in `lib/understand.ts`; Gemini's `MEASURE_RULES` only ever
@@ -162,7 +167,7 @@ computed every time (nothing new stored), from data that already exists
 | Model | When | Thread screen | Notification "Done" |
 |---|---|---|---|
 | `occurrence` | a repeating reminder (today's rule from `1e9d967`) | "Done for today" | today's occurrence |
-| `single` | a task with at most one open step and nothing queued | **one** Done: ticks the step, clears the reminder, finishes the thread, one Undo | **Decision (B2-a)**: finish the thread too |
+| `single` | a task with at most one open step and nothing queued | **one** Done: ticks the step, clears the reminder, finishes the thread, one Undo | finish the thread too (decided) |
 | `steps` | a project, or a task that has gained steps | ✓ ticks steps; Done finishes (Wrap-up when there's history) | ticks the step (as today) |
 | `note` | no kind, no step, no reminder | Done finishes | n/a |
 
@@ -170,9 +175,8 @@ computed every time (nothing new stored), from data that already exists
   ask `finishModel`; the "Done for today" branch moves out of the screen into it.
 * A wrong guess corrects itself: a "task" that gets a second step or a queued
   step becomes `steps` on the next render.
-* **Decision (B2-b):** should a thread's model be settable by hand again
-  (`pinned.kind` still exists)? My suggestion: not now; see whether the
-  automatic rule is wrong in practice first.
+* Decided (B2-b): no hand-set model for now; see whether the automatic rule is
+  wrong in practice first.
 * Store: one transition, `finishTask(id)`, doing step done + reminder cleared +
   thread finished as one change with one undo (today they are three).
 * Tests: `finishModel` table tests; the store transition; ReminderActions per

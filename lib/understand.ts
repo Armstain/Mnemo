@@ -229,8 +229,40 @@ const STUDY = /^(studied|study|studying|read|reading|pora|porlam|পড়লা
 const WORK = /^(worked|work|working|office|kaj|কাজ|অফিস)$/;
 const EXERCISE = /^(workout|gym|exercise|exercised|yoga|ব্যায়াম|byam)$/;
 const WATER = /^(water|pani|পানি|jol|জল)$/;
+// Which way money went (docs/plans/2026-11-root-fixes.md, B1). Money counts when it's paid:
+// a debt is "owe", money someone owes you "lent", a payment still to make "planned".
+// Bangla words are compared in NFC, so "নিয়েছি" typed either way matches.
+const bn = (re: RegExp) => new RegExp(nfc(re.source), re.flags);
+const hasN = (words: string[], re: RegExp) => words.some((w) => re.test(nfc(w)));
+const DEBT = bn(/^(owe|owed|owing|borrowed|borrow|debt|baki|bakhi|বাকি|দেনা)$/);
+const LOAN = bn(/^(dhar|dhaar|ধার)$/);
+const GAVE = bn(/^(dilam|disi|diyechi|দিলাম|দিসি|দিয়েছি)$/);
+const LENT = /^(lent|lend|lending|loaned)$/;
+const WILL_GET = bn(/^(pabo|pab|পাবো|পাব)$/);
+const DUE_TO_ME = bn(/^(paona|pawna|পাওনা)$/);
+const FROM_SOMEONE = bn(/^(kache|kase|amar|কাছে|আমার)$/);
+/** Paying something off: "paid back", "শোধ করলাম", "বাকি … দিয়ে দিলাম". */
+const SETTLED = bn(/^(paid|repaid|spent|cleared|settled|shodh|শোধ|দিলাম|dilam|diye|দিয়ে)$/);
+const PLAN = bn(
+  /^(will|need|needs|must|gotta|plan|planning|budget|i'll|dibo|debo|kinbo|dite|kinte|hobe|দিবো|দেবো|দিব|কিনবো|কিনব|দিতে|কিনতে|হবে|বাজেট)$/,
+);
+const HAPPENED = bn(/^(paid|spent|bought|gave|khoroch|khorch|dilam|disi|kinlam|খরচ|দিলাম|দিসি|দিয়েছি|কিনলাম)$/);
+
+function moneyWay(clause: string[]): 'lent' | 'owe' | 'planned' | null {
+  const owesMe = clause.some((w, i) => /^owes?$/.test(w) && clause[i + 1] === 'me');
+  if (owesMe || has(clause, LENT) || hasN(clause, WILL_GET) || (hasN(clause, LOAN) && hasN(clause, GAVE))) return 'lent';
+  if (hasN(clause, DUE_TO_ME)) return hasN(clause, FROM_SOMEONE) ? 'lent' : 'owe';
+  if (hasN(clause, DEBT) || hasN(clause, LOAN)) return hasN(clause, SETTLED) ? null : 'owe';
+  const hasTo = clause.some((w, i) => /^(have|has)$/.test(w) && clause[i + 1] === 'to');
+  if ((hasN(clause, PLAN) || hasTo) && !hasN(clause, HAPPENED)) return 'planned';
+  return null;
+}
+
 // The verb already names the metric ("ran 5 km" is "ran"), so it's no label.
-const ACTIVITY = [RUN, WALK, RIDE, DRIVE, TRAVEL, SLEEP, STUDY, WEIGHT, /^(spend|spent|paid|khoroch|খরচ|pages?)$/];
+const ACTIVITY = [
+  RUN, WALK, RIDE, DRIVE, TRAVEL, SLEEP, STUDY, WEIGHT,
+  /^(spend|spent|paid|khoroch|খরচ|pages?|owe|owes|owed|lent|borrowed|baki|dhar|pabo|বাকি|ধার|পাবো|পাওনা)$/,
+];
 
 const GROUPS: [string, RegExp][] = [
   ['transport', /^(cng|rickshaw|riksha|রিকশা|সিএনজি|bus|বাস|uber|pathao|taxi|cab|train|ট্রেন|launch|লঞ্চ|fuel|petrol|octane|diesel|তেল|fare|bhara|ভাড়া|flight|ticket|টিকিট|metro|parking)$/],
@@ -292,10 +324,14 @@ function fromNow(tokens: string[], span: NumberSpan): boolean {
 
 function metricFor(kind: UnitKind, clause: string[]): { metric: string; rollup: Rollup } | null {
   switch (kind) {
-    case 'money':
+    case 'money': {
+      const way = moneyWay(clause);
+      if (way === 'lent' || way === 'owe') return { metric: way, rollup: 'sum' };
       if (has(clause, INCOME)) return { metric: 'received', rollup: 'sum' };
       if (has(clause, PRICE) && !has(clause, /^(spent|paid|dilam|দিলাম|khoroch|খরচ)$/)) return { metric: 'price', rollup: 'compare' };
+      if (way === 'planned') return { metric: 'planned', rollup: 'sum' };
       return { metric: 'spent', rollup: 'sum' };
+    }
     case 'distance':
       if (has(clause, RUN)) return { metric: 'ran', rollup: 'sum' };
       if (has(clause, WALK)) return { metric: 'walked', rollup: 'sum' };
