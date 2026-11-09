@@ -26,6 +26,7 @@ jobs:
           java-version: 17
       - uses: gradle/actions/setup-gradle@v4
         with:
+          gradle-version: 9.3.1
           cache-read-only: ${{ github.ref != 'refs/heads/main' }}
       - run: npm ci
       - run: npx expo prebuild --platform android --no-install
@@ -33,7 +34,7 @@ jobs:
           EXPO_NO_TELEMETRY: 1
       - name: Build release APK
         working-directory: android
-        run: ./gradlew assembleRelease -PreactNativeArchitectures=arm64-v8a -Dorg.gradle.jvmargs="-Xmx4g -XX:MaxMetaspaceSize=1g"
+        run: gradle assembleRelease -PreactNativeArchitectures=arm64-v8a -Dorg.gradle.jvmargs="-Xmx4g -XX:MaxMetaspaceSize=1g"
       - name: Name the APK
         run: |
           name="mnemo-${GITHUB_REF_NAME//\//-}-arm64.apk"
