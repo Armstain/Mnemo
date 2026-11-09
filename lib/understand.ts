@@ -1,4 +1,4 @@
-import { numberTokens, scanNumbers, metricKey, type NumberSpan } from '@/lib/measures';
+import { isCurrency, numberTokens, scanNumbers, metricKey, type NumberSpan } from '@/lib/measures';
 import type { Category, ChecklistItem, LaterStep, Measure, Rollup, ThreadKind } from '@/types/mnemo';
 import { capitalize, hostOf, nfc } from '@/utils/text';
 import { DAY_MS } from '@/utils/time';
@@ -246,6 +246,15 @@ const SETTLED = bn(/^(paid|repaid|spent|cleared|settled|shodh|শোধ|দি�
 const PLAN = bn(
   /^(will|need|needs|must|gotta|plan|planning|budget|i'll|dibo|debo|kinbo|dite|kinte|hobe|দিবো|দেবো|দিব|কিনবো|কিনব|দিতে|কিনতে|হবে|বাজেট)$/,
 );
+/**
+ * Evidence money was paid. Without it, or a list of amounts (end of readMeasures), or a thread that already tracks
+ * one kind of money, an amount is left as "amount": not counted until the person says
+ * (docs/plans/2026-11-root-fixes.md, the safe default). Wrong-but-uncounted beats a debt or a
+ * plan added to what was spent.
+ */
+const PAID_WORDS = bn(
+  /^(paid|spent|bought|gave|cost|khoroch|khorch|khoros|dilam|disi|diyechi|diye|kinlam|kinsi|kinechi|nilam|korlam|korsi|lagse|laglo|lagche|legeche|খরচ|দিলাম|দিসি|দিয়েছি|দিয়ে|কিনলাম|কিনেছি|নিলাম|করলাম|লাগল|লাগলো|লেগেছে)$/,
+);
 const HAPPENED = bn(/^(paid|spent|bought|gave|khoroch|khorch|dilam|disi|kinlam|খরচ|দিলাম|দিসি|দিয়েছি|কিনলাম)$/);
 
 function moneyWay(clause: string[]): 'lent' | 'owe' | 'planned' | null {
@@ -322,7 +331,13 @@ function fromNow(tokens: string[], span: NumberSpan): boolean {
   return /^(later|por|pore|baad|bade|পর|পরে|বাদে)$/.test(nfc(tokens[span.last + 2] ?? ''));
 }
 
-function metricFor(kind: UnitKind, clause: string[]): { metric: string; rollup: Rollup } | null {
+/** What the rest of the note says about its money, for a part that says nothing itself. */
+interface NoteMoney {
+  /** A payment word somewhere in the note ("Spent: rickshaw 50, lunch 120"). */
+  paid: boolean;
+}
+
+function metricFor(kind: UnitKind, clause: string[], note: NoteMoney): { metric: string; rollup: Rollup } | null {
   switch (kind) {
     case 'money': {
       const way = moneyWay(clause);
@@ -330,7 +345,8 @@ function metricFor(kind: UnitKind, clause: string[]): { metric: string; rollup: 
       if (has(clause, INCOME)) return { metric: 'received', rollup: 'sum' };
       if (has(clause, PRICE) && !has(clause, /^(spent|paid|dilam|দিলাম|khoroch|খরচ)$/)) return { metric: 'price', rollup: 'compare' };
       if (way === 'planned') return { metric: 'planned', rollup: 'sum' };
-      return { metric: 'spent', rollup: 'sum' };
+      if (hasN(clause, PAID_WORDS) || note.paid) return { metric: 'spent', rollup: 'sum' };
+      return { metric: 'amount', rollup: 'sum' };
     }
     case 'distance':
       if (has(clause, RUN)) return { metric: 'ran', rollup: 'sum' };
@@ -395,6 +411,8 @@ export function readMeasures(text: string, known: KnownMetric[] = [], currency?:
   // No currency said: the phone's own, but only for amounts money words point at.
   const noteCurrency = currencies[0] ?? (currency && all.some(({ lower }) => has(lower, MONEY_WORDS)) ? currency : undefined);
 
+  const note: NoteMoney = { paid: all.some(({ lower }) => hasN(lower, PAID_WORDS)) };
+
   const out: Measure[] = [];
   for (const { lower, original, spans } of all) {
     // "lunch 120, cab 80" names things before the amount, "$20 on lunch" after; the first amount tells which.
@@ -416,7 +434,7 @@ export function readMeasures(text: string, known: KnownMetric[] = [], currency?:
       // "in 20 mins", "20 min pore": when, not how long something took.
       if (unit.kind === 'time' && fromNow(lower, span)) return;
 
-      const what = metricFor(unit.kind, lower);
+      const what = metricFor(unit.kind, lower, note);
       if (!what) return;
       // The label: the words since the previous number, or after this one.
       const from = n > 0 ? spans[n - 1].last + 1 : 0;
@@ -432,7 +450,7 @@ export function readMeasures(text: string, known: KnownMetric[] = [], currency?:
       let metric = what.metric;
       const rollup = what.rollup;
       const same = known.filter((k) => (k.unit ?? '') === unit!.unit);
-      const generic = metric === 'spent' || metric === 'travelled';
+      const generic = metric === 'spent' || metric === 'travelled' || metric === 'amount';
       if (same.length === 1 && (generic || metricKey(same[0].metric) === metricKey(metric))) metric = same[0].metric;
 
       out.push({
@@ -444,6 +462,11 @@ export function readMeasures(text: string, known: KnownMetric[] = [], currency?:
         rollup,
       });
     });
+  }
+  // Two or more amounts read: an expense list ("rickshaw 50, lunch 120, hotel 2,500 taka"), so
+  // amounts nothing else placed were spent. Decided from what was read, not from the raw numbers.
+  if (out.filter((m) => isCurrency(m.unit)).length >= 2) {
+    for (const m of out) if (m.metric === 'amount') m.metric = 'spent';
   }
   return out.slice(0, 30);
 }

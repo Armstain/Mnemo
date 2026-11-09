@@ -320,7 +320,8 @@ Numbers the person reports about their life that they'd want to add up or follow
   - "lent": money someone owes them ("lent Nadia 1500", "ধার দিলাম", "রহিমের কাছে ৫০০ টাকা পাওনা").
   - "planned": a payment or purchase still to make ("need to pay rent 8000", "বিল দিতে হবে", "will buy a fan for 3500").
   - "price": a price of an option they're comparing, not paid.
-  Never "spent" for money that is owed or not yet paid.
+  - "amount": money whose direction the note doesn't make clear (it isn't counted until the person says).
+  Never "spent" for money that is owed or not yet paid, and never guess "spent" when it isn't said or plain from context.
 - "value": the number exactly as they said it. Never estimate, convert units or currencies, add numbers up or split them.
 - "unit": ISO currency code for money when they named or clearly meant one (euros → EUR, taka → BDT, rupees → INR); otherwise the unit they used ("km", "kg", "h", "pages"), or "".
 - "label": 1-4 words for what this one was ("dinner", "morning run"), or "".

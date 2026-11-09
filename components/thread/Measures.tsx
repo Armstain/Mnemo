@@ -12,7 +12,7 @@ import { useCountUp } from '@/hooks/use-count-up';
 
 import { Eyebrow } from '@/components/ui/Eyebrow';
 import { useThemeColors, type ThemeColors } from '@/hooks/use-theme';
-import { countsAsHappened, formatValue, isCurrency, metricKey, MONEY_KINDS, ROLLUPS, worthBreakingDown, type MetricSummary } from '@/lib/measures';
+import { countsAsHappened, formatValue, isCurrency, metricKey, MONEY_KINDS, ROLLUPS, UNSORTED_MONEY, worthBreakingDown, type MetricSummary } from '@/lib/measures';
 import { Pill } from '@/components/ui/Pill';
 import type { Measure, Rollup } from '@/types/mnemo';
 import { capitalize } from '@/utils/text';
@@ -28,7 +28,8 @@ export function MeasureRows({ items }: { items: Measure[] }) {
   // Name the metric when one entry reports more than one kind of number, and always for money
   // still owed or to pay: with one amount there's no Numbers card to say which way it went.
   const mixed = new Set(items.map((m) => m.metric.toLowerCase())).size > 1;
-  const kindOf = (m: Measure) => MONEY_KINDS.find((k) => k.metric === metricKey(m.metric))?.label ?? m.metric;
+  const kindOf = (m: Measure) =>
+    metricKey(m.metric) === UNSORTED_MONEY ? 'Not counted' : (MONEY_KINDS.find((k) => k.metric === metricKey(m.metric))?.label ?? m.metric);
   return (
     <View className="rounded-sm px-3.5 py-1" style={{ backgroundColor: colors.surfaceLowest, borderWidth: 1, borderColor: colors.border }}>
       {items.map((m, i) => (

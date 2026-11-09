@@ -203,6 +203,17 @@ Tests: the rule itself, with today's single-value case.
 
 ---
 
+### Follow-up: measuring the reader, and a safe default — done
+
+* `tests/corpus/money.txt` + `npm run corpus`: money phrasings scored together;
+  "~" marks a known gap (reported, not failed; must be unmarked once fixed).
+* Safe default: money counts as spent only with evidence (a payment word in the
+  clause or the note, two or more amounts read, or a thread that tracks one kind
+  of money). Otherwise it is `amount`: not counted, labelled "Not counted" on
+  the entry, sorted with the entry editor's money choices.
+* Score: baseline 51/57 with 3 notes wrongly added to spending; now 59/65
+  with none (3 left unsorted, 3 other known gaps).
+
 ## Order
 
 1. **B1** (data is wrong today, in every weekly total). Small, no decisions
