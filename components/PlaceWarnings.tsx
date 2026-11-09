@@ -4,18 +4,23 @@ import { Pressable, View } from 'react-native';
 import { Icon } from '@/components/ui/Icon';
 import { Text } from '@/components/ui/Text';
 import { useThemeColors } from '@/hooks/use-theme';
-import { placeHealth, placeProblems, type PlaceProblem } from '@/lib/geofence';
+import { onGeofenceOutcome, placeHealth, placeProblems, type PlaceProblem } from '@/lib/geofence';
 
-/** What's stopping place reminders, rechecked whenever `when` changes (focus, app return). */
+/**
+ * What's stopping place reminders, rechecked whenever `when` changes (focus, app return) and
+ * whenever Android answers a registration, so a refusal (or its fix) shows without leaving.
+ */
 export function usePlaceProblems(when: unknown = 0): PlaceProblem[] | null {
   const [problems, setProblems] = React.useState<PlaceProblem[] | null>(null);
+  const [answers, setAnswers] = React.useState(0);
+  React.useEffect(() => onGeofenceOutcome(() => setAnswers((n) => n + 1)), []);
   React.useEffect(() => {
     let live = true;
     placeHealth().then((h) => live && setProblems(placeProblems(h)));
     return () => {
       live = false;
     };
-  }, [when]);
+  }, [when, answers]);
   return problems;
 }
 

@@ -3,6 +3,8 @@ import { Linking, Platform } from 'react-native';
 import * as Location from 'expo-location';
 
 import { getAllItems, updatePartialItem } from '@/lib/db';
+import { nativeGeofencing } from '@/lib/geofence-native';
+import { outcomeProblem, outcomeReport, type GeofenceOutcome } from '@/lib/geofence-outcome';
 import { logError } from '@/lib/errors';
 import { loadPlaces } from '@/lib/place-store';
 import { afterCrossing, isArmed, onFix, onPlaceEvent, pickWatched, placeLabel, PLACE_NOTIFICATION, ringNow, watchedRadius, type PlaceEvent } from '@/lib/places';
@@ -90,10 +92,12 @@ export interface PlaceHealth {
   notifications: CheckState;
   battery: CheckState | null;
   lateAt: number | null;
+  /** What Android answered when the places were last set (Android with the native registration). */
+  registration: GeofenceOutcome | null;
 }
 
 export interface PlaceProblem {
-  key: keyof Omit<PlaceHealth, 'available' | 'lateAt'> | 'late' | 'web';
+  key: keyof Omit<PlaceHealth, 'available' | 'lateAt' | 'registration'> | 'late' | 'web' | 'registration';
   text: string;
   action?: string;
   fix?: () => void;
@@ -105,7 +109,7 @@ export async function placeHealth(): Promise<PlaceHealth> {
   const late = Number(await AsyncStorage.getItem(LATE_KEY).catch(() => null)) || 0;
   const lateAt = late && Date.now() - late < LATE_MEMORY_MS ? late : null;
   if (!geofencingAvailable) {
-    return { available: false, services: 'check', network: 'check', foreground: 'check', background: 'fix', notifications: 'check', battery: null, lateAt };
+    return { available: false, services: 'check', network: 'check', foreground: 'check', background: 'fix', notifications: 'check', battery: null, lateAt, registration: null };
   }
   const ok = (b: boolean): CheckState => (b ? 'ok' : 'fix');
   const services = await Location.hasServicesEnabledAsync().catch(() => true);
@@ -125,6 +129,7 @@ export async function placeHealth(): Promise<PlaceHealth> {
     notifications: r?.notifications.state ?? 'check',
     battery: r?.battery ?? null,
     lateAt,
+    registration: geofenceOutcome(),
   };
 }
 
@@ -149,6 +154,23 @@ export function placeProblems(h: PlaceHealth): PlaceProblem[] {
       action: 'Allow',
       fix: () => void allowBackground(),
     });
+  }
+  // What Android itself answered, unless a check above already says the same thing. This is the
+  // case the checks can't see: settings that look fine and Android still saying no, or a
+  // refusal after a restart while Mnemo was closed.
+  const said = outcomeProblem(h.registration);
+  const alreadyShown =
+    said?.cause === 'accuracy' ? h.network === 'fix'
+    : said?.cause === 'background' ? h.foreground === 'fix' || h.background === 'fix'
+    : said?.cause === 'services' ? h.services === 'fix'
+    : false;
+  if (said && !alreadyShown) {
+    const fix =
+      said.cause === 'accuracy' ? () => void Location.enableNetworkProviderAsync().catch(() => Linking.openSettings().catch(() => {}))
+      : said.cause === 'background' ? () => void allowBackground()
+      : said.cause === 'services' ? () => Linking.openSettings().catch(() => {})
+      : undefined;
+    out.push({ key: 'registration', text: said.text, action: fix ? (said.cause === 'background' ? 'Allow' : 'Turn on') : undefined, fix });
   }
   if (h.notifications === 'fix') {
     out.push({ key: 'notifications', text: "Notifications are off, so a reminder can't show.", action: 'Allow', fix: openSettings.notifications });
@@ -207,6 +229,19 @@ async function networkLocationOn(): Promise<boolean> {
     .catch(() => true);
 }
 
+/** Told after each registration, so screens showing Android's answer refresh (usePlaceProblems). */
+const outcomeListeners = new Set<() => void>();
+
+export function onGeofenceOutcome(listener: () => void): () => void {
+  outcomeListeners.add(listener);
+  return () => outcomeListeners.delete(listener);
+}
+
+/** Android's last answer to Mnemo's geofences (null without the native registration). */
+export function geofenceOutcome(): GeofenceOutcome | null {
+  return nativeGeofencing?.outcome() ?? null;
+}
+
 /** Phones drop geofences on restart, so the list is set again once per launch. */
 let setThisLaunch = false;
 
@@ -216,10 +251,16 @@ export async function syncGeofences(items: MnemoItem[], places: Place[]): Promis
   try {
     const regions = getPreferences().places ? watchList(items, places) : [];
     const signature = regions.map((r) => `${r.identifier}:${r.latitude.toFixed(5)},${r.longitude.toFixed(5)},${r.radius}`).sort().join('|');
-    const started = await Location.hasStartedGeofencingAsync(GEOFENCE_TASK).catch(() => false);
+    const native = nativeGeofencing;
+    // Installs from before Mnemo registered its own: expo-location holds the task. Handed over
+    // once (stopped here, set below), so two registrations never watch at the same time.
+    if (native && (await Location.hasStartedGeofencingAsync(GEOFENCE_TASK).catch(() => false))) {
+      await Location.stopGeofencingAsync(GEOFENCE_TASK).catch((e) => logError('geofence handover', e));
+    }
+    const started = native ? native.started(GEOFENCE_TASK) : await Location.hasStartedGeofencingAsync(GEOFENCE_TASK).catch(() => false);
     const watch = await loadWatch();
     if (regions.length === 0) {
-      if (started) await Location.stopGeofencingAsync(GEOFENCE_TASK);
+      if (started) await (native ? native.stop(GEOFENCE_TASK) : Location.stopGeofencingAsync(GEOFENCE_TASK));
       if (watch.signature) await AsyncStorage.setItem(WATCH_KEY, JSON.stringify({ signature: '', since: 0 }));
       return;
     }
@@ -227,6 +268,22 @@ export async function syncGeofences(items: MnemoItem[], places: Place[]): Promis
     if (!(await Location.getBackgroundPermissionsAsync()).granted) return;
     // With location off, Android quietly sets nothing; wait until it's on (rechecked on return to the app).
     if (!(await Location.hasServicesEnabledAsync().catch(() => true))) return;
+    if (native) {
+      // Android's own answer decides: the list counts as set only when it said yes. Anything else
+      // is retried at the next sync (a change, or coming back to Mnemo) and shown in Settings.
+      const outcome = await native.start(GEOFENCE_TASK, regions);
+      setThisLaunch = true;
+      if (outcome.state === 'ok') {
+        await AsyncStorage.setItem(WATCH_KEY, JSON.stringify({ signature, since: Date.now() }));
+      } else {
+        await forgetWatch();
+        logError('geofence register', new Error(outcomeReport(outcome)));
+      }
+      outcomeListeners.forEach((l) => l());
+      return;
+    }
+    // expo-location (iOS, and Android builds without the module) can't say whether Android
+    // accepted the list, so known causes of a refusal are checked first.
     // Android geofences run on network location ("Google Location Accuracy"). Without it Play
     // Services rejects the list, and expo-location's start still resolves (it never listens for
     // the result), so a list recorded as set would never ring and never be set again this launch.

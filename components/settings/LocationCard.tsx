@@ -12,7 +12,8 @@ import { useThemeColors } from '@/hooks/use-theme';
 import { usePlaces } from '@/lib/place-store';
 import { formatMeters, isArmed, watchedRadius } from '@/lib/places';
 import { setPreferences, usePreferences } from '@/lib/preferences';
-import { allowBackground } from '@/lib/geofence';
+import { allowBackground, geofenceOutcome, onGeofenceOutcome } from '@/lib/geofence';
+import { outcomeLine } from '@/lib/geofence-outcome';
 import { allowPlaceNotifications, DEFAULT_PLACE_SOUND, PLACE_SOUNDS, ringPlaceReminder } from '@/lib/place-sound';
 import { Pill } from '@/components/ui/Pill';
 import { confirmAction } from '@/utils/confirm';
@@ -37,6 +38,10 @@ export function LocationCard() {
     return () => sub.remove();
   }, []);
   const problems = usePlaceProblems(`${returns}:${on}`);
+  // What Android answered when the places were last set: read on each return and each answer.
+  const [answers, setAnswers] = React.useState(0);
+  React.useEffect(() => onGeofenceOutcome(() => setAnswers((n) => n + 1)), []);
+  const watching = React.useMemo(() => (on && waiting.length > 0 ? outcomeLine(geofenceOutcome()) : null), [on, waiting.length, returns, answers]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const toggle = (next: boolean) => {
     if (next || waiting.length === 0) {
@@ -77,6 +82,16 @@ export function LocationCard() {
 
       {on ? (
         <>
+          {/* Android's own word that it's watching (Android builds with the native registration). */}
+          {watching && !(problems && problems.length > 0) ? (
+            <View className="flex-row items-center" style={{ gap: 8 }}>
+              <Icon name="check" size={14} color={colors.accent} />
+              <Text className="font-sans text-sm flex-1" style={{ color: colors.fgSecondary }}>
+                {watching}
+              </Text>
+            </View>
+          ) : null}
+
           {/* What may stop it lives on the check page; here, just that there is something. */}
           {problems && problems.length > 0 ? (
             <Pressable

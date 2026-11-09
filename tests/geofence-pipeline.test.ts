@@ -15,6 +15,16 @@ const android = vi.hoisted(() => ({
   background: true,
 }));
 const storage = vi.hoisted(() => new Map<string, string>());
+// Mnemo's own registration (lib/geofence-native.ts): off = the expo-location path (iOS, older
+// builds); on = Android answering through the native module, with `answer` as its reply.
+const native = vi.hoisted(() => ({
+  on: false,
+  started: false,
+  starts: 0,
+  answer: { state: 'ok' } as { state: string; code?: number; restored?: boolean },
+  stored: null as null | Record<string, unknown>,
+  regions: [] as { identifier: string }[],
+}));
 const places = vi.hoisted(() => ({ list: [] as Place[] }));
 
 vi.mock('@react-native-async-storage/async-storage', () => ({
@@ -29,6 +39,27 @@ vi.mock('@/lib/db', () => ({
   },
 }));
 vi.mock('@/lib/place-store', () => ({ loadPlaces: async () => places.list }));
+vi.mock('@/lib/geofence-native', () => ({
+  get nativeGeofencing() {
+    if (!native.on) return null;
+    return {
+      start: async (_task: string, regions: { identifier: string }[]) => {
+        native.starts++;
+        native.started = true;
+        native.regions = regions;
+        native.stored = { ...native.answer, count: regions.length, at: 1 };
+        return native.stored;
+      },
+      stop: async () => {
+        native.started = false;
+        native.regions = [];
+        native.stored = { state: 'off', count: 0 };
+      },
+      started: () => native.started,
+      outcome: () => native.stored,
+    };
+  },
+}));
 vi.mock('@/lib/place-sound', () => ({ ringPlaceReminder: async (c: { title: string; body: string }) => void rang.push(c) }));
 vi.mock('@/lib/preferences', () => ({ getPreferences: () => ({ places: true }) }));
 vi.mock('@/lib/reliability', () => ({ openSettings: {}, reminderHealth: async () => null }));
@@ -77,6 +108,7 @@ beforeEach(async () => {
   rang.length = 0;
   storage.clear();
   Object.assign(android, { started: false, regions: [], starts: 0, networkAvailable: true, background: true });
+  Object.assign(native, { on: false, started: false, starts: 0, answer: { state: 'ok' }, stored: null, regions: [] });
   places.list = [LOCATION_A, TONGI];
   // Two notes the relationship engine connected: B's note was suggested as part of A.
   save({ id: 'A', title: 'Pick up the keys', place: { placeId: 'a', on: 'arrive', setAt: 1, insideAtSet: false } });
@@ -206,5 +238,63 @@ describe('a weekday reminder at the office, across days, in the background', () 
     await geofence.handleGeofenceEvent('exit', 'a', day(0, 12));
     await geofence.handleGeofenceEvent('enter', 'a', day(0, 13));
     expect(rang).toHaveLength(1);
+  });
+});
+
+describe('Android with Mnemo\'s own registration: the list counts as set only when Android says yes', () => {
+  beforeEach(() => {
+    native.on = true;
+  });
+  const health = (o: object = {}) =>
+    ({ available: true, services: 'ok', network: 'ok', foreground: 'ok', background: 'ok', notifications: 'ok', battery: null, lateAt: null, registration: native.stored, ...o }) as never;
+
+  it('Android said yes: both places set, and not set again until something changes', async () => {
+    await geofence.syncGeofences(items(), places.list);
+    expect(native.regions.map((r) => r.identifier).sort()).toEqual(['a', 'tongi']);
+    await geofence.syncGeofences(items(), places.list);
+    expect(native.starts).toBe(1);
+    expect(android.starts).toBe(0); // expo-location's registration is not used
+    expect(geofence.placeProblems(health())).toEqual([]);
+  });
+
+  it('Android refused (location accuracy off): not recorded, retried at the next sync, and said', async () => {
+    native.answer = { state: 'refused', code: 1000 };
+    await geofence.syncGeofences(items(), places.list);
+    await geofence.syncGeofences(items(), places.list);
+    expect(native.starts).toBe(2);
+    expect(geofence.placeProblems(health()).map((p) => p.key)).toEqual(['registration']);
+    expect(geofence.placeProblems(health())[0].text).toContain('Google Location Accuracy is off');
+    // Once Android says yes, the problem is gone.
+    native.answer = { state: 'ok' };
+    await geofence.syncGeofences(items(), places.list);
+    expect(geofence.placeProblems(health())).toEqual([]);
+  });
+
+  it('a refusal the checks already show is not said twice', async () => {
+    native.answer = { state: 'refused', code: 1000 };
+    await geofence.syncGeofences(items(), places.list);
+    expect(geofence.placeProblems(health({ network: 'fix' })).map((p) => p.key)).toEqual(['network']);
+  });
+
+  it('a refusal after a restart, while Mnemo was closed, is shown on opening', () => {
+    native.stored = { state: 'refused', code: 1000, count: 2, restored: true };
+    const [problem] = geofence.placeProblems(health());
+    expect(problem.text).toContain('after the phone restarted');
+  });
+
+  it('updating from a version that used expo-location: its registration is stopped, Mnemo\'s set', async () => {
+    android.started = true;
+    android.regions = [{ identifier: 'a', latitude: 0, longitude: 0, radius: 150 }];
+    await geofence.syncGeofences(items(), places.list);
+    expect(android.started).toBe(false);
+    expect(native.started).toBe(true);
+  });
+
+  it('nothing left to watch: Mnemo\'s registration is stopped', async () => {
+    await geofence.syncGeofences(items(), places.list);
+    save({ ...row('A'), status: 'completed' });
+    save({ ...row('B'), status: 'archived' });
+    await geofence.syncGeofences(items(), places.list);
+    expect(native.started).toBe(false);
   });
 });

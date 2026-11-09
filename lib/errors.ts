@@ -66,7 +66,12 @@ async function placeLine(): Promise<string> {
     const event = e ? JSON.parse(e) : null;
     const count = watch?.signature ? String(watch.signature).split('|').length : 0;
     const when = (at: unknown) => (Number(at) ? new Date(Number(at)).toISOString() : 'never');
-    return `Places watched: ${count}${count ? ` since ${when(watch.since)}` : ''} · last place event: ${event ? `${event.event} ${when(event.at)}` : 'never'}`;
+    // What Android itself answered (Android builds with the native registration). Loaded here
+    // only, so everything else that logs errors doesn't load the native module.
+    const { nativeGeofencing } = await import('@/lib/geofence-native');
+    const { outcomeReport } = await import('@/lib/geofence-outcome');
+    const android = nativeGeofencing ? `\n${outcomeReport(nativeGeofencing.outcome())}` : '';
+    return `Places watched: ${count}${count ? ` since ${when(watch.since)}` : ''} · last place event: ${event ? `${event.event} ${when(event.at)}` : 'never'}${android}`;
   } catch {
     return 'Places: unreadable';
   }

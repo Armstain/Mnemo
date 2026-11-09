@@ -13,7 +13,16 @@ No code changes yet. Decisions needed from you are marked **Decision**.
 
 ---
 
-## A. Geofence registration with a known result
+## A. Geofence registration with a known result — written, waiting for a device build
+
+Implemented as designed (option 1): `MnemoGeofencingConsumer.kt`,
+`GeofenceOutcomes.kt` and four module functions in `modules/mnemo-reliability`
+(keep rule in its `proguard-rules.pro`); `lib/geofence-native.ts`,
+`lib/geofence-outcome.ts`, and `syncGeofences` / place health using them, with
+expo-location kept for iOS and builds without the module. JS is tested
+(`tests/geofence-pipeline.test.ts`, `tests/geofence-outcome.test.ts`). The
+Kotlin has **not been compiled** yet: this environment can't download the
+Android SDK. First compile and the device checks happen on a local release build.
 
 ### What is wrong today (checked in the installed sources)
 
