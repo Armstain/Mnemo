@@ -11,5 +11,12 @@ android {
   defaultConfig {
     versionCode 1
     versionName '1.0.0'
+    // Keeps the geofencing consumer through release-build shrinking (see the file).
+    consumerProguardFiles("proguard-rules.pro")
   }
+}
+
+dependencies {
+  // Geofencing (MnemoGeofencingConsumer). Same version expo-location already brings into the app.
+  implementation 'com.google.android.gms:play-services-location:21.0.1'
 }
