@@ -1,4 +1,4 @@
-import { formatValue, summarizeMeasures, type MetricSummary } from '@/lib/measures';
+import { formatValue, numbersToShow, summarizeMeasures, type MetricSummary } from '@/lib/measures';
 import type { Entry, MnemoItem } from '@/types/mnemo';
 import { DAY_MS } from '@/utils/time';
 
@@ -60,7 +60,8 @@ export function wrapThread(thread: MnemoItem, entries: Entry[]): ThreadWrap {
     links: blocks.filter((b) => b.kind === 'link').length,
     stepsDone: mine.filter((e) => e.nextStep && e.stepDone).length,
     openSteps: openStepsOf(mine, thread),
-    numbers: summarizeMeasures(mine),
+    // Wrapping up finishes it: what's left of a debt or a plan was settled, not spent.
+    numbers: numbersToShow(summarizeMeasures(mine), false),
   };
 }
 

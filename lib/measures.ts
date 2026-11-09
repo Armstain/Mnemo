@@ -292,6 +292,43 @@ export function metricKey(metric: string): string {
   return metric.trim().toLowerCase().replace(/\s+/g, ' ');
 }
 
+// ─── Which way money went ───────────────────────────────────────
+// Money counts when it's paid (docs/plans/2026-11-root-fixes.md, B1). Besides "spent" and
+// "received", money can be owed by you ("owe"), owed to you ("lent"), or still to pay
+// ("planned"). Those three are open, not something that happened: they are listed on their
+// thread while it's open and never added into what was spent.
+
+export const OPEN_MONEY = ['owe', 'lent', 'planned'] as const;
+
+/** False for money still owed or still to pay; true for everything that happened. */
+export function countsAsHappened(metric: string): boolean {
+  return !(OPEN_MONEY as readonly string[]).includes(metricKey(metric));
+}
+
+/** A thread's numbers to show: money still owed or to pay only while the thread is open (once it's done, it was paid). */
+export function numbersToShow<T extends { metric: string }>(summaries: T[], threadOpen: boolean): T[] {
+  return threadOpen ? summaries : summaries.filter((s) => countsAsHappened(s.metric));
+}
+
+/** Gemini's usual other words for the open kinds of money. Names a thread made up itself ("expense") stay. */
+const MONEY_SYNONYMS: Record<string, (typeof OPEN_MONEY)[number]> = {
+  debt: 'owe',
+  debts: 'owe',
+  owed: 'owe',
+  owing: 'owe',
+  borrowed: 'owe',
+  due: 'owe',
+  baki: 'owe',
+  loan: 'lent',
+  loaned: 'lent',
+  'lent out': 'lent',
+  receivable: 'lent',
+  'owed to me': 'lent',
+  budget: 'planned',
+  'to pay': 'planned',
+  'to spend': 'planned',
+};
+
 function cleanText(raw: unknown, max: number): string | undefined {
   if (typeof raw !== 'string') return undefined;
   const text = raw.trim().slice(0, max);
@@ -315,10 +352,11 @@ export function verifyMeasures(raw: unknown, source: string): Measure[] {
     if (!metric || !Number.isFinite(amount) || Math.abs(amount) >= MAX_VALUE) continue;
     if (!said.some((n) => Math.abs(n - Math.abs(amount)) < 0.005)) continue;
 
+    const unit = normalizeUnit(v.unit);
     const measure: Measure = {
-      metric,
+      metric: unit && CURRENCIES.has(unit) ? (MONEY_SYNONYMS[metricKey(metric)] ?? metric) : metric,
       value: amount,
-      unit: normalizeUnit(v.unit),
+      unit,
       label: cleanText(v.label, 40),
       group: cleanText(v.group, 24)?.toLowerCase(),
       rollup: ROLLUPS.includes(v.rollup as Rollup) ? (v.rollup as Rollup) : 'sum',

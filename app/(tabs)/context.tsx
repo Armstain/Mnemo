@@ -55,7 +55,7 @@ import { occurrenceOf, placeLabel, repeatsAtPlace } from '@/lib/places';
 import { usePlaces } from '@/lib/place-store';
 import { useCompleteThread } from '@/hooks/use-complete-thread';
 import { confirmAction } from '@/utils/confirm';
-import { metricKey, summarizeMeasures, type MetricSummary } from '@/lib/measures';
+import { metricKey, numbersToShow, summarizeMeasures, type MetricSummary } from '@/lib/measures';
 import { useCategories, useStatusConfig } from '@/utils/categories';
 import { DUR_BASE, EASE_IN_OUT, useEnter } from '@/utils/motion';
 import { freshness } from '@/utils/time';
@@ -104,7 +104,8 @@ export default function ThreadScreen() {
   );
   const ai = aiEnabled();
   const openSteps = React.useMemo(() => openStepsOf(entries).slice(0, 5), [entries]);
-  const numbers = React.useMemo(() => summarizeMeasures(entries), [entries]);
+  const threadOpen = thread?.status === 'active' || thread?.status === 'paused';
+  const numbers = React.useMemo(() => numbersToShow(summarizeMeasures(entries), threadOpen), [entries, threadOpen]);
   // Same rule as the weekly review.
   const quietDays = React.useMemo(() => (thread ? quietFor(thread, entries) : null), [thread, entries]);
   const isFocus = !!thread && focusThreadId === thread.id;

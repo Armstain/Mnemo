@@ -313,6 +313,14 @@ MEASURES ("measures"):
 Numbers the person reports about their life that they'd want to add up or follow over time: money spent, distance, weight, hours slept or studied, pages read, reps, counts, scores, prices of options they're comparing.
 - Never: dates, times of day, years, ages in passing, phone numbers, addresses, ids, ordinals, or numbers that are only part of a name.
 - "metric": short and stable, e.g. "spent", "ran", "weight", "sleep", "studied", "price". Reuse an existing name when one is listed below.
+- Money says which way it went, and counts only once it's paid:
+  - "spent": money they already paid or spent ("paid 500 for fuel", "রিকশা ভাড়া ৫০ টাকা দিলাম", paying off a debt).
+  - "received": money that came in (salary, a sale, a debt paid back to them).
+  - "owe": money they owe and haven't paid ("দোকানে ২০ টাকা বাকি", "borrowed 2000 from Sami", "ধার নিলাম").
+  - "lent": money someone owes them ("lent Nadia 1500", "ধার দিলাম", "রহিমের কাছে ৫০০ টাকা পাওনা").
+  - "planned": a payment or purchase still to make ("need to pay rent 8000", "বিল দিতে হবে", "will buy a fan for 3500").
+  - "price": a price of an option they're comparing, not paid.
+  Never "spent" for money that is owed or not yet paid.
 - "value": the number exactly as they said it. Never estimate, convert units or currencies, add numbers up or split them.
 - "unit": ISO currency code for money when they named or clearly meant one (euros → EUR, taka → BDT, rupees → INR); otherwise the unit they used ("km", "kg", "h", "pages"), or "".
 - "label": 1-4 words for what this one was ("dinner", "morning run"), or "".
