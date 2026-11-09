@@ -1,0 +1,87 @@
+# Money notes and what they mean, for the phone's own reader (lib/understand.ts).
+# Run: npm run corpus   (prints the score and every miss)
+#
+# One note per line:   text  =>  expected
+#   expected: "metric value" pairs, comma-separated, in the order said; or "none" (no money in it).
+#   metrics:  spent, received, owe (you owe), lent (owed to you), planned (still to pay), price.
+# Start a line with "~" for a known gap: what it should read, which the reader doesn't yet.
+#   A known gap is reported, not failed; once it reads right the run fails until the "~" is removed.
+# Add real notes here whenever the phone gets one wrong: a new phrasing is a new line, then a fix
+# that the whole file must still pass.
+
+# ─── Spent: money already paid ──────────────────────────────────
+spent 300 taka on lunch  =>  spent 300
+Spent $20 on lunch and 15 dollars on a cab  =>  spent 20, spent 15
+paid 500 taka for fuel  =>  spent 500
+call mom 01712345678. paid 500 taka for fuel  =>  spent 500
+bought 2 kg rice for 180 taka  =>  spent 180
+cng khoroch gese der hajar taka  =>  spent 1500
+সিএনজি খরচ গেছে দেড় হাজার টাকা  =>  spent 1500
+রিকশা ভাড়া ৫০ টাকা দিলাম  =>  spent 50
+ডিম কিনলাম ১২০ টাকা  =>  spent 120
+bazar e 850 taka khoroch holo  =>  spent 850
+~the taxi cost 600 taka  =>  spent 600
+gave the maid 2000 taka  =>  spent 2000
+দোকানের বাকি ২০ টাকা দিয়ে দিলাম  =>  spent 20
+paid back the 800 I owed the tailor  =>  spent 800
+৳250 dilam pharmacy te  =>  spent 250
+
+# ─── Expense lists: a thing and its amount, several in a row ────
+rickshaw 50, lunch 120, hotel 2,500 taka  =>  spent 50, spent 120, spent 2500
+Lisbon trip: dinner €40, museum 12 euros  =>  spent 40, spent 12
+
+# ─── Received ───────────────────────────────────────────────────
+salary 45000 taka  =>  received 45000
+got 3000 taka from the freelance job  =>  received 3000
+বেতন পেলাম ৩৫ হাজার টাকা  =>  received 35000
+sold the old phone for 6000 taka  =>  received 6000
+
+# ─── Owe: you owe someone ───────────────────────────────────────
+দোকানের ২০ টাকা বাকি আছে যা কাল রাতে দিতে হবে  =>  owe 20
+মুদি দোকানে ৩৫০ টাকা বাকি  =>  owe 350
+karim er kache 500 taka dhar nilam  =>  owe 500
+রহিমের থেকে ১০০০ টাকা ধার নিয়েছি  =>  owe 1000
+borrowed 2000 taka from Sami  =>  owe 2000
+I owe the tailor 800 taka  =>  owe 800
+cha er dokane 60 taka baki  =>  owe 60
+
+# ─── Lent: someone owes you ─────────────────────────────────────
+রাফিকে ৫০০ টাকা ধার দিলাম  =>  lent 500
+lent Nadia 1500 taka  =>  lent 1500
+Tanvir owes me 300 taka  =>  lent 300
+রহিমের কাছে ৫০০ টাকা পাওনা  =>  lent 500
+jamal er kache 200 taka pabo  =>  lent 200
+
+# ─── Planned: still to pay or buy ───────────────────────────────
+need to pay rent 8000 taka on the 5th  =>  planned 8000
+কাল বিদ্যুৎ বিল ১২০০ টাকা দিতে হবে  =>  planned 1200
+will buy a fan for 3500 taka  =>  planned 3500
+have to pay the internet bill 1000 taka  =>  planned 1000
+kal 500 taka dite hobe bariwala ke  =>  planned 500
+budget 5000 taka for eid shopping  =>  planned 5000
+
+# ─── Price: an option being weighed, not paid ───────────────────
+laptop price 85000 taka  =>  price 85000
+fan er dam 3200 taka  =>  price 3200
+
+# ─── Mixed in one note ──────────────────────────────────────────
+lunch 120 taka, baki 40 taka for tea  =>  spent 120, owe 40
+paid 200 for the cng, still owe the driver 50 taka  =>  spent 200, owe 50
+
+# ─── Written without these rules in mind (added to test them, not from them) ──
+phone recharge 100 taka korlam  =>  spent 100
+ধার শোধ করলাম ১০০০ টাকা  =>  spent 1000
+50 taka cashback pelam  =>  received 50
+দুধের দাম বেড়ে ৯০ টাকা  =>  price 90
+loan er kisti 5000 taka dite hobe  =>  planned 5000
+~Rafi 500 taka ferot dilo  =>  received 500
+~উনি আমাকে ২০০ টাকা দিলেন  =>  received 200
+~owe Karim 300  =>  owe 300
+~rent 8000 taka due on the 5th  =>  planned 8000
+~I lent 500 to Sara and she paid back 200  =>  lent 500, received 200
+
+# ─── No money: numbers that aren't amounts ──────────────────────
+the shop is 2 km away, will go in 5 minutes  =>  none
+call 01712345678 after 5 pm  =>  none
+meeting at 3 on 12 November  =>  none
+ran 5 km this morning  =>  none
