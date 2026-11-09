@@ -9,6 +9,8 @@ import { afterReminder, formatReminder, queueSteps, rescheduled } from '@/lib/wh
 import { saveTextNote } from '@/lib/capture';
 import { markTestArrived, TEST_ROUTE } from '@/lib/reliability';
 import { PLACE_NOTIFICATION } from '@/lib/places';
+import { finishModel } from '@/lib/done';
+import { useCompleteThread } from '@/hooks/use-complete-thread';
 
 type Response = import('expo-notifications').NotificationResponse;
 
@@ -30,6 +32,12 @@ export function ReminderActions() {
   const storeRef = useRef(store);
   storeRef.current = store;
   const handled = useRef(new Set<string>());
+  // Done on a notification follows the thread's rule like every other Done (lib/done.ts finishModel).
+  const completeThread = useCompleteThread();
+  const completeRef = useRef(completeThread);
+  useEffect(() => {
+    completeRef.current = completeThread;
+  }, [completeThread]);
 
   useEffect(() => {
     if (!notificationsAvailable || !store.isLoaded) return;
@@ -74,7 +82,10 @@ export function ReminderActions() {
       // A place reminder's buttons act on that reminder only, never on the thread's time reminder
       // or its next step (lib/geofence.ts tags them).
       if (content.data?.kind === PLACE_NOTIFICATION && response.actionIdentifier !== 'reply') {
-        if (response.actionIdentifier === 'done') {
+        if (response.actionIdentifier === 'done' && !item.place?.repeat && finishModel(item, s.getEntries(item.id)) === 'single') {
+          // A one-off place reminder on one thing to do: that thing is done.
+          completeRef.current(item.id);
+        } else if (response.actionIdentifier === 'done') {
           const undo = s.completePlaceOccurrence(item.id);
           if (undo) showToast({ message: item.place?.repeat ? `Done for today: ${item.title}` : `Done: ${item.title}`, actionLabel: 'Undo', onAction: undo });
         } else if (response.actionIdentifier === 'hour') {
@@ -99,6 +110,7 @@ export function ReminderActions() {
           showToast({ message: `Added to ${item.title}` });
         }
       } else if (response.actionIdentifier === 'done') {
+        const model = finishModel(item, s.getEntries(item.id));
         if (item.repeat && !later) {
           // One occurrence of a repeating reminder: the notification is gone, and the schedule and
           // the step it reminds of stay for the next one (ticking the step would erase it for good).
@@ -107,6 +119,9 @@ export function ReminderActions() {
           const before = item.laterSteps;
           s.updateItem(item.id, { laterSteps: otherSteps.length > 0 ? otherSteps : undefined });
           showToast({ message: `Done: ${later.step ?? item.title}`, actionLabel: 'Undo', onAction: () => s.updateItem(item.id, { laterSteps: before }) });
+        } else if (model === 'single') {
+          // One thing to do: Done on its reminder finishes it, with Undo (the step is ticked with it).
+          completeRef.current(item.id);
         } else if (item.nextStep) {
           const step = item.nextStep;
           const undo = s.completeNextStep(item.id);

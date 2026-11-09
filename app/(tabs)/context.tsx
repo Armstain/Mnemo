@@ -53,7 +53,8 @@ import { openStepsOf } from '@/lib/wrapup';
 import { afterReminder, formatReminder, nextOccurrence, quickTimes, rescheduled } from '@/lib/when';
 import { occurrenceOf, placeLabel, repeatsAtPlace } from '@/lib/places';
 import { usePlaces } from '@/lib/place-store';
-import { useCompleteThread } from '@/hooks/use-complete-thread';
+import { useCompleteThread, useStepDone } from '@/hooks/use-complete-thread';
+import { finishModel } from '@/lib/done';
 import { confirmAction } from '@/utils/confirm';
 import { metricKey, numbersToShow, summarizeMeasures, worthSummarizing, type MetricSummary } from '@/lib/measures';
 import { useCategories, useStatusConfig } from '@/utils/categories';
@@ -86,6 +87,7 @@ export default function ThreadScreen() {
   } = store;
   const { showUndoToast, showToast } = useUndoToast();
   const completeThread = useCompleteThread();
+  const stepDone = useStepDone();
   const rebrief = useRebrief();
   const colors = useThemeColors();
   const statusColors = useStatusConfig();
@@ -238,13 +240,13 @@ export default function ThreadScreen() {
   const hasHistory = entries.length >= 3 || numbers.length > 0;
 
   // ─── Done ───
-  // One Done on this screen. On a thread with a repeating reminder it completes today's
-  // occurrence only: the reminder stays set and rings again on its next day. Finishing such a
-  // thread (which ends its reminders) is a deliberate choice in the ⋯ menu. Otherwise it finishes
-  // the thread, through Wrap-up when there's a story to sum up. See hooks/use-complete-thread.ts.
-  const placeRepeats = repeatsAtPlace(thread);
-  const timeRepeats = !!thread.repeat && !!thread.dueDate && (thread.status === 'active' || thread.status === 'paused');
-  const recurring = placeRepeats || timeRepeats;
+  // What Done does comes from one rule, `finishModel` (lib/done.ts): a repeating reminder
+  // completes today's occurrence (finishing the thread is the ⋯ menu's choice); one thing to do
+  // has a single Done that ticks its step and finishes it; a project ticks steps with their own
+  // check and finishes with Done. Finishing goes through Wrap-up when there's a story to sum up.
+  const model = finishModel(thread, entries);
+  const recurring = model === 'occurrence';
+  const placeRepeats = recurring && repeatsAtPlace(thread);
   const doneToday = placeRepeats && occurrenceOf(thread.place!).state === 'done';
 
   const finishThread = () => {
@@ -270,12 +272,8 @@ export default function ThreadScreen() {
     showToast({ message: `Done for now. Next reminder ${next}` });
   };
 
-  const handleStepDone = () => {
-    // DoneCheck already played ring and haptics.
-    const step = thread.nextStep;
-    const undo = store.completeNextStep(thread.id);
-    showUndoToast(`Done: ${step}`, undo);
-  };
+  // DoneCheck already played ring and haptics. Only shown on a thread that has steps.
+  const handleStepDone = () => stepDone(thread.id);
 
   const showDue = !!thread.dueDate && (thread.status === 'active' || thread.status === 'paused');
   const missed = showDue && !thread.repeat && thread.dueDate! < Date.now();
@@ -617,9 +615,12 @@ export default function ThreadScreen() {
                           {thread.nextStep}
                         </Text>
                       </View>
-                      <View className="ml-2">
-                        <DoneCheck onDone={handleStepDone} label="Mark next step done" restColor={colors.surfaceLowest} />
-                      </View>
+                      {/* One thing to do is finished by Done; a repeating one's step stays for next time. */}
+                      {model === 'steps' ? (
+                        <View className="ml-2">
+                          <DoneCheck onDone={handleStepDone} label="Mark next step done" restColor={colors.surfaceLowest} />
+                        </View>
+                      ) : null}
                     </View>
                   ) : null}
                 </MotiView>

@@ -26,6 +26,7 @@ import { syncReminderForItem, cancelReminder, cancelAllReminders } from '@/lib/r
 import { removeAllPlaces } from '@/lib/place-store';
 import { afterReminder, nextOccurrence } from '@/lib/when';
 import { completeOccurrence } from '@/lib/places';
+import { finishModel } from '@/lib/done';
 import { foldReminders } from '@/lib/reminder-ownership';
 import { deleteAllImages, forgetImages, restoreImage } from '@/lib/images';
 import { UNDO_WINDOW_MS } from '@/hooks/use-undo-toast';
@@ -125,10 +126,11 @@ interface MnemoStoreType {
   resumeItem: (id: string) => void;
   pauseItem: (id: string) => void;
   /**
-   * Marks the thread finished, once: a second call (double tap, two screens) does nothing and
-   * returns null. Otherwise returns the thread as it was, for Undo (`restoreItem`).
+   * Finishes the thread, once: a second call (double tap, two screens) does nothing and returns
+   * null. A thread that is one thing to do (`finishModel` 'single') has its step ticked in the
+   * same change. Returns the thread as it was and one undo for all of it.
    */
-  completeItem: (id: string) => MnemoItem | null;
+  completeItem: (id: string) => { before: MnemoItem; undo: () => void } | null;
   /**
    * Marks today's ring of the thread's place reminder done, and nothing else: the reminder, its
    * repeat and the thread stay as they are. Returns an undo, or null when there's nothing to complete.
@@ -723,13 +725,23 @@ export function MnemoStoreProvider({ children }: { children: React.ReactNode }) 
   );
 
   const completeItem = useCallback(
-    (id: string): MnemoItem | null => {
-      const current = itemsRef.current.find((i) => i.id === id);
-      if (!current || current.status === 'completed') return null;
+    (id: string) => {
+      const before = itemsRef.current.find((i) => i.id === id);
+      if (!before || before.status === 'completed') return null;
+      const mine = entriesRef.current.filter((e) => e.threadId === id);
+      // Its one step is the task: ticked with it, so it counts as done (not left "open" on a finished thread).
+      const undoStep = before.nextStep && finishModel(before, mine) === 'single' ? completeNextStep(id) : null;
       updateItem(id, { status: 'completed', completedAt: Date.now() });
-      return current;
+      return {
+        before,
+        undo: () => {
+          undoStep?.();
+          const { status, completedAt, quietUntil, lastResumedAt, updatedAt } = before;
+          updateItem(id, { status, completedAt, quietUntil, lastResumedAt, updatedAt }, { touch: false });
+        },
+      };
     },
-    [updateItem],
+    [updateItem, completeNextStep],
   );
 
   const completePlaceOccurrence = useCallback(

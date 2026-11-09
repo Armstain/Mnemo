@@ -155,7 +155,19 @@ metrics:
   pay rent 8000 on the 5th", "spent 300 on lunch" still spent), verifyMeasures,
   review totals.
 
-### B2. What finishes a thread (behaviour; needs decisions)
+### B2. What finishes a thread — done
+
+Implemented as `finishModel` in `lib/done.ts` with three models, not four: a
+plain note with no step behaves exactly like `single` (Done finishes it), so
+`note` was folded into it. Used by the thread screen (the step check shows only
+for `steps`; a repeating thread's step stays for next time), Welcome and the
+weekly review (`useStepDone`), Wrap-up and notification Done (`useCompleteThread`,
+including a one-off place reminder on a single task). The store's `completeItem`
+ticks a single task's step in the same change, with one Undo. The store itself
+is now tested (`tests/store-completion.test.ts`), mounted with React's server
+renderer, so no new test dependency.
+
+Original plan:
 
 Today a step being ticked and a thread being done are two states with no rule
 between them, so a one-step task shows two Done controls and each does half.

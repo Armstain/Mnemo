@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { celebrate, completionFeedback, doneSummary, isRealTask, onCelebrate } from '@/lib/done';
+import { celebrate, completionFeedback, doneSummary, finishModel, isRealTask, onCelebrate } from '@/lib/done';
 
 const DAY = 24 * 60 * 60 * 1000;
 const text = { kind: 'text', markdown: 'x' } as const;
@@ -55,5 +55,40 @@ describe('finishing a thread: one feedback, decided in one place', () => {
   });
   it('nothing to say under "Done": no empty detail line', () => {
     expect(completionFeedback(t({ dueDate: 1 }), [entry()], 1000).celebration).toEqual({ title: 'Renew passport' });
+  });
+});
+
+describe('what Done does on a thread (finishModel)', () => {
+  const base = { kind: undefined, pinned: undefined, category: 'errands', nextStep: undefined, dueDate: undefined, repeat: undefined, laterSteps: undefined, place: undefined, status: 'active' };
+  const t = (o: object = {}) => ({ ...base, ...o }) as never;
+  const step = (nextStep: string, stepDone?: boolean) => ({ nextStep, stepDone });
+  const notes = (n: number) => Array.from({ length: n }, () => ({}));
+
+  it('the screenshot: a task with one step and a reminder today is one thing to do', () => {
+    const shop = t({ kind: 'task', nextStep: 'কাল রাতে দোকানে ২০ টাকা দিয়ে দেওয়া', dueDate: 1 });
+    expect(finishModel(shop, [step('কাল রাতে দোকানে ২০ টাকা দিয়ে দেওয়া')])).toBe('single');
+  });
+  it('a note with no step, an idea, a step already ticked: one Done', () => {
+    expect(finishModel(t(), [{}])).toBe('single');
+    expect(finishModel(t({ kind: 'idea', category: 'ideas', nextStep: 'Sketch it' }), [step('Sketch it')])).toBe('single');
+    expect(finishModel(t({ nextStep: 'Call him' }), [step('Call him'), step('Book it', true)])).toBe('single');
+  });
+  it('the same step said twice is still one step', () => {
+    expect(finishModel(t({ nextStep: 'Call him' }), [step('Call him'), step('call him ')])).toBe('single');
+  });
+  it('a project, or a task that gained steps, is ticked step by step', () => {
+    expect(finishModel(t({ kind: 'project', nextStep: 'Draft' }), [step('Draft')])).toBe('steps');
+    expect(finishModel(t({ nextStep: 'Call him' }), [step('Call him'), step('Send the form')])).toBe('steps');
+    expect(finishModel(t({ nextStep: 'Bring the file', dueDate: 1, laterSteps: [{ at: 2, step: 'Send it' }] }), [{}])).toBe('steps');
+  });
+  it('grows into a project by itself; a list stays one task however long', () => {
+    expect(finishModel(t({ kind: 'task', category: 'work', nextStep: 'x' }), notes(5))).toBe('steps');
+    expect(finishModel(t({ kind: 'task', category: 'shopping', nextStep: 'x' }), notes(8))).toBe('single');
+  });
+  it('a repeating reminder (time or place) completes an occurrence, not the thread', () => {
+    expect(finishModel(t({ dueDate: 1, repeat: 'daily', nextStep: 'Take pills' }), [step('Take pills')])).toBe('occurrence');
+    expect(finishModel(t({ place: { placeId: 'o', on: 'arrive', setAt: 1, repeat: 'weekdays' } }), [{}])).toBe('occurrence');
+    // A finished one has no occurrences left.
+    expect(finishModel(t({ dueDate: 1, repeat: 'daily', status: 'completed' }), [{}])).toBe('single');
   });
 });

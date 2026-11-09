@@ -13,8 +13,8 @@ import { OpenRing } from '@/components/ui/ThreadRing';
 import { ThreadList, ThreadRow } from '@/components/ui/ThreadRow';
 import { useAwaySince } from '@/hooks/use-away';
 import { useMnemoStore } from '@/hooks/use-mnemo-store';
+import { useStepDone } from '@/hooks/use-complete-thread';
 import { useThemeColors } from '@/hooks/use-theme';
-import { useUndoToast } from '@/hooks/use-undo-toast';
 import { awayDigest, awayFor, leftOn, shortWhen, type AwayRow } from '@/lib/away';
 import { resumeOrder } from '@/lib/when';
 import { sameWords } from '@/utils/text';
@@ -38,8 +38,9 @@ export default function WelcomeScreen() {
   const insets = useSafeAreaInsets();
   const colors = useThemeColors();
   const enter = useEnter();
-  const { items, entries, getActiveItems, focusThreadId, completeNextStep } = useMnemoStore();
-  const { showUndoToast } = useUndoToast();
+  const { items, entries, getActiveItems, focusThreadId } = useMnemoStore();
+  // A step's check: ticks it, or finishes a thread that is one thing to do (lib/done.ts finishModel).
+  const stepDone = useStepDone();
   const { since, dismiss } = useAwaySince();
   const [all, setAll] = React.useState({ steps: false, leftOff: false, ideas: false });
 
@@ -204,7 +205,7 @@ export default function WelcomeScreen() {
                     </Text>
                   </Pressable>
                   <DoneCheck
-                    onDone={() => showUndoToast(`Done: ${r.text}`, completeNextStep(r.item.id))}
+                    onDone={() => stepDone(r.item.id)}
                     label={`Mark done: ${r.text}`}
                     restColor={colors.accentSoft}
                   />

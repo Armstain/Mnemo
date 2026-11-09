@@ -14,6 +14,7 @@ import { ThreadList, ThreadRow } from '@/components/ui/ThreadRow';
 import { useReduceMotion } from '@/hooks/use-accessibility-motion';
 import { useCountUp } from '@/hooks/use-count-up';
 import { useMnemoStore } from '@/hooks/use-mnemo-store';
+import { useStepDone } from '@/hooks/use-complete-thread';
 import { useThemeColors } from '@/hooks/use-theme';
 import { useUndoToast } from '@/hooks/use-undo-toast';
 import { formatValue } from '@/lib/measures';
@@ -37,7 +38,9 @@ export default function ReviewScreen() {
   const insets = useSafeAreaInsets();
   const colors = useThemeColors();
   const enter = useEnter();
-  const { items, entries, completeNextStep, pauseItem, updateItem, restoreItem } = useMnemoStore();
+  const { items, entries, pauseItem, updateItem, restoreItem } = useMnemoStore();
+  // A step's check: ticks it, or finishes a thread that is one thing to do (lib/done.ts finishModel).
+  const stepDone = useStepDone();
   const { showUndoToast } = useUndoToast();
   const r = React.useMemo(() => weekReview(items, entries), [items, entries]);
   const line = reviewLine(r, (t) => `${t.metric} ${formatValue(t.total, t.unit)}`);
@@ -146,7 +149,7 @@ export default function ReviewScreen() {
                     </Text>
                   </Pressable>
                   <DoneCheck
-                    onDone={() => showUndoToast(`Done: ${t.nextStep}`, completeNextStep(t.id))}
+                    onDone={() => stepDone(t.id)}
                     label={`Mark done: ${t.nextStep}`}
                     restColor={colors.accentSoft}
                   />
