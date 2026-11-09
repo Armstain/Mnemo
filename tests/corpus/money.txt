@@ -3,7 +3,9 @@
 #
 # One note per line:   text  =>  expected
 #   expected: "metric value" pairs, comma-separated, in the order said; or "none" (no money in it).
-#   metrics:  spent, received, owe (you owe), lent (owed to you), planned (still to pay), price.
+#   metrics:  spent, received, owe (you owe), lent (owed to you), planned (still to pay), price,
+#             amount (it doesn't say: not counted until the person picks).
+# The score counts a miss that read "amount" as unsorted (safe) and any other miss as miscounted.
 # Start a line with "~" for a known gap: what it should read, which the reader doesn't yet.
 #   A known gap is reported, not failed; once it reads right the run fails until the "~" is removed.
 # Add real notes here whenever the phone gets one wrong: a new phrasing is a new line, then a fix
@@ -29,6 +31,16 @@ paid back the 800 I owed the tailor  =>  spent 800
 # ─── Expense lists: a thing and its amount, several in a row ────
 rickshaw 50, lunch 120, hotel 2,500 taka  =>  spent 50, spent 120, spent 2500
 Lisbon trip: dinner €40, museum 12 euros  =>  spent 40, spent 12
+
+# ─── It doesn't say: left as "amount", not counted ──────────────
+lunch 120 taka  =>  amount 120
+electricity bill 1200 taka  =>  amount 1200
+আজ মাছ ৪০০ টাকা  =>  amount 400
+tip 100 taka  =>  amount 100
+rickshaw 50 tk  =>  amount 50
+lunch was 450 taka at 2pm  =>  amount 450
+বাজার ৫০০ টাকা  =>  amount 500
+$12.50 for coffee  =>  amount 12.5
 
 # ─── Received ───────────────────────────────────────────────────
 salary 45000 taka  =>  received 45000

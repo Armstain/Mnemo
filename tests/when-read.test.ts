@@ -130,26 +130,28 @@ describe('reading notes', () => {
       ['flight landed at 7:40', null, null, 'Flight landed at 7:40', null],
       ['watched a movie for 2 hours', null, null, 'Watched a movie for 2 hours', null],
       ['the shop opens at 10', null, null, 'The shop opens at 10', null],
-      ['lunch was 450 taka at 2pm', null, null, 'Lunch was 450 taka at 2pm', 'spent:450BDT(lunch)'],
+      ['lunch was 450 taka at 2pm', null, null, 'Lunch was 450 taka at 2pm', 'amount:450BDT(lunch)'],
       ['called the plumber, he came in 20 minutes', null, null, 'Called the plumber, he came in 20 minutes', null],
     ])('%s', (text, due, step, title, measures) => {
       expect(row(text)).toEqual({ due, step, title, measures });
     });
   });
 
+  // One amount with no payment word is "amount": not counted until the person says what it was
+  // (docs/plans/2026-11-root-fixes.md, the safe default; tests/corpus/money.txt).
   describe('amounts', () => {
     it.each<Row>([
-      ['rickshaw 50 tk', null, null, 'Rickshaw 50 tk', 'spent:50BDT(rickshaw)'],
-      ['cng 120tk', null, null, 'Cng 120tk', 'spent:120BDT(cng)'],
-      ['lunch ৳450', null, null, 'Lunch ৳450', 'spent:450BDT(lunch)'],
+      ['rickshaw 50 tk', null, null, 'Rickshaw 50 tk', 'amount:50BDT(rickshaw)'],
+      ['cng 120tk', null, null, 'Cng 120tk', 'amount:120BDT(cng)'],
+      ['lunch ৳450', null, null, 'Lunch ৳450', 'amount:450BDT(lunch)'],
       ['paid Tk. 1,200 for the bill', null, null, 'Paid Tk. 1,200 for the bill', 'spent:1200BDT(bill)'],
       ['bought rice 2 kg for 180 taka', null, null, 'Bought rice 2 kg for 180 taka', 'spent:180BDT(rice)'],
       ['spent 1.5k on shoes', null, null, 'Spent 1.5k on shoes', 'spent:1500BDT(shoes)'],
       ['got salary 45000', null, null, 'Got salary 45000', 'received:45000BDT(salary)'],
       ['২ হাজার টাকা খরচ হলো বাজারে', null, null, '২ হাজার টাকা খরচ হলো বাজারে', 'spent:2000BDT(বাজারে)'],
-      ['বাজার ৫০০ টাকা', null, null, 'বাজার ৫০০ টাকা', 'spent:500BDT(বাজার)'],
+      ['বাজার ৫০০ টাকা', null, null, 'বাজার ৫০০ টাকা', 'amount:500BDT(বাজার)'],
       ['dui hajar taka dilam rent', null, null, 'Dui hajar taka dilam rent', 'spent:2000BDT(rent)'],
-      ['$12.50 for coffee', null, null, '$12.50 for coffee', 'spent:12.5USD(coffee)'],
+      ['$12.50 for coffee', null, null, '$12.50 for coffee', 'amount:12.5USD(coffee)'],
       ['spent 20 dollars on a book', null, null, 'Spent 20 dollars on a book', 'spent:20USD(book)'],
       ['50% off at the shop', null, null, '50% off at the shop', null],
       ['room 304, floor 3', null, null, 'Room 304, floor 3', null],

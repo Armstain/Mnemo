@@ -300,9 +300,16 @@ export function metricKey(metric: string): string {
 
 export const OPEN_MONEY = ['owe', 'lent', 'planned'] as const;
 
-/** False for money still owed or still to pay; true for everything that happened. */
+/**
+ * Money the reading couldn't place (no payment word, no list, no thread that tracks money): not
+ * counted anywhere until the person picks what it was, in the entry's editor.
+ */
+export const UNSORTED_MONEY = 'amount';
+
+/** False for money still owed, still to pay, or not yet sorted; true for everything that happened. */
 export function countsAsHappened(metric: string): boolean {
-  return !(OPEN_MONEY as readonly string[]).includes(metricKey(metric));
+  const key = metricKey(metric);
+  return key !== UNSORTED_MONEY && !(OPEN_MONEY as readonly string[]).includes(key);
 }
 
 /** A thread's numbers to show: money still owed or to pay only while the thread is open (once it's done, it was paid). */
