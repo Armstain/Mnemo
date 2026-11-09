@@ -86,10 +86,13 @@ export default function ReviewScreen() {
                   <Text className="font-display mt-0.5" style={{ color: colors.fg, fontSize: 26, fontVariant: ['tabular-nums'] }}>
                     {formatValue(t.total, t.unit)}
                   </Text>
-                  <Text className="font-sans text-sm" style={{ color: colors.fgTertiary }}>
-                    {t.count} {t.count === 1 ? 'entry' : 'entries'}
-                    {t.threads > 1 ? ` · ${t.threads} threads` : ''}
-                  </Text>
+                  {/* "1 entry" says nothing: the count shows only once there's something added up. */}
+                  {t.count > 1 ? (
+                    <Text className="font-sans text-sm" style={{ color: colors.fgTertiary }}>
+                      {t.count} entries
+                      {t.threads > 1 ? ` · ${t.threads} threads` : ''}
+                    </Text>
+                  ) : null}
                 </View>
               ))}
             </ScrollView>

@@ -182,7 +182,15 @@ computed every time (nothing new stored), from data that already exists
 * Tests: `finishModel` table tests; the store transition; ReminderActions per
   model.
 
-### B3. Numbers worth showing (presentation)
+### B3. Numbers worth showing (presentation) — done
+
+Done as planned on the thread, with two changes: the weekly review keeps a
+single-value total (the note isn't on that page, so it's the only place the
+week's one run shows) and only drops "1 entry"; and since hiding the card
+removed the only way to fix a wrong money kind, an entry's number editor now
+offers Spent / I owe / Owed to me / To pay / Received for money.
+
+Original plan:
 
 One rule in `lib/measures.ts`, `worthShowing(summary)`, used by the thread's
 Numbers section and the weekly review:
