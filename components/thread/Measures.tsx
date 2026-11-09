@@ -12,7 +12,8 @@ import { useCountUp } from '@/hooks/use-count-up';
 
 import { Eyebrow } from '@/components/ui/Eyebrow';
 import { useThemeColors, type ThemeColors } from '@/hooks/use-theme';
-import { formatValue, ROLLUPS, type MetricSummary } from '@/lib/measures';
+import { countsAsHappened, formatValue, isCurrency, metricKey, MONEY_KINDS, ROLLUPS, worthBreakingDown, type MetricSummary } from '@/lib/measures';
+import { Pill } from '@/components/ui/Pill';
 import type { Measure, Rollup } from '@/types/mnemo';
 import { capitalize } from '@/utils/text';
 
@@ -24,8 +25,10 @@ function groupPalette(colors: ThemeColors): string[] {
 /** The numbers one entry reported, as label · value rows. */
 export function MeasureRows({ items }: { items: Measure[] }) {
   const colors = useThemeColors();
-  // Name the metric only when one entry reports more than one kind of number.
+  // Name the metric when one entry reports more than one kind of number, and always for money
+  // still owed or to pay: with one amount there's no Numbers card to say which way it went.
   const mixed = new Set(items.map((m) => m.metric.toLowerCase())).size > 1;
+  const kindOf = (m: Measure) => MONEY_KINDS.find((k) => k.metric === metricKey(m.metric))?.label ?? m.metric;
   return (
     <View className="rounded-sm px-3.5 py-1" style={{ backgroundColor: colors.surfaceLowest, borderWidth: 1, borderColor: colors.border }}>
       {items.map((m, i) => (
@@ -35,11 +38,11 @@ export function MeasureRows({ items }: { items: Measure[] }) {
           style={i > 0 ? { borderTopWidth: 1, borderTopColor: colors.border } : undefined}
         >
           <Text className="flex-1 font-sans text-body mr-3" style={{ color: colors.fg }} numberOfLines={1}>
-            {capitalize(m.label || m.metric)}
-            {m.label && mixed ? (
+            {capitalize(m.label || kindOf(m))}
+            {m.label && (mixed || !countsAsHappened(m.metric)) ? (
               <Text className="font-sans text-sm" style={{ color: colors.fgTertiary }}>
                 {'  '}
-                {m.metric}
+                {kindOf(m)}
               </Text>
             ) : null}
           </Text>
@@ -89,55 +92,71 @@ export function MeasureEditor({
   return (
     <View className="rounded-sm px-3.5 py-1" style={{ backgroundColor: colors.surfaceLowest, borderWidth: 1, borderColor: colors.border }}>
       {items.map((m, i) => (
-        <View
-          key={i}
-          className="flex-row items-center py-1.5"
-          style={i > 0 ? { borderTopWidth: 1, borderTopColor: colors.border } : undefined}
-        >
-          <TextInput
-            value={m.label ?? ''}
-            onChangeText={(label) => update(i, { label: label || undefined })}
-            placeholder={capitalize(m.metric)}
-            placeholderTextColor={colors.fgTertiary}
-            accessibilityLabel="What this number was"
-            selectionColor={colors.accent}
-            className="flex-1 font-sans text-body mr-2 py-1"
-            style={[{ color: colors.fg, minWidth: 0 }, noFocusRing]}
-          />
-          <TextInput
-            value={drafts[i] ?? String(m.value)}
-            onChangeText={(text) => {
-              setDrafts((d) => ({ ...d, [i]: text }));
-              const value = Number(text.replace(/,/g, ''));
-              if (text.trim() && Number.isFinite(value)) update(i, { value });
-            }}
-            onEndEditing={() =>
-              setDrafts((d) => {
-                const next = { ...d };
-                delete next[i];
-                return next;
-              })
-            }
-            keyboardType="decimal-pad"
-            accessibilityLabel={`Amount${m.unit ? ` in ${m.unit}` : ''}`}
-            selectionColor={colors.accent}
-            className="font-sans-semi text-body text-right py-1"
-            style={[{ color: colors.fg, width: 76, fontVariant: ['tabular-nums'] }, noFocusRing]}
-          />
-          {m.unit ? (
-            <Text className="font-sans text-sm ml-1.5" style={{ color: colors.fgTertiary }}>
-              {m.unit}
-            </Text>
+        <View key={i} style={i > 0 ? { borderTopWidth: 1, borderTopColor: colors.border } : undefined}>
+          <View className="flex-row items-center py-1.5">
+            <TextInput
+              value={m.label ?? ''}
+              onChangeText={(label) => update(i, { label: label || undefined })}
+              placeholder={capitalize(m.metric)}
+              placeholderTextColor={colors.fgTertiary}
+              accessibilityLabel="What this number was"
+              selectionColor={colors.accent}
+              className="flex-1 font-sans text-body mr-2 py-1"
+              style={[{ color: colors.fg, minWidth: 0 }, noFocusRing]}
+            />
+            <TextInput
+              value={drafts[i] ?? String(m.value)}
+              onChangeText={(text) => {
+                setDrafts((d) => ({ ...d, [i]: text }));
+                const value = Number(text.replace(/,/g, ''));
+                if (text.trim() && Number.isFinite(value)) update(i, { value });
+              }}
+              onEndEditing={() =>
+                setDrafts((d) => {
+                  const next = { ...d };
+                  delete next[i];
+                  return next;
+                })
+              }
+              keyboardType="decimal-pad"
+              accessibilityLabel={`Amount${m.unit ? ` in ${m.unit}` : ''}`}
+              selectionColor={colors.accent}
+              className="font-sans-semi text-body text-right py-1"
+              style={[{ color: colors.fg, width: 76, fontVariant: ['tabular-nums'] }, noFocusRing]}
+            />
+            {m.unit ? (
+              <Text className="font-sans text-sm ml-1.5" style={{ color: colors.fgTertiary }}>
+                {m.unit}
+              </Text>
+            ) : null}
+            <Pressable
+              onPress={() => onChange(items.filter((_, j) => j !== i))}
+              hitSlop={8}
+              accessibilityRole="button"
+              accessibilityLabel={`Remove ${m.label || m.metric}`}
+              className="p-1 ml-2 active:opacity-50"
+            >
+              <Icon name="x" size={14} color={colors.fgTertiary} />
+            </Pressable>
+          </View>
+          {isCurrency(m.unit) ? (
+            // Which way the money went, when the reading got it wrong ("বাকি" read as spent).
+            <View className="flex-row flex-wrap gap-1.5 pb-2" accessibilityRole="radiogroup" accessibilityLabel="What this money was">
+              {MONEY_KINDS.map((k) => (
+                <Pill
+                  key={k.metric}
+                  size="md"
+                  dot={false}
+                  outline
+                  tone={colors.accent}
+                  selected={metricKey(m.metric) === k.metric}
+                  onPress={() => update(i, { metric: k.metric, rollup: 'sum' })}
+                >
+                  {k.label}
+                </Pill>
+              ))}
+            </View>
           ) : null}
-          <Pressable
-            onPress={() => onChange(items.filter((_, j) => j !== i))}
-            hitSlop={8}
-            accessibilityRole="button"
-            accessibilityLabel={`Remove ${m.label || m.metric}`}
-            className="p-1 ml-2 active:opacity-50"
-          >
-            <Icon name="x" size={14} color={colors.fgTertiary} />
-          </Pressable>
         </View>
       ))}
       <View
@@ -276,14 +295,14 @@ export function MetricCard({ summary, onFix }: { summary: MetricSummary; onFix?:
   if (summary.rollup === 'sum') {
     headline = formatValue(shown, unit);
     detail = [
-      `${n} ${n === 1 ? 'item' : 'items'}`,
+      n > 1 ? `${n} items` : '',
       summary.days && summary.days > 1 ? `${summary.days} days` : '',
       summary.perDay !== undefined ? `about ${formatValue(summary.perDay, unit)} a day` : '',
     ]
       .filter(Boolean)
       .join(' · ');
     const groups = summary.byGroup ?? [];
-    if (groups.length > 0) {
+    if (worthBreakingDown(summary)) {
       const total = summary.total || 1;
       body = (
         <View className="mt-4">

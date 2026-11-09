@@ -55,7 +55,7 @@ import { occurrenceOf, placeLabel, repeatsAtPlace } from '@/lib/places';
 import { usePlaces } from '@/lib/place-store';
 import { useCompleteThread } from '@/hooks/use-complete-thread';
 import { confirmAction } from '@/utils/confirm';
-import { metricKey, numbersToShow, summarizeMeasures, type MetricSummary } from '@/lib/measures';
+import { metricKey, numbersToShow, summarizeMeasures, worthSummarizing, type MetricSummary } from '@/lib/measures';
 import { useCategories, useStatusConfig } from '@/utils/categories';
 import { DUR_BASE, EASE_IN_OUT, useEnter } from '@/utils/motion';
 import { freshness } from '@/utils/time';
@@ -105,7 +105,11 @@ export default function ThreadScreen() {
   const ai = aiEnabled();
   const openSteps = React.useMemo(() => openStepsOf(entries).slice(0, 5), [entries]);
   const threadOpen = thread?.status === 'active' || thread?.status === 'paused';
-  const numbers = React.useMemo(() => numbersToShow(summarizeMeasures(entries), threadOpen), [entries, threadOpen]);
+  // Only what adds to the notes: one amount is already in its entry (lib/measures.ts worthSummarizing).
+  const numbers = React.useMemo(
+    () => numbersToShow(summarizeMeasures(entries), threadOpen).filter(worthSummarizing),
+    [entries, threadOpen],
+  );
   // Same rule as the weekly review.
   const quietDays = React.useMemo(() => (thread ? quietFor(thread, entries) : null), [thread, entries]);
   const isFocus = !!thread && focusThreadId === thread.id;

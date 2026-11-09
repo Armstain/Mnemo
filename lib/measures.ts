@@ -310,6 +310,29 @@ export function numbersToShow<T extends { metric: string }>(summaries: T[], thre
   return threadOpen ? summaries : summaries.filter((s) => countsAsHappened(s.metric));
 }
 
+// ─── What's worth showing (docs/plans/2026-11-root-fixes.md, B3) ───
+// A summary repeats the note unless it adds something: a total of one value is that value, a
+// breakdown into one group is the total again. One rule for the thread and the weekly review.
+
+/** A total, average or trend says something new only from 2 values on. */
+export function worthSummarizing(s: { points?: unknown[]; count?: number }): boolean {
+  return (s.points?.length ?? s.count ?? 0) >= 2;
+}
+
+/** A breakdown says something only with 2 groups or more. */
+export function worthBreakingDown(s: Pick<MetricSummary, 'byGroup'>): boolean {
+  return (s.byGroup?.length ?? 0) >= 2;
+}
+
+/** The kinds of money a person can pick for a number (lib/understand.ts reads the same ones). */
+export const MONEY_KINDS: { metric: string; label: string }[] = [
+  { metric: 'spent', label: 'Spent' },
+  { metric: 'owe', label: 'I owe' },
+  { metric: 'lent', label: 'Owed to me' },
+  { metric: 'planned', label: 'To pay' },
+  { metric: 'received', label: 'Received' },
+];
+
 /** Gemini's usual other words for the open kinds of money. Names a thread made up itself ("expense") stay. */
 const MONEY_SYNONYMS: Record<string, (typeof OPEN_MONEY)[number]> = {
   debt: 'owe',

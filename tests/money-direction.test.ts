@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { understand } from '@/lib/understand';
-import { countsAsHappened, numbersToShow, summarizeMeasures, verifyMeasures } from '@/lib/measures';
+import { countsAsHappened, MONEY_KINDS, numbersToShow, summarizeMeasures, verifyMeasures, worthBreakingDown, worthSummarizing } from '@/lib/measures';
 import { weekReview } from '@/lib/review';
 import type { Entry, Measure, MnemoItem } from '@/types/mnemo';
 
@@ -119,5 +119,34 @@ describe('on the thread and its wrap-up card', () => {
   it('a debt shows while the thread is open, and not once it is done (it was paid)', () => {
     expect(numbersToShow([s('owe'), s('spent')], true).map((x) => x.metric)).toEqual(['owe', 'spent']);
     expect(numbersToShow([s('owe'), s('spent'), s('planned'), s('lent')], false).map((x) => x.metric)).toEqual(['spent']);
+  });
+});
+
+describe('what is worth showing (B3)', () => {
+  const point = { value: 1, at: 0 };
+  it('a total of one value is that value: not summarized; from two on it is', () => {
+    expect(worthSummarizing({ points: [point] })).toBe(false);
+    expect(worthSummarizing({ points: [point, point] })).toBe(true);
+    expect(worthSummarizing({ points: [] })).toBe(false);
+  });
+  it('a breakdown into one group is the total again', () => {
+    expect(worthBreakingDown({ byGroup: [{ group: 'errands', total: 20 }] })).toBe(false);
+    expect(worthBreakingDown({ byGroup: [{ group: 'food', total: 120 }, { group: 'transport', total: 50 }] })).toBe(true);
+    expect(worthBreakingDown({})).toBe(false);
+  });
+  it('the screenshot: one owed amount on an open thread shows no Numbers card', () => {
+    const owe: Measure = { metric: 'owe', value: 20, unit: 'BDT', label: 'দোকান', rollup: 'sum' };
+    const e = { id: 'e', threadId: 't', createdAt: 1, updatedAt: 1, source: 'text', blocks: [{ kind: 'measures', items: [owe] }], filing: { by: 'user' } } as Entry;
+    expect(numbersToShow(summarizeMeasures([e]), true).filter(worthSummarizing)).toEqual([]);
+    expect(numbersToShow(summarizeMeasures([e, { ...e, id: 'f' }]), true).filter(worthSummarizing).map((s) => s.total)).toEqual([40]);
+  });
+  it('every kind of money a person can pick is one the reader and the totals know', () => {
+    expect(MONEY_KINDS.map((k) => [k.metric, countsAsHappened(k.metric)])).toEqual([
+      ['spent', true],
+      ['owe', false],
+      ['lent', false],
+      ['planned', false],
+      ['received', true],
+    ]);
   });
 });
