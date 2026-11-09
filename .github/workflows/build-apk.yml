@@ -24,9 +24,19 @@ jobs:
         with:
           distribution: temurin
           java-version: 17
+      - uses: actions/cache@v4
+        id: gradle-dist
+        with:
+          path: ~/gradle-9.3.1
+          key: gradle-dist-9.3.1
+      - name: Download Gradle
+        if: steps.gradle-dist.outputs.cache-hit != 'true'
+        run: |
+          curl -fsSL --retry 8 --retry-all-errors --retry-delay 10 -o gradle.zip https://services.gradle.org/distributions/gradle-9.3.1-bin.zip
+          unzip -q gradle.zip -d "$HOME"
+      - run: echo "$HOME/gradle-9.3.1/bin" >> "$GITHUB_PATH"
       - uses: gradle/actions/setup-gradle@v4
         with:
-          gradle-version: 9.3.1
           cache-read-only: ${{ github.ref != 'refs/heads/main' }}
       - run: npm ci
       - run: npx expo prebuild --platform android --no-install
