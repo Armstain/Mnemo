@@ -48,7 +48,7 @@ describe('the model ladder', () => {
     behaviour.set('gemini-3-flash-preview', deadline);
     behaviour.set('gemini-2.5-flash', deadline);
     expect((await askNotes('q', [])).answer).toBe('from gemini-2.5-flash-lite');
-    expect(notices.at(-1)).toMatch(/Flash-Lite/);
+    expect(notices.at(-1)).toMatch(/a lighter one/);
   });
 
   it('once every Flash is out of quota, Flash-Lite answers, and a notice says so', async () => {
@@ -56,6 +56,6 @@ describe('the model ladder', () => {
     behaviour.set('gemini-2.5-flash', quota('GenerateRequestsPerDayPerProjectPerModel-FreeTier'));
     calls.length = 0;
     expect((await askNotes('q', [])).answer).toBe('from gemini-2.5-flash-lite');
-    expect(notices.at(-1)).toMatch(/Flash-Lite/);
+    expect(notices.at(-1)).toMatch(/a lighter one/);
   });
 });

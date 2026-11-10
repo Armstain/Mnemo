@@ -96,7 +96,7 @@ export function aiErrorText(err: unknown): string {
   const problem = classifyAiError(err);
   if (problem !== 'quota') return KEY_PROBLEM_TEXT[problem];
   const info = quotaInfo(err);
-  if (info?.daily) return `Today's free limit is used up. ${dailyResetText()} Notes are saved and will be tidied up later.`;
+  if (info?.daily) return `The free daily limit is used up. ${dailyResetText()} Notes are saved and will be tidied up later.`;
   const retry = info?.retryMs ? `Try again in ${waitText(info.retryMs)}.` : 'Try again in a minute.';
   return `Too many requests this minute. ${retry} Notes are saved and will be tidied up later.`;
 }
