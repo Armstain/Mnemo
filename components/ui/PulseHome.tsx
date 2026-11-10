@@ -265,7 +265,7 @@ export function PulseHome() {
   const shownIds = new Set([latestItem?.id, ...upNext.map((i) => i.id), ...(away?.rows.map((r) => r.item.id) ?? [])]);
   const comingUp = activeItems
     .flatMap((i): { item: MnemoItem; at: number; step?: string }[] => [
-      ...(!shownIds.has(i.id) && i.dueDate ? [{ item: i, at: i.dueDate }] : []),
+      ...(!shownIds.has(i.id) && i.dueDate ? [{ item: i, at: i.repeat ? nextOccurrence(i.dueDate, i.repeat, now) : i.dueDate }] : []),
       ...(i.laterSteps ?? []).filter((l) => l.at > now).map((l) => ({ item: i, at: l.at, step: l.step })),
     ])
     .filter((r) => r.at < now + COMING_UP_DAYS * DAY_MS)

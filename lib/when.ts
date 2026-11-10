@@ -131,16 +131,23 @@ const HALF_LIFE_MS = 3 * DAY_MS;
  * Home's order for open threads: pinned ones first, then by how much each
  * is asking for attention: touched recently, a reminder due within a day
  * (or missed), an open next step, the focus thread. Paused ones sink.
+ *
+ * A routine (a reminder that repeats) comes after everything else: it is
+ * due again every day or week by design, so being due says nothing about
+ * what matters now, and it would otherwise hold the top of Home for good.
+ * Its reminder still rings and it still shows under "coming up". Pinning
+ * it, or focusing on it, puts it back in the running.
  */
 export function resumeOrder(
   threads: MnemoItem[],
   options: { now?: number; focusId?: string | null } = {},
 ): MnemoItem[] {
   const now = options.now ?? Date.now();
+  const routine = (t: MnemoItem) => !!t.repeat && !t.starred && t.id !== options.focusId;
   const score = (t: MnemoItem) => {
     const last = Math.max(t.updatedAt, t.lastResumedAt ?? 0);
     let s = Math.pow(0.5, Math.max(0, now - last) / HALF_LIFE_MS);
-    if (t.dueDate && t.dueDate < now + DAY_MS) s += 0.6;
+    if (t.dueDate && !t.repeat && t.dueDate < now + DAY_MS) s += 0.6;
     if (t.nextStep) s += 0.25;
     if (t.id === options.focusId) s += 0.5;
     if (t.status === 'paused') s -= 0.5;
@@ -148,6 +155,7 @@ export function resumeOrder(
   };
   return [...threads].sort((a, b) => {
     if (!!a.starred !== !!b.starred) return a.starred ? -1 : 1;
+    if (routine(a) !== routine(b)) return routine(a) ? 1 : -1;
     return score(b) - score(a);
   });
 }
