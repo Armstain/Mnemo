@@ -1,7 +1,7 @@
 import { embedText, embeddingModel, dot } from '@/lib/embeddings';
 import { getVectors } from '@/lib/db';
-import { bm25Scored, tokenize } from '@/lib/bm25';
-import { telling } from '@/lib/filing';
+import { bm25Scored } from '@/lib/bm25';
+import { relatedLocally, type RelatedOptions, type RelatedThread } from '@/lib/related';
 import type { MnemoItem } from '@/types/mnemo';
 
 // The standard constant from the original Reciprocal Rank Fusion paper —
@@ -98,78 +98,29 @@ export async function hybridSearch(query: string, items: MnemoItem[]): Promise<M
   return reciprocalRankFusion([keywordRanking, semanticRanking]);
 }
 
-// Shown on a thread as "Related threads", so each one needs a reason the
-// person can see. Note-to-note similarity is noisy: calibrated samples had
-// a genuinely related pair as low as 0.60 and an unrelated pair at 0.61,
-// so no single cutoff separates them for short notes. A match therefore
-// needs a shared tag on top of fair similarity, or very high similarity on
-// its own.
-const RELATED_WITH_TAG = 0.66;
-const RELATED_ALONE = 0.8;
+export type { RelatedThread } from '@/lib/related';
 
-export interface RelatedThread {
-  item: MnemoItem;
-  /** One line saying why, e.g. "Also tagged #travel". */
-  reason: string;
-}
-
-/** A few threads clearly connected to this one, each with its reason. */
+/**
+ * A few threads clearly connected to this one, each with its reason. Worked
+ * out on the phone (lib/related.ts); vectors already stored add to it, and
+ * nothing is requested, so it's the same offline.
+ */
 export async function relatedThreads(
   itemId: string,
   items: MnemoItem[],
-  limit = 3,
+  options: Pick<RelatedOptions, 'entries' | 'places' | 'limit'> = {},
 ): Promise<RelatedThread[]> {
+  const self = items.find((i) => i.id === itemId);
+  if (!self) return [];
+  let vectors: Map<string, Float32Array> | undefined;
   try {
-    const self = items.find((i) => i.id === itemId);
-    if (!self) return [];
-    const vectors = await getVectors(await embeddingModel());
-    const selfVector = vectors.get(itemId);
-    if (!selfVector) return relatedByWords(self, items, limit);
-
-    const selfTags = new Set(self.tags.map((t) => t.toLowerCase()));
-    const found: (RelatedThread & { score: number })[] = [];
-
-    for (const item of items) {
-      if (item.id === itemId || item.status === 'archived') continue;
-      const vector = vectors.get(item.id);
-      if (!vector) continue;
-      const score = dot(selfVector, vector);
-      const shared = item.tags.filter((t) => selfTags.has(t.toLowerCase()));
-      if (shared.length > 0 && score >= RELATED_WITH_TAG) {
-        found.push({ item, score, reason: `Also tagged ${shared.slice(0, 2).map((t) => `#${t}`).join(' ')}` });
-      } else if (score >= RELATED_ALONE) {
-        found.push({ item, score, reason: 'Very similar topic' });
-      }
-    }
-    return found
-      .sort((a, b) => b.score - a.score)
-      .slice(0, limit)
-      .map(({ item, reason }) => ({ item, reason }));
+    vectors = await getVectors(await embeddingModel());
+  } catch {
+    // No vectors to read: the other signs stand without them.
+  }
+  try {
+    return relatedLocally(self, items, { ...options, vectors });
   } catch {
     return [];
   }
-}
-
-/**
- * Without embeddings (offline, or not embedded yet): threads that share a
- * tag, or a telling word in both titles. Few and plainly explained.
- */
-export function relatedByWords(self: MnemoItem, items: MnemoItem[], limit = 3): RelatedThread[] {
-  const selfTags = new Set(self.tags.map((t) => t.toLowerCase()));
-  const selfTitle = telling(tokenize(self.title));
-  const found: (RelatedThread & { score: number })[] = [];
-  for (const item of items) {
-    if (item.id === self.id || item.status === 'archived' || item.pending) continue;
-    const shared = item.tags.filter((t) => selfTags.has(t.toLowerCase()));
-    if (shared.length > 0) {
-      found.push({ item, score: 2 + shared.length, reason: `Also tagged ${shared.slice(0, 2).map((t) => `#${t}`).join(' ')}` });
-      continue;
-    }
-    const words = [...telling(tokenize(item.title))].filter((w) => selfTitle.has(w));
-    if (words.length > 0) found.push({ item, score: words.length, reason: `Also about “${words[0]}”` });
-  }
-  return found
-    .sort((a, b) => b.score - a.score || b.item.updatedAt - a.item.updatedAt)
-    .slice(0, limit)
-    .map(({ item, reason }) => ({ item, reason }));
 }
