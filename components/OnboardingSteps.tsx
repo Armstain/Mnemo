@@ -12,13 +12,13 @@ import { TextInput } from '@/components/ui/TextInput';
 import { Text } from '@/components/ui/Text';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { MotiView } from 'moti';
-import { haptic } from '@/utils/haptics';
+import { haptic } from '@/lib/haptics';
 import * as Clipboard from 'expo-clipboard';
 import * as WebBrowser from 'expo-web-browser';
 import { Bell } from 'lucide-react-native';
 
 import { Button } from '@/components/ui/Button';
-import { Card } from '@/components/ui/Card';
+import { Card, useSurfaceStyle } from '@/components/ui/Card';
 import { Icon, type IconName } from '@/components/ui/Icon';
 import { RecordButton } from '@/components/ui/RecordButton';
 import { useMnemoStore } from '@/hooks/use-mnemo-store';
@@ -26,10 +26,10 @@ import { useSpeechCapture } from '@/hooks/use-speech-capture';
 import { useThemeColors } from '@/hooks/use-theme';
 import { saveApiKey, validateApiKey } from '@/lib/api-key';
 import { aiEnabled } from '@/lib/ai-mode';
-import { saveTextNote, saveVoiceNote } from '@/lib/capture';
+import { saveNote } from '@/lib/capture';
 import { cleanName, getPreferences, NAME_MAX, setPreferences } from '@/lib/preferences';
 import { NUDGE_TIMES, requestNudgePermission, saveNudgePrefs } from '@/lib/nudges';
-import { useEnter } from '@/utils/motion';
+import { useEnter } from '@/hooks/use-enter';
 import { noFocusRing } from '@/utils/web';
 
 // The steps after onboarding's welcome page: choose how Mnemo thinks (AI
@@ -106,11 +106,11 @@ function Headline({ title, body }: { title: string; body?: string }) {
   );
 }
 
-// ─── Step: name ─────────────────────────────────────────────────
 
 export function NameStep({ onDone, onBack }: { onDone: () => void; onBack: () => void }) {
   const enter = useEnter();
   const colors = useThemeColors();
+  const surface = useSurfaceStyle();
   const [name, setName] = useState(() => getPreferences().name);
 
   const save = (value: string) => {
@@ -126,7 +126,7 @@ export function NameStep({ onDone, onBack }: { onDone: () => void; onBack: () =>
       <MotiView {...enter.rise(1)} className="mt-6">
         <View
           className="flex-row items-center rounded-md px-4 h-14"
-          style={{ backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border }}
+          style={surface}
         >
           <TextInput
             value={name}
@@ -157,7 +157,6 @@ export function NameStep({ onDone, onBack }: { onDone: () => void; onBack: () =>
   );
 }
 
-// ─── Step: AI or offline ────────────────────────────────────────
 
 function ChoiceCard({
   icon,
@@ -263,7 +262,6 @@ export function AiChoiceStep({
   );
 }
 
-// ─── Step: Gemini key ───────────────────────────────────────────
 
 /** Loose check: real Gemini keys start with AIza and are ~39 chars. */
 function looksLikeGeminiKey(text: string): boolean {
@@ -460,7 +458,6 @@ export function KeyStep({ onDone, onOffline, onBack }: { onDone: () => void; onO
   );
 }
 
-// ─── Step: first capture ────────────────────────────────────────
 
 export function FirstCaptureStep({
   onCaptured,
@@ -502,14 +499,14 @@ export function FirstCaptureStep({
       setHint("Didn't catch that. Tap and try again, or type it.");
       return;
     }
-    const saved = saveVoiceNote({ text: words, audio, category: 'general', store });
+    const saved = saveNote('voice', { text: words, audio, category: 'general', store });
     haptic.success();
     onCaptured(saved.threadId);
   };
 
   const saveText = () => {
     if (!text.trim()) return;
-    const saved = saveTextNote({ text, category: 'general', store });
+    const saved = saveNote('text', { text, category: 'general', store });
     haptic.success();
     onCaptured(saved.threadId);
   };
@@ -596,7 +593,6 @@ export function FirstCaptureStep({
   );
 }
 
-// ─── Step: reveal ───────────────────────────────────────────────
 
 export function RevealStep({ itemId, onContinue }: { itemId: string; onContinue: () => void }) {
   const enter = useEnter();
@@ -675,7 +671,6 @@ export function RevealStep({ itemId, onContinue }: { itemId: string; onContinue:
   );
 }
 
-// ─── Step: nudges ───────────────────────────────────────────────
 
 export function NudgeStep({ itemId, onDone }: { itemId: string | null; onDone: () => void }) {
   const enter = useEnter();

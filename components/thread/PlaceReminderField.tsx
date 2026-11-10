@@ -10,6 +10,7 @@ import { useMnemoStore } from '@/hooks/use-mnemo-store';
 import { useThemeColors } from '@/hooks/use-theme';
 import { allowBackground } from '@/lib/geofence';
 import { usePlaces } from '@/lib/place-store';
+import { placeHref, settingsHref } from '@/lib/routes';
 import { isArmed, MAX_WATCHED, occurrenceOf, overlaps, overlapText, pickWatched, placeLabel } from '@/lib/places';
 import { usePreferences } from '@/lib/preferences';
 import { formatReminder } from '@/lib/when';
@@ -35,7 +36,7 @@ function useWarnings(thread: MnemoItem): Line[] {
   const r = thread.place;
   if (!r || r.firedAt) return [];
   const place = places.find((p) => p.id === r.placeId);
-  if (!place) return [{ text: "That place was removed, so this can't go off.", action: 'Places', fix: () => router.push('/modal') }];
+  if (!place) return [{ text: "That place was removed, so this can't go off.", action: 'Places', fix: () => router.push(settingsHref) }];
   const lines: Line[] = [];
   // Set where the phone already is: it can't ring until the next crossing, which looked like "not working".
   if (r.on === 'arrive' && r.insideAtSet) {
@@ -44,7 +45,7 @@ function useWarnings(thread: MnemoItem): Line[] {
     lines.push({ text: `You're not at ${place.name} now, so this goes off after you get there and then leave.` });
   }
   const overlap = overlapText(overlaps(place, places));
-  if (overlap) lines.push({ text: overlap, action: 'Change', fix: () => router.push(`/place?id=${place.id}`) });
+  if (overlap) lines.push({ text: overlap, action: 'Change', fix: () => router.push(placeHref(place.id)) });
   if (pickWatched(items, places).overflow.has(place.id)) {
     lines.push({ text: `A phone watches at most ${MAX_WATCHED} places at once; this one waits until others are done.` });
   }

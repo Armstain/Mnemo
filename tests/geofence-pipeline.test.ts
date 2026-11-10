@@ -30,6 +30,7 @@ const places = vi.hoisted(() => ({ list: [] as Place[] }));
 vi.mock('@react-native-async-storage/async-storage', () => ({
   default: { getItem: async (k: string) => storage.get(k) ?? null, setItem: async (k: string, v: string) => void storage.set(k, v) },
 }));
+vi.mock('expo-secure-store', () => ({}));
 // Rows are stored as JSON, like the SQLite `place` column: what's read back is what a restart sees.
 vi.mock('@/lib/db', () => ({
   getAllItems: async () => [...db.rows.values()].map((r) => JSON.parse(r)),

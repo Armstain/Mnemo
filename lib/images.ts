@@ -3,6 +3,7 @@ import { Directory, File, Paths } from 'expo-file-system';
 import { ImageManipulator, SaveFormat } from 'expo-image-manipulator';
 import * as ImagePicker from 'expo-image-picker';
 
+import { generateId } from '@/lib/ids';
 import type { Block, Entry } from '@/types/mnemo';
 
 // Photos in notes. Each is shrunk to at most 1600px on its long side
@@ -22,10 +23,9 @@ function imagesDir(): Directory {
 }
 
 function newName(): string {
-  return `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}.jpg`;
+  return `${generateId()}.jpg`;
 }
 
-/** Copies a picked or shared photo into the app, smaller. */
 export async function keepImage(sourceUri: string): Promise<ImageBlock> {
   let ref = await ImageManipulator.manipulate(sourceUri).renderAsync();
   const long = Math.max(ref.width, ref.height);
@@ -85,7 +85,6 @@ export function forgetImages(entries: Pick<Entry, 'blocks'>[]): void {
   }
 }
 
-/** "Clear all data". */
 export function deleteAllImages(): void {
   if (Platform.OS === 'web') return;
   try {

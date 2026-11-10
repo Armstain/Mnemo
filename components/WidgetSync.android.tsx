@@ -4,7 +4,7 @@ import Constants, { ExecutionEnvironment } from 'expo-constants';
 import { useMnemoStore } from '@/hooks/use-mnemo-store';
 import { resumeOrder } from '@/lib/when';
 import { getLaunchKey } from '@/lib/launch-key';
-import { renderCaptureWidget, type WidgetSnapshot } from '@/widgets/CaptureWidget';
+import { renderCaptureWidget, WIDGET_NAME, type WidgetSnapshot } from '@/widgets/CaptureWidget';
 import { writeWidgetSnapshot } from '@/widgets/snapshot';
 
 // Not in Expo Go (no native widget module there).
@@ -28,7 +28,7 @@ export function WidgetSync() {
       last.current = key;
       writeWidgetSnapshot(snapshot);
       widgetModule
-        .requestWidgetUpdate({ widgetName: 'Capture', renderWidget: () => renderCaptureWidget(snapshot) })
+        .requestWidgetUpdate({ widgetName: WIDGET_NAME, renderWidget: () => renderCaptureWidget(snapshot) })
         .catch(() => {
           // No widget on the home screen, or the launcher said no.
         });

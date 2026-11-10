@@ -3,9 +3,10 @@ import { Modal, Pressable, ScrollView, View } from 'react-native';
 import { TextInput } from '@/components/ui/TextInput';
 import { Text } from '@/components/ui/Text';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { haptic } from '@/utils/haptics';
+import { haptic } from '@/lib/haptics';
 
 import { IconButton } from '@/components/ui/Button';
+import { useSurfaceStyle } from '@/components/ui/Card';
 import { Icon } from '@/components/ui/Icon';
 import { ThreadList, ThreadRow } from '@/components/ui/ThreadRow';
 import { useMnemoStore } from '@/hooks/use-mnemo-store';
@@ -14,7 +15,7 @@ import { useThemeColors } from '@/hooks/use-theme';
 import { bm25Scored } from '@/lib/bm25';
 import { noFocusRing } from '@/utils/web';
 import { entryText } from '@/lib/threads';
-import type { Entry } from '@/types/mnemo';
+import { isOpenStatus, type Entry } from '@/types/mnemo';
 
 /**
  * Moves one entry to another thread, or into a thread of its own: the fix
@@ -32,13 +33,14 @@ export function MoveSheet({
   onMoved?: (threadId: string) => void;
 }) {
   const colors = useThemeColors();
+  const surface = useSurfaceStyle();
   const insets = useSafeAreaInsets();
   const { items, fileEntry, moveEntryToNewThread, getThread } = useMnemoStore();
   const { showToast } = useUndoToast();
   const [query, setQuery] = React.useState('');
 
   const open = items.filter(
-    (t) => t.id !== entry.threadId && !t.pending && (t.status === 'active' || t.status === 'paused'),
+    (t) => t.id !== entry.threadId && !t.pending && isOpenStatus(t.status),
   );
   const shown = query.trim()
     ? bm25Scored(query, open).map(({ doc }) => doc)
@@ -87,7 +89,7 @@ export function MoveSheet({
 
         <View
           className="flex-row items-center rounded-full px-4 h-11 mb-3"
-          style={{ backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border }}
+          style={surface}
         >
           <Icon name="search" size={16} color={colors.fgTertiary} />
           <TextInput

@@ -1,9 +1,9 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import * as SecureStore from 'expo-secure-store';
-import { AppState, Platform } from 'react-native';
-import type { MnemoItem, Category, ItemStatus, Entry } from '@/types/mnemo';
-import { migrateStoredData } from '@/utils/migration';
+import { AppState } from 'react-native';
+import { isOpenStatus, type MnemoItem, type Entry } from '@/types/mnemo';
+import { UNDO_WINDOW_MS, type CaptureStore, type FileResult, type NewEntry, type NewThread } from '@/types/store';
+import { deleteAllAudio } from '@/lib/voice-audio';
+import { clearLegacyStorage, readLegacyItems } from '@/lib/legacy-import';
 import {
   initDb,
   countItems,
@@ -20,25 +20,28 @@ import {
   saveThreadsAndEntries,
 } from '@/lib/db';
 import { mergeBackup, type BackupPayload, type MergeResult } from '@/lib/backup';
-import { deriveThreadCache, generateEntryId, newestFirst } from '@/lib/threads';
-import { deleteAllRecordings } from '@/lib/capture';
-import { syncReminderForItem, cancelReminder, cancelAllReminders } from '@/lib/reminders';
+import { deriveThreadCache, newestFirst } from '@/lib/threads';
+import { generateId } from '@/lib/ids';
+import { logError } from '@/lib/errors';
+import { syncReminderForItem, cancelReminder, cancelAllReminders, REMINDER_FIELDS } from '@/lib/reminders';
 import { removeAllPlaces } from '@/lib/place-store';
 import { afterReminder, nextOccurrence } from '@/lib/when';
 import { completeOccurrence } from '@/lib/places';
 import { finishModel } from '@/lib/done';
 import { foldReminders } from '@/lib/reminder-ownership';
 import { deleteAllImages, forgetImages, restoreImage } from '@/lib/images';
-import { UNDO_WINDOW_MS } from '@/hooks/use-undo-toast';
 import { focusIsIdle } from '@/lib/filing';
+import { storage } from '@/lib/storage';
 
-// Legacy keys: read once to migrate into SQLite (lib/db.ts), the source of truth.
-const STORAGE_KEY_V2 = 'mnemo-items-v2';
-const LEGACY_STORAGE_KEY = 'mnemo-work-contexts';
 /** The thread quick captures go to, if the person picked one: `{ id, since }`. */
 const FOCUS_KEY = 'mnemo-focus-thread';
 
-function parseFocus(raw: string | null): { id: string; since: number } | null {
+interface Focus {
+  id: string;
+  since: number;
+}
+
+function parseFocus(raw: string | null): Focus | null {
   if (!raw) return null;
   try {
     const parsed = JSON.parse(raw);
@@ -51,29 +54,19 @@ function parseFocus(raw: string | null): { id: string; since: number } | null {
   return { id: raw, since: Date.now() };
 }
 
-/** What callers supply for a new entry; the store fills in ids and times. */
-export type NewEntry = Omit<Entry, 'id' | 'threadId' | 'createdAt' | 'updatedAt' | 'filing'> & {
-  filing?: Entry['filing'];
-};
+function persist(work: Promise<unknown>, what: string): void {
+  work.catch((e) => {
+    console.error(`Failed to ${what}`, e);
+    logError(what, e);
+  });
+}
 
-/** What callers supply for a new thread; its text comes from its first entry. */
-export type NewThread = Omit<
-  MnemoItem,
-  'id' | 'createdAt' | 'updatedAt' | 'content' | 'checklistItems' | 'links' | 'type'
->;
-
-interface MnemoStoreType {
+interface MnemoStoreType extends CaptureStore {
   items: MnemoItem[];
   /** Every entry of every thread. Use `getEntries` for one thread's timeline. */
   entries: Entry[];
   isLoaded: boolean;
 
-  // Threads & entries
-  /** Starts a thread with its first entry. */
-  createThread: (thread: NewThread, entry: NewEntry) => { thread: MnemoItem; entry: Entry };
-  /** Adds an entry to an existing thread; the thread's next step and text follow it. */
-  addEntry: (threadId: string, entry: NewEntry) => Entry;
-  updateEntry: (id: string, updates: Partial<Omit<Entry, 'id' | 'threadId'>>) => void;
   /** Undoable removal; the thread goes too if this was its last entry. Returns whether it did. */
   deleteEntry: (id: string) => { threadRemoved: boolean };
   undoDeleteEntry: (id: string) => void;
@@ -81,36 +74,12 @@ interface MnemoStoreType {
   completeNextStep: (threadId: string) => () => void;
   /** One thread's entries, newest first. */
   getEntries: (threadId: string) => Entry[];
-  /** The thread as of right now, including changes made earlier in the same tick. */
-  getThread: (id: string) => MnemoItem | undefined;
-  /** Every thread and entry as of right now, for background work outside render. */
-  snapshot: () => { items: MnemoItem[]; entries: Entry[] };
-  /** Moves an entry into another thread; both threads' text and next step follow. */
-  moveEntry: (entryId: string, toThreadId: string, filing: Entry['filing']) => void;
-  /** Gives an entry a thread of its own (Undo of an auto-file, or "Keep separate"); a thread it empties hands over its reminders and goes. */
-  moveEntryToNewThread: (
-    entryId: string,
-    thread: Pick<MnemoItem, 'title' | 'category' | 'tags'>,
-  ) => MnemoItem | undefined;
-  /** Deletes a thread at once, without the undo window. For a thread left empty by a move. */
-  removeThreadNow: (id: string) => void;
-  /**
-   * Moves a note into another thread: the one way to connect notes by moving them. When it was
-   * its thread's last note, that thread goes and its reminders move along, or, if they would
-   * overwrite the other thread's, nothing moves and `reason` says why (lib/reminder-ownership.ts).
-   */
-  fileEntry: (entryId: string, toThreadId: string, filing: Entry['filing']) => FileResult;
 
-  // Focus: the thread quick captures go to while it's set (a trip, a project).
+  /** The thread quick captures go to while it's set (a trip, a project). */
   focusThreadId: string | null;
   setFocusThread: (id: string | null) => void;
-  /** Current focus, readable outside render. */
-  getFocusThreadId: () => string | null;
 
-  // CRUD
   addItem: (item: Omit<MnemoItem, 'id' | 'createdAt' | 'updatedAt'>) => MnemoItem;
-  /** Moves updatedAt unless `touch: false` (snoozes, undos that restore updatedAt). */
-  updateItem: (id: string, updates: Partial<MnemoItem>, opts?: { touch?: boolean }) => void;
   /** Removes from view immediately; only persisted as gone after UNDO_WINDOW_MS unless undoDelete() is called first. */
   deleteItem: (id: string) => void;
   /** Restores an item removed by deleteItem, as long as its grace window hasn't lapsed. */
@@ -122,9 +91,7 @@ interface MnemoStoreType {
   /** Merges a decrypted backup in (nothing here is deleted; newer copies win). */
   importBackup: (payload: BackupPayload) => Promise<Omit<MergeResult, 'items' | 'entries'>>;
 
-  // Status transitions
   resumeItem: (id: string) => void;
-  pauseItem: (id: string) => void;
   /**
    * Finishes the thread, once: a second call (double tap, two screens) does nothing and returns
    * null. A thread that is one thing to do (`finishModel` 'single') has its step ticked in the
@@ -136,125 +103,43 @@ interface MnemoStoreType {
    * repeat and the thread stay as they are. Returns an undo, or null when there's nothing to complete.
    */
   completePlaceOccurrence: (id: string) => (() => void) | null;
-  archiveItem: (id: string) => void;
   /** Undo for a status change: the thread's status and timestamps as they were in `prev`. */
   restoreItem: (prev: MnemoItem) => void;
 
-  // Filtered views
   getActiveItems: () => MnemoItem[];
-  getByCategory: (category: Category) => MnemoItem[];
-  getByStatus: (status: ItemStatus) => MnemoItem[];
-  getTodayItems: () => MnemoItem[];
-  getRecentlyCompleted: (limit?: number) => MnemoItem[];
 }
-
-export type FileResult =
-  | { moved: true; removedThreadId?: string; carried?: Partial<MnemoItem> }
-  | { moved: false; reason?: string };
-
-/** The slice of the store the capture pipeline (lib/capture.ts) works through. */
-export type CaptureStore = Pick<
-  MnemoStoreType,
-  | 'createThread'
-  | 'addEntry'
-  | 'updateEntry'
-  | 'updateItem'
-  | 'getThread'
-  | 'snapshot'
-  | 'moveEntry'
-  | 'moveEntryToNewThread'
-  | 'removeThreadNow'
-  | 'fileEntry'
-  | 'getFocusThreadId'
->;
 
 const StoreContext = createContext<MnemoStoreType | undefined>(undefined);
 
-function generateId(): string {
-  return `${Date.now().toString(36)}-${Math.random().toString(36).substring(2, 8)}`;
-}
-
-function isToday(timestamp: number): boolean {
-  const d = new Date(timestamp);
-  const now = new Date();
-  return (
-    d.getFullYear() === now.getFullYear() &&
-    d.getMonth() === now.getMonth() &&
-    d.getDate() === now.getDate()
-  );
-}
-
-async function readStorage(key: string): Promise<string | null> {
-  if (Platform.OS === 'web') {
-    return localStorage.getItem(key);
-  }
-  return AsyncStorage.getItem(key);
-}
-
-async function writeStorage(key: string, value: string): Promise<void> {
-  if (Platform.OS === 'web') {
-    localStorage.setItem(key, value);
-  } else {
-    await AsyncStorage.setItem(key, value);
-  }
-}
-
-async function removeStorage(key: string): Promise<void> {
-  if (Platform.OS === 'web') {
-    localStorage.removeItem(key);
-  } else {
-    await AsyncStorage.removeItem(key);
-  }
-}
-
-/** Read a legacy value that older builds kept in SecureStore (native only). */
-async function readSecureLegacy(key: string): Promise<string | null> {
-  if (Platform.OS === 'web') return null;
-  try {
-    return await SecureStore.getItemAsync(key);
-  } catch {
-    return null;
-  }
-}
-
-async function removeSecureLegacy(key: string): Promise<void> {
-  if (Platform.OS === 'web') return;
-  try {
-    await SecureStore.deleteItemAsync(key);
-  } catch {
-    // Nothing to clean up.
-  }
-}
-
-/** Pre-SQLite data in the old three-tier order, or `[]`. */
-async function readLegacyItems(): Promise<MnemoItem[]> {
-  const stored = await readStorage(STORAGE_KEY_V2);
-  if (stored) {
-    const parsed = JSON.parse(stored);
-    if (Array.isArray(parsed)) return parsed;
-  }
-
-  const secureV2 = await readSecureLegacy(STORAGE_KEY_V2);
-  if (secureV2) {
-    const parsed = JSON.parse(secureV2);
-    if (Array.isArray(parsed)) return parsed;
-  }
-
-  const legacy =
-    (await readStorage(LEGACY_STORAGE_KEY)) ?? (await readSecureLegacy(LEGACY_STORAGE_KEY));
-  if (legacy) {
-    const parsed = JSON.parse(legacy);
-    if (Array.isArray(parsed)) return migrateStoredData(parsed);
-  }
-
-  return [];
-}
-
-async function clearLegacyStorage(): Promise<void> {
-  await removeStorage(STORAGE_KEY_V2);
-  await removeStorage(LEGACY_STORAGE_KEY);
-  await removeSecureLegacy(STORAGE_KEY_V2);
-  await removeSecureLegacy(LEGACY_STORAGE_KEY);
+function createHeld<T>(onExpire: (id: string, value: T) => void) {
+  const values = new Map<string, T>();
+  const timers = new Map<string, ReturnType<typeof setTimeout>>();
+  return {
+    hold(id: string, value: T) {
+      if (values.has(id)) return;
+      values.set(id, value);
+      timers.set(
+        id,
+        setTimeout(() => {
+          values.delete(id);
+          timers.delete(id);
+          onExpire(id, value);
+        }, UNDO_WINDOW_MS),
+      );
+    },
+    take(id: string): T | undefined {
+      clearTimeout(timers.get(id));
+      timers.delete(id);
+      const value = values.get(id);
+      values.delete(id);
+      return value;
+    },
+    clear() {
+      timers.forEach(clearTimeout);
+      timers.clear();
+      values.clear();
+    },
+  };
 }
 
 export function MnemoStoreProvider({ children }: { children: React.ReactNode }) {
@@ -264,33 +149,29 @@ export function MnemoStoreProvider({ children }: { children: React.ReactNode }) 
   const [items, setItems] = useState<MnemoItem[]>([]);
   const [entries, setEntries] = useState<Entry[]>([]);
   const [isLoaded, setIsLoaded] = useState(false);
-  const focusRef = useRef<string | null>(null);
-  const focusSinceRef = useRef(0);
+  const focusRef = useRef<Focus | null>(null);
   const [focusThreadId, setFocusState] = useState<string | null>(null);
 
   const setFocusThread = useCallback((id: string | null) => {
-    focusRef.current = id;
-    focusSinceRef.current = id ? Date.now() : 0;
+    const focus = id ? { id, since: Date.now() } : null;
+    focusRef.current = focus;
     setFocusState(id);
-    (id
-      ? writeStorage(FOCUS_KEY, JSON.stringify({ id, since: focusSinceRef.current }))
-      : removeStorage(FOCUS_KEY)
-    ).catch(() => {
+    (focus ? storage.set(FOCUS_KEY, JSON.stringify(focus)) : storage.remove(FOCUS_KEY)).catch(() => {
       // Losing the focus on restart is harmless; it's one tap to set again.
     });
   }, []);
 
   /** Drops focus once the thread has been idle for days. Returns the focus still current. */
   const expireIdleFocus = useCallback((): string | null => {
-    const id = focusRef.current;
-    if (!id) return null;
-    const thread = itemsRef.current.find((i) => i.id === id);
-    const open = thread && (thread.status === 'active' || thread.status === 'paused');
-    if (!open || focusIsIdle({ threadId: id, since: focusSinceRef.current, entries: entriesRef.current })) {
+    const focus = focusRef.current;
+    if (!focus) return null;
+    const thread = itemsRef.current.find((i) => i.id === focus.id);
+    const open = thread && isOpenStatus(thread.status);
+    if (!open || focusIsIdle({ threadId: focus.id, since: focus.since, entries: entriesRef.current })) {
       setFocusThread(null);
       return null;
     }
-    return id;
+    return focus.id;
   }, [setFocusThread]);
 
   const commitItems = (next: MnemoItem[]) => {
@@ -333,15 +214,15 @@ export function MnemoStoreProvider({ children }: { children: React.ReactNode }) 
         });
         commitItems(loaded);
         commitEntries(await getAllEntries());
-        const focus = parseFocus(await readStorage(FOCUS_KEY));
+        const focus = parseFocus(await storage.get(FOCUS_KEY));
         if (focus) {
-          focusRef.current = focus.id;
-          focusSinceRef.current = focus.since;
+          focusRef.current = focus;
           setFocusState(focus.id);
           expireIdleFocus();
         }
       } catch (e) {
         console.error('Failed to load items', e);
+        logError('load items', e);
       } finally {
         setIsLoaded(true);
       }
@@ -356,8 +237,6 @@ export function MnemoStoreProvider({ children }: { children: React.ReactNode }) 
     return () => sub.remove();
   }, [expireIdleFocus]);
 
-
-  // ─── CRUD ───────────────────────────────────────────────────
   const addItem = useCallback(
     (item: Omit<MnemoItem, 'id' | 'createdAt' | 'updatedAt'>): MnemoItem => {
       const now = Date.now();
@@ -368,7 +247,7 @@ export function MnemoStoreProvider({ children }: { children: React.ReactNode }) 
         updatedAt: now,
       };
       commitItems([newItem, ...itemsRef.current]);
-      insertItem(newItem).catch((e) => console.error('Failed to persist new item', e));
+      persist(insertItem(newItem), 'persist new item');
       syncReminderForItem(newItem);
       return newItem;
     },
@@ -381,22 +260,21 @@ export function MnemoStoreProvider({ children }: { children: React.ReactNode }) 
     commitItems(
       itemsRef.current.map((item) => (item.id === id ? { ...item, ...updates, updatedAt } : item)),
     );
-    updatePartialItem(id, { ...updates, updatedAt }).catch((e) =>
-      console.error('Failed to persist item update', e),
-    );
+    persist(updatePartialItem(id, { ...updates, updatedAt }), 'persist item update');
 
-    if (
-      id === focusRef.current &&
-      (updates.status === 'completed' || updates.status === 'archived')
-    ) {
+    if (id === focusRef.current?.id && updates.status && !isOpenStatus(updates.status)) {
       setFocusThread(null);
     }
 
-    // Only reschedule when a field the reminder depends on changed.
-    if (['dueDate', 'status', 'title', 'repeat', 'nextStep', 'whereLeftOff', 'laterSteps'].some((k) => k in updates)) {
+    if (REMINDER_FIELDS.some((k) => k in updates)) {
       if (current) syncReminderForItem({ ...current, ...updates });
     }
   }, [setFocusThread]);
+
+  const saveEntry = (next: Entry, what: string) => {
+    commitEntries(entriesRef.current.map((e) => (e.id === next.id ? next : e)));
+    persist(insertEntry(next), what);
+  };
 
   // Derived text, left-off and next step follow entries unless pinned.
   const syncThreadFromEntries = useCallback(
@@ -424,13 +302,13 @@ export function MnemoStoreProvider({ children }: { children: React.ReactNode }) 
       const entry: Entry = {
         filing: { by: 'user' },
         ...input,
-        id: generateEntryId(),
+        id: generateId('e'),
         threadId,
         createdAt: now,
         updatedAt: now,
       };
       commitEntries([...entriesRef.current, entry]);
-      insertEntry(entry).catch((e) => console.error('Failed to persist new entry', e));
+      persist(insertEntry(entry), 'persist new entry');
       syncThreadFromEntries(threadId);
       return entry;
     },
@@ -441,55 +319,75 @@ export function MnemoStoreProvider({ children }: { children: React.ReactNode }) 
     (id: string, updates: Partial<Omit<Entry, 'id' | 'threadId'>>) => {
       const current = entriesRef.current.find((e) => e.id === id);
       if (!current) return;
-      const next: Entry = { ...current, ...updates, updatedAt: Date.now() };
-      commitEntries(entriesRef.current.map((e) => (e.id === id ? next : e)));
-      insertEntry(next).catch((e) => console.error('Failed to persist entry update', e));
+      saveEntry({ ...current, ...updates, updatedAt: Date.now() }, 'persist entry update');
       syncThreadFromEntries(current.threadId);
     },
     [syncThreadFromEntries],
   );
 
-  // deleteItem and undoDelete are defined further down, so reached through refs.
-  const deleteItemRef = useRef<((id: string) => void) | null>(null);
-  const undoDeleteRef = useRef<((id: string) => void) | null>(null);
-  const removedEntriesRef = useRef<Record<string, { entry: Entry; threadRemoved: boolean }>>({});
-  const entryTimersRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
+  // Deleted but still undoable: out of view and out of every read at once, only dropped from disk when the
+  // window lapses. If the app dies mid-window the row survives and the next load restores it (a safe failure).
+  const [heldThreads] = useState(() =>
+    createHeld<{ item?: MnemoItem; entries: Entry[] }>((id, { entries: gone }) => {
+      forgetImages(gone);
+      persist(deleteItemRow(id), 'delete thread');
+    }),
+  );
+  const [heldEntries] = useState(() =>
+    createHeld<{ entry: Entry; threadRemoved: boolean }>((id, { entry }) => {
+      forgetImages([entry]);
+      persist(deleteEntryRow(id), 'delete entry');
+    }),
+  );
+
+  const deleteItem = useCallback(
+    (id: string) => {
+      const item = itemsRef.current.find((i) => i.id === id);
+      const entriesOfThread = entriesRef.current.filter((e) => e.threadId === id);
+      if (focusRef.current?.id === id) setFocusThread(null);
+      commitItems(itemsRef.current.filter((i) => i.id !== id));
+      commitEntries(entriesRef.current.filter((e) => e.threadId !== id));
+      cancelReminder(id);
+      heldThreads.hold(id, { item, entries: entriesOfThread });
+    },
+    [heldThreads, setFocusThread],
+  );
+
+  const undoDelete = useCallback(
+    (id: string) => {
+      const held = heldThreads.take(id);
+      if (!held?.item) return;
+      if (!itemsRef.current.some((i) => i.id === id)) commitItems([held.item, ...itemsRef.current]);
+      const back = held.entries.filter((e) => !entriesRef.current.some((x) => x.id === e.id));
+      if (back.length > 0) commitEntries([...entriesRef.current, ...back]);
+      syncReminderForItem(held.item);
+    },
+    [heldThreads],
+  );
 
   const deleteEntry = useCallback(
     (id: string) => {
       const current = entriesRef.current.find((e) => e.id === id);
       if (!current) return { threadRemoved: false };
       const lastOne = !entriesRef.current.some((e) => e.id !== id && e.threadId === current.threadId);
-      removedEntriesRef.current[id] = { entry: current, threadRemoved: lastOne };
       commitEntries(entriesRef.current.filter((e) => e.id !== id));
-      if (lastOne) {
-        deleteItemRef.current?.(current.threadId);
-      } else {
-        syncThreadFromEntries(current.threadId);
-      }
-      entryTimersRef.current[id] = setTimeout(() => {
-        delete removedEntriesRef.current[id];
-        delete entryTimersRef.current[id];
-        forgetImages([current]);
-        deleteEntryRow(id).catch((e) => console.error('Failed to delete entry', e));
-      }, UNDO_WINDOW_MS);
+      if (lastOne) deleteItem(current.threadId);
+      else syncThreadFromEntries(current.threadId);
+      heldEntries.hold(id, { entry: current, threadRemoved: lastOne });
       return { threadRemoved: lastOne };
     },
-    [syncThreadFromEntries],
+    [deleteItem, heldEntries, syncThreadFromEntries],
   );
 
   const undoDeleteEntry = useCallback(
     (id: string) => {
-      const removed = removedEntriesRef.current[id];
+      const removed = heldEntries.take(id);
       if (!removed) return;
-      clearTimeout(entryTimersRef.current[id]);
-      delete entryTimersRef.current[id];
-      delete removedEntriesRef.current[id];
-      if (removed.threadRemoved) undoDeleteRef.current?.(removed.entry.threadId);
+      if (removed.threadRemoved) undoDelete(removed.entry.threadId);
       if (!entriesRef.current.some((e) => e.id === id)) commitEntries([...entriesRef.current, removed.entry]);
       syncThreadFromEntries(removed.entry.threadId);
     },
-    [syncThreadFromEntries],
+    [heldEntries, syncThreadFromEntries, undoDelete],
   );
 
   const completeNextStep = useCallback(
@@ -499,11 +397,7 @@ export function MnemoStoreProvider({ children }: { children: React.ReactNode }) 
       const step = thread.nextStep;
       const before = { nextStep: thread.nextStep, pinned: thread.pinned, dueDate: thread.dueDate, laterSteps: thread.laterSteps };
       const done = entriesRef.current.filter((e) => e.threadId === threadId && e.nextStep === step && !e.stepDone);
-      for (const e of done) {
-        const next = { ...e, stepDone: true, updatedAt: Date.now() };
-        commitEntries(entriesRef.current.map((x) => (x.id === e.id ? next : x)));
-        insertEntry(next).catch((err) => console.error('Failed to persist step done', err));
-      }
+      for (const e of done) saveEntry({ ...e, stepDone: true, updatedAt: Date.now() }, 'persist step done');
       updateItem(
         threadId,
         thread.repeat ? { pinned: { ...thread.pinned, nextStep: false }, nextStep: undefined } : afterReminder(thread),
@@ -513,9 +407,7 @@ export function MnemoStoreProvider({ children }: { children: React.ReactNode }) 
         for (const e of done) {
           const current = entriesRef.current.find((x) => x.id === e.id);
           if (!current) continue;
-          const back = { ...current, stepDone: undefined, updatedAt: Date.now() };
-          commitEntries(entriesRef.current.map((x) => (x.id === e.id ? back : x)));
-          insertEntry(back).catch((err) => console.error('Failed to persist step undo', err));
+          saveEntry({ ...current, stepDone: undefined, updatedAt: Date.now() }, 'persist step undo');
         }
         updateItem(threadId, before);
       };
@@ -551,16 +443,12 @@ export function MnemoStoreProvider({ children }: { children: React.ReactNode }) 
     [],
   );
 
-  const getFocusThreadId = useCallback(() => expireIdleFocus(), [expireIdleFocus]);
-
   const moveEntry = useCallback(
     (entryId: string, toThreadId: string, filing: Entry['filing']) => {
       const current = entriesRef.current.find((e) => e.id === entryId);
       if (!current || current.threadId === toThreadId) return;
       if (!itemsRef.current.some((i) => i.id === toThreadId)) return;
-      const next: Entry = { ...current, threadId: toThreadId, filing, updatedAt: Date.now() };
-      commitEntries(entriesRef.current.map((e) => (e.id === entryId ? next : e)));
-      insertEntry(next).catch((e) => console.error('Failed to persist entry move', e));
+      saveEntry({ ...current, threadId: toThreadId, filing, updatedAt: Date.now() }, 'persist entry move');
       syncThreadFromEntries(current.threadId);
       syncThreadFromEntries(toThreadId);
     },
@@ -572,8 +460,8 @@ export function MnemoStoreProvider({ children }: { children: React.ReactNode }) 
       commitItems(itemsRef.current.filter((i) => i.id !== id));
       commitEntries(entriesRef.current.filter((e) => e.threadId !== id));
       cancelReminder(id);
-      if (focusRef.current === id) setFocusThread(null);
-      deleteItemRow(id).catch((e) => console.error('Failed to delete thread', e));
+      if (focusRef.current?.id === id) setFocusThread(null);
+      persist(deleteItemRow(id), 'delete thread');
     },
     [setFocusThread],
   );
@@ -623,72 +511,26 @@ export function MnemoStoreProvider({ children }: { children: React.ReactNode }) 
     [entriesByThread],
   );
 
-  // If the app dies mid-window the row survives in the DB and reload restores it (safe failure).
-  const removedItemsRef = useRef<Record<string, MnemoItem>>({});
-  deleteItemRef.current = (id: string) => deleteItemImpl(id);
-  undoDeleteRef.current = (id: string) => undoDeleteImpl(id);
-  const deleteTimersRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
-
-  function deleteItemImpl(id: string) {
-    const found = itemsRef.current.find((item) => item.id === id);
-    if (found) removedItemsRef.current[id] = found;
-    if (focusRef.current === id) setFocusThread(null);
-    commitItems(itemsRef.current.filter((item) => item.id !== id));
-    // undoDelete reschedules it.
-    cancelReminder(id);
-
-    deleteTimersRef.current[id] = setTimeout(() => {
-      delete removedItemsRef.current[id];
-      delete deleteTimersRef.current[id];
-      forgetImages(entriesRef.current.filter((e) => e.threadId === id));
-      commitEntries(entriesRef.current.filter((e) => e.threadId !== id));
-      deleteItemRow(id).catch((e) => console.error('Failed to persist item delete', e));
-    }, UNDO_WINDOW_MS);
-  }
-
-  function undoDeleteImpl(id: string) {
-    const timer = deleteTimersRef.current[id];
-    if (timer) clearTimeout(timer);
-    delete deleteTimersRef.current[id];
-
-    const restored = removedItemsRef.current[id];
-    if (!restored) return;
-    delete removedItemsRef.current[id];
-
-    if (!itemsRef.current.some((item) => item.id === id)) {
-      commitItems([restored, ...itemsRef.current]);
-    }
-    syncReminderForItem(restored);
-  }
-
-  const deleteItem = useCallback((id: string) => deleteItemRef.current?.(id), []);
-  const undoDelete = useCallback((id: string) => undoDeleteRef.current?.(id), []);
-
   const clearAllData = useCallback(async () => {
-    // Clear pending undo timers first so none fires after the wipe.
-    Object.values(deleteTimersRef.current).forEach(clearTimeout);
-    deleteTimersRef.current = {};
-    removedItemsRef.current = {};
-    Object.values(entryTimersRef.current).forEach(clearTimeout);
-    entryTimersRef.current = {};
-    removedEntriesRef.current = {};
+    heldThreads.clear();
+    heldEntries.clear();
 
     await deleteAllItems();
-    deleteAllRecordings();
+    deleteAllAudio();
     deleteAllImages();
     await cancelAllReminders();
     await removeAllPlaces();
     commitItems([]);
     commitEntries([]);
     setFocusThread(null);
-  }, [setFocusThread]);
+  }, [heldEntries, heldThreads, setFocusThread]);
 
   const exportBackup = useCallback(
     (): BackupPayload => ({
       app: 'mnemo',
       exportedAt: Date.now(),
-      items: itemsRef.current.filter((i) => !removedItemsRef.current[i.id]),
-      entries: entriesRef.current.filter((e) => !removedItemsRef.current[e.threadId]),
+      items: itemsRef.current,
+      entries: entriesRef.current,
     }),
     [],
   );
@@ -717,9 +559,10 @@ export function MnemoStoreProvider({ children }: { children: React.ReactNode }) 
     [updateItem],
   );
 
-  const pauseItem = useCallback(
-    (id: string) => {
-      updateItem(id, { status: 'paused' });
+  const restoreItem = useCallback(
+    (prev: MnemoItem) => {
+      const { status, completedAt, quietUntil, lastResumedAt, updatedAt } = prev;
+      updateItem(prev.id, { status, completedAt, quietUntil, lastResumedAt, updatedAt }, { touch: false });
     },
     [updateItem],
   );
@@ -736,12 +579,11 @@ export function MnemoStoreProvider({ children }: { children: React.ReactNode }) 
         before,
         undo: () => {
           undoStep?.();
-          const { status, completedAt, quietUntil, lastResumedAt, updatedAt } = before;
-          updateItem(id, { status, completedAt, quietUntil, lastResumedAt, updatedAt }, { touch: false });
+          restoreItem(before);
         },
       };
     },
-    [updateItem, completeNextStep],
+    [updateItem, completeNextStep, restoreItem],
   );
 
   const completePlaceOccurrence = useCallback(
@@ -760,59 +602,11 @@ export function MnemoStoreProvider({ children }: { children: React.ReactNode }) 
     [updateItem],
   );
 
-  const archiveItem = useCallback(
-    (id: string) => {
-      updateItem(id, { status: 'archived' });
-    },
-    [updateItem],
-  );
-
-  const restoreItem = useCallback(
-    (prev: MnemoItem) => {
-      const { status, completedAt, quietUntil, lastResumedAt, updatedAt } = prev;
-      updateItem(prev.id, { status, completedAt, quietUntil, lastResumedAt, updatedAt }, { touch: false });
-    },
-    [updateItem],
-  );
-
   const getActiveItems = useCallback(
     () =>
       items
-        .filter((i) => i.status === 'active' || i.status === 'paused')
+        .filter((i) => isOpenStatus(i.status))
         .sort((a, b) => b.updatedAt - a.updatedAt),
-    [items],
-  );
-
-  const getByCategory = useCallback(
-    (category: Category) => items.filter((i) => i.category === category),
-    [items],
-  );
-
-  const getByStatus = useCallback(
-    (status: ItemStatus) => items.filter((i) => i.status === status),
-    [items],
-  );
-
-  const getTodayItems = useCallback(
-    () =>
-      items
-        .filter(
-          (i) =>
-            i.dueDate &&
-            isToday(i.dueDate) &&
-            i.status !== 'completed' &&
-            i.status !== 'archived',
-        )
-        .sort((a, b) => (a.dueDate ?? 0) - (b.dueDate ?? 0)),
-    [items],
-  );
-
-  const getRecentlyCompleted = useCallback(
-    (limit = 3) =>
-      items
-        .filter((i) => i.status === 'completed')
-        .sort((a, b) => b.updatedAt - a.updatedAt)
-        .slice(0, limit),
     [items],
   );
 
@@ -834,7 +628,7 @@ export function MnemoStoreProvider({ children }: { children: React.ReactNode }) 
       fileEntry,
       focusThreadId,
       setFocusThread,
-      getFocusThreadId,
+      getFocusThreadId: expireIdleFocus,
       addItem,
       updateItem,
       deleteItem,
@@ -845,16 +639,10 @@ export function MnemoStoreProvider({ children }: { children: React.ReactNode }) 
       exportBackup,
       importBackup,
       resumeItem,
-      pauseItem,
       completeItem,
       completePlaceOccurrence,
-      archiveItem,
       restoreItem,
       getActiveItems,
-      getByCategory,
-      getByStatus,
-      getTodayItems,
-      getRecentlyCompleted,
     }),
     [
       items,
@@ -873,7 +661,7 @@ export function MnemoStoreProvider({ children }: { children: React.ReactNode }) 
       fileEntry,
       focusThreadId,
       setFocusThread,
-      getFocusThreadId,
+      expireIdleFocus,
       addItem,
       updateItem,
       deleteItem,
@@ -884,16 +672,10 @@ export function MnemoStoreProvider({ children }: { children: React.ReactNode }) 
       exportBackup,
       importBackup,
       resumeItem,
-      pauseItem,
       completeItem,
       completePlaceOccurrence,
-      archiveItem,
       restoreItem,
       getActiveItems,
-      getByCategory,
-      getByStatus,
-      getTodayItems,
-      getRecentlyCompleted,
     ],
   );
 

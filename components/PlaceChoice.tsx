@@ -6,6 +6,7 @@ import { WarningList } from '@/components/PlaceWarnings';
 import { Pill } from '@/components/ui/Pill';
 import { useThemeColors } from '@/hooks/use-theme';
 import { usePlaces } from '@/lib/place-store';
+import { placeHref } from '@/lib/routes';
 import { formatDays, overlaps, overlapText, repeatDays, weekOrder } from '@/lib/places';
 import type { PlaceReminder, PlaceRepeat } from '@/types/mnemo';
 
@@ -45,7 +46,7 @@ export function PlaceChoice({
   const overlap = chosen ? overlapText(overlaps(chosen, places)) : null;
   const lines: Line[] = [
     ...(value && !chosen ? [{ text: "That place was removed, so this can't go off." }] : []),
-    ...(overlap && chosen ? [{ text: overlap, action: 'Change', fix: () => router.push(`/place?id=${chosen.id}`) }] : []),
+    ...(overlap && chosen ? [{ text: overlap, action: 'Change', fix: () => router.push(placeHref(chosen.id)) }] : []),
     ...(value ? more : []),
   ];
 
@@ -58,9 +59,6 @@ export function PlaceChoice({
             <Pill
               key={p.id}
               tone={colors.accent}
-              size="md"
-              dot={false}
-              outline={!selected}
               selected={selected}
               onPress={() => onChange(selected ? undefined : { placeId: p.id, on: value?.on ?? 'arrive', repeat: value?.repeat, days: value?.days })}
             >
@@ -68,7 +66,7 @@ export function PlaceChoice({
             </Pill>
           );
         })}
-        <Pill tone={colors.fgSecondary} size="md" dot={false} outline onPress={() => router.push('/place')}>
+        <Pill tone={colors.fgSecondary} dot={false} outline onPress={() => router.push(placeHref())}>
           + Add a place
         </Pill>
       </View>
@@ -78,9 +76,6 @@ export function PlaceChoice({
             <Pill
               key={on}
               tone={colors.fgSecondary}
-              size="md"
-              dot={false}
-              outline={value.on !== on}
               selected={value.on === on}
               onPress={() => value.on !== on && onChange({ ...value, on })}
             >
@@ -97,9 +92,6 @@ export function PlaceChoice({
               <Pill
                 key={key}
                 tone={colors.fgSecondary}
-                size="md"
-                dot={false}
-                outline={!selected}
                 selected={selected}
                 onPress={() => {
                   if (selected) return;
@@ -125,9 +117,6 @@ export function PlaceChoice({
               <Pill
                 key={d}
                 tone={colors.accent}
-                size="md"
-                dot={false}
-                outline={!on}
                 selected={on}
                 onPress={() => {
                   // At least one day: an empty set would mean a reminder that never rings.

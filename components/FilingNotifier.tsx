@@ -1,39 +1,34 @@
 import { useEffect, useRef } from 'react';
-import { router, useGlobalSearchParams, usePathname } from 'expo-router';
-import { haptic } from '@/utils/haptics';
+import { router } from 'expo-router';
+import { haptic } from '@/lib/haptics';
 
 import { useMnemoStore } from '@/hooks/use-mnemo-store';
 import { useUndoToast } from '@/hooks/use-undo-toast';
+import { useViewingThreadId } from '@/hooks/use-viewing-thread';
 import { Platform } from 'react-native';
-import { onReminderSet } from '@/lib/capture';
-import { onFiling } from '@/lib/filing';
-import { hasNudgePermission, requestNudgePermission } from '@/lib/nudges';
+import { onFiling, onReminderSet } from '@/lib/filing';
+import { hasNotificationPermission } from '@/lib/notifications';
+import { requestNudgePermission } from '@/lib/nudges';
 import { formatReminder } from '@/lib/when';
+import { threadHref } from '@/lib/routes';
 
 const FILED_TOAST_MS = 6000;
 
-/**
- * Invisible, mounted at the app root. When the background pipeline files a
- * capture (lib/filing.ts), says where it went with a toast that can undo
- * it, and follows the entry if its old thread was the one on screen.
- */
+/** Mounted at the app root: says where a filed capture went, with an Undo, and follows it if its old thread is on screen. */
 export function FilingNotifier() {
   const store = useMnemoStore();
   const { showToast } = useUndoToast();
-  const pathname = usePathname();
-  const { id } = useGlobalSearchParams<{ id?: string }>();
+  const viewingId = useViewingThreadId();
 
   // Read inside the listener, which outlives renders.
   const storeRef = useRef(store);
   storeRef.current = store;
-  const routeRef = useRef({ pathname, id });
-  routeRef.current = { pathname, id };
+  const viewingRef = useRef(viewingId);
+  viewingRef.current = viewingId;
 
   useEffect(() => {
-    const viewing = (threadId: string) =>
-      routeRef.current.pathname.includes('context') && routeRef.current.id === threadId;
-    const open = (threadId: string) => router.replace(`/(tabs)/context?id=${threadId}`);
-    /** Moves a note back or on; says why when that would have cost a reminder (the store's fileEntry). */
+    const viewing = (threadId: string) => viewingRef.current === threadId;
+    const open = (threadId: string) => router.replace(threadHref(threadId));
     const move = (entryId: string, toThreadId: string): boolean => {
       const filed = storeRef.current.fileEntry(entryId, toThreadId, { by: 'user' });
       if (!filed.moved && filed.reason) showToast({ message: filed.reason });
@@ -44,7 +39,7 @@ export function FilingNotifier() {
     // notifications are off, that it can't arrive yet.
     const stopReminders = onReminderSet(async (event) => {
       const s = storeRef.current;
-      const allowed = Platform.OS === 'web' || (await hasNudgePermission());
+      const allowed = Platform.OS === 'web' || (await hasNotificationPermission());
       const when = formatReminder(event.at);
       if (!allowed) {
         showToast({

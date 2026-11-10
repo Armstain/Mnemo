@@ -1,6 +1,6 @@
-import { useSyncExternalStore } from 'react';
-import { Platform } from 'react-native';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import type { PlaceSound } from '@/lib/place-sound';
+import { storage } from '@/lib/storage';
+import { createValueStore } from '@/lib/value-store';
 
 // App-wide choices the person makes once (in onboarding or Settings) and
 // that the capture pipeline reads outside React. One small store, read
@@ -38,7 +38,7 @@ export interface Preferences {
   /** Vibration feedback on taps and results (Settings → Appearance). On unless turned off. */
   haptics?: boolean;
   /** What a place reminder sounds like (lib/place-sound.ts). */
-  placeSound?: 'chime' | 'bells' | 'rise' | 'default';
+  placeSound?: PlaceSound;
 }
 
 /** Long enough for most first names, short enough for the greeting to fit. */
@@ -49,6 +49,7 @@ export function cleanName(raw: string): string {
 }
 
 const KEY = 'mnemo-preferences';
+
 function phoneLanguage(): SpeechLang {
   try {
     return Intl.DateTimeFormat().resolvedOptions().locale.toLowerCase().startsWith('bn') ? 'bn-BD' : 'en-US';
@@ -59,20 +60,12 @@ function phoneLanguage(): SpeechLang {
 
 const DEFAULTS: Preferences = { aiMode: 'unset', speechLang: phoneLanguage(), name: '' };
 
-let current: Preferences = DEFAULTS;
-const listeners = new Set<() => void>();
+const store = createValueStore<Preferences>(DEFAULTS);
 
-async function read(): Promise<string | null> {
-  if (Platform.OS === 'web') return typeof localStorage === 'undefined' ? null : localStorage.getItem(KEY);
-  return AsyncStorage.getItem(KEY);
-}
-
-async function write(value: string): Promise<void> {
-  if (Platform.OS === 'web') {
-    if (typeof localStorage !== 'undefined') localStorage.setItem(KEY, value);
-    return;
-  }
-  await AsyncStorage.setItem(KEY, value);
+/** What is saved on disk, for background tasks that run before `loadPreferences`. */
+export async function readSavedPreferences(): Promise<Partial<Preferences>> {
+  const raw = await storage.get(KEY);
+  return raw ? (JSON.parse(raw) as Partial<Preferences>) : {};
 }
 
 /**
@@ -80,40 +73,31 @@ async function write(value: string): Promise<void> {
  * before this setting existed keep using AI if they had already added a key.
  */
 export async function loadPreferences(hasKey: boolean): Promise<Preferences> {
+  let loaded: Preferences;
   try {
-    const raw = await read();
-    const saved = raw ? (JSON.parse(raw) as Partial<Preferences>) : {};
-    current = { ...DEFAULTS, ...saved };
-    current.name = cleanName(typeof current.name === 'string' ? current.name : '');
-    if (current.aiMode === 'unset' && hasKey) current.aiMode = 'gemini';
+    loaded = { ...DEFAULTS, ...(await readSavedPreferences()) };
+    loaded.name = cleanName(typeof loaded.name === 'string' ? loaded.name : '');
+    if (loaded.aiMode === 'unset' && hasKey) loaded.aiMode = 'gemini';
   } catch {
-    current = { ...DEFAULTS, aiMode: hasKey ? 'gemini' : 'unset' };
+    loaded = { ...DEFAULTS, aiMode: hasKey ? 'gemini' : 'unset' };
   }
-  listeners.forEach((l) => l());
-  return current;
+  store.set(loaded);
+  return loaded;
 }
 
-export function getPreferences(): Preferences {
-  return current;
-}
+export const getPreferences = (): Preferences => store.get();
 
 export function setPreferences(update: Partial<Preferences>): void {
+  const current = store.get();
   // Turning Gemini on: what was written until now was written offline.
   if (update.aiMode === 'gemini' && current.aiMode !== 'gemini') {
     update = { earlierNotesBefore: Date.now(), earlierNotesAsked: false, ...update };
   }
-  current = { ...current, ...update };
-  listeners.forEach((l) => l());
-  write(JSON.stringify(current)).catch(() => {
+  const next = { ...current, ...update };
+  store.set(next);
+  storage.set(KEY, JSON.stringify(next)).catch(() => {
     // Kept in memory for this session; saved again on the next change.
   });
 }
 
-function subscribe(listener: () => void) {
-  listeners.add(listener);
-  return () => listeners.delete(listener);
-}
-
-export function usePreferences(): Preferences {
-  return useSyncExternalStore(subscribe, () => current, () => current);
-}
+export const usePreferences = (): Preferences => store.useValue();

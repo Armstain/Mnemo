@@ -4,7 +4,7 @@ import { Text } from '@/components/ui/Text';
 import { MotiView } from 'moti';
 import { Icon } from '@/components/ui/Icon';
 import { useThemeColors } from '@/hooks/use-theme';
-import { useEnter } from '@/utils/motion';
+import { useEnter } from '@/hooks/use-enter';
 
 export default function NotFoundScreen() {
   const enter = useEnter();

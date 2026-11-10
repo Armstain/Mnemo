@@ -1,5 +1,4 @@
-import { tokenize } from '@/lib/bm25';
-import { telling } from '@/lib/filing';
+import { B, idf as idfOf, K1, rrfScore, telling, termCounts, tokenize } from '@/lib/bm25';
 import { entryText } from '@/lib/threads';
 import { dot } from '@/lib/vector-math';
 import type { Entry, MnemoItem } from '@/types/mnemo';
@@ -12,7 +11,6 @@ import { nfc } from '@/utils/text';
 // ranked again on how well they cover the question; near-copies are dropped.
 // Nothing here makes a request: vectors are handed in by the caller.
 
-/** One passage of one entry. A short entry is one passage. */
 export interface Chunk {
   /** `${entryId}#${n}`. */
   id: string;
@@ -20,16 +18,14 @@ export interface Chunk {
   hash: string;
   threadId: string;
   entryId: string;
-  /** The thread's title. */
   title: string;
   text: string;
   createdAt: number;
 }
 
 /** About a paragraph: long enough to hold a thought, short enough that its vector is about one thing. */
-export const CHUNK_CHARS = 700;
+const CHUNK_CHARS = 700;
 
-/** Cuts text at paragraphs, then sentences, into pieces no longer than `max`. */
 export function splitText(text: string, max = CHUNK_CHARS): string[] {
   const clean = text.replace(/\r/g, '').trim();
   if (clean.length <= max) return clean ? [clean] : [];
@@ -87,9 +83,7 @@ function piecesOf(entry: Entry): Piece[] {
   if (cached) return cached;
   const pieces = splitText(entryText(entry)).map((text) => {
     const tokens = tokenize(text);
-    const tf = new Map<string, number>();
-    for (const t of tokens) tf.set(t, (tf.get(t) ?? 0) + 1);
-    return { text, hash: textHash(text), tokens, tf };
+    return { text, hash: textHash(text), tokens, tf: termCounts(tokens) };
   });
   pieceCache.set(entry, pieces);
   return pieces;
@@ -129,7 +123,6 @@ const ASKING = new Set(
   ).split(' '),
 );
 
-/** The words of a question that could be found in a note. */
 export function queryTerms(query: string): string[] {
   const all = [...new Set(tokenize(query))];
   const kept = [...telling(all)].filter((t) => !ASKING.has(t));
@@ -157,18 +150,19 @@ function countOf(tf: Map<string, number>, term: string, root: string | undefined
   return count;
 }
 
-const K1 = 1.5;
-const B = 0.75;
 /** A thread's title counts as words of each of its passages, this many times over. */
 const TITLE_TF = 2;
 
-const RRF_K = 60;
 const KEYWORD_TOP = 50;
 const VECTOR_TOP = 50;
-/** See QUERY_MIN_SIMILARITY in lib/search.ts: below this, everything embedded "matches". */
+/**
+ * Query-to-document cosine similarity has a high floor, it is NOT close to 0 for unrelated content.
+ * Calibrated against gemini-embedding-2 (768 dims, RETRIEVAL_QUERY vs RETRIEVAL_DOCUMENT): clearly
+ * unrelated notes scored 0.56-0.62, a strongly relevant note 0.75. Below this, everything embedded
+ * "matches". Biased toward precision: keyword search already catches the literal matches.
+ */
 export const MIN_SIMILARITY = 0.65;
-/** How many of the fused results are ranked again. */
-export const RERANK_TOP = 20;
+const RERANK_TOP = 20;
 /** Passages sharing this share of their words are the same thing said twice. */
 const SAME_WORDS = 0.85;
 const SAME_MEANING = 0.95;
@@ -184,8 +178,6 @@ export interface RetrieveOptions {
   chunkVectors?: Map<string, Float32Array>;
   /** Thread vectors by thread id: what the passage's thread is about. */
   threadVectors?: Map<string, Float32Array>;
-  /** How much each ranking counts when fused. */
-  weights?: { keyword: number; vector: number };
   minSimilarity?: number;
   limit?: number;
 }
@@ -228,10 +220,8 @@ function nearness(tokens: string[], terms: Set<string>): number {
   return present.size / best;
 }
 
-/** The passages that best answer a question, best first, with near-copies dropped. */
 export function retrieve(query: string, chunks: Chunk[], options: RetrieveOptions = {}): Hit[] {
   const { queryVector, chunkVectors, threadVectors, limit = 8 } = options;
-  const weights = options.weights ?? { keyword: 1, vector: 1 };
   const minSimilarity = options.minSimilarity ?? MIN_SIMILARITY;
   const mode = options.mode ?? 'hybrid';
   const terms = queryTerms(query);
@@ -252,7 +242,6 @@ export function retrieve(query: string, chunks: Chunk[], options: RetrieveOption
   };
   if (chunks.length === 0 || (terms.length === 0 && !queryVector)) return [];
 
-  // ── By words: BM25 over each passage with its thread's title.
   const titleTokens = new Map<string, string[]>();
   const titleOf = (c: Chunk) => {
     let t = titleTokens.get(c.threadId);
@@ -269,10 +258,7 @@ export function retrieve(query: string, chunks: Chunk[], options: RetrieveOption
     for (const t of terms) if (counts.has(t) || title.includes(t)) df.set(t, (df.get(t) ?? 0) + 1);
   }
   const avgLength = totalLength / chunks.length || 1;
-  const idf = (t: string) => {
-    const n = df.get(t) ?? 0;
-    return Math.log((chunks.length - n + 0.5) / (n + 0.5) + 1);
-  };
+  const idf = (t: string) => idfOf(df.get(t) ?? 0, chunks.length);
 
   const byWords: Hit[] = [];
   if (mode !== 'vector') {
@@ -292,7 +278,6 @@ export function retrieve(query: string, chunks: Chunk[], options: RetrieveOption
     byWords.length = Math.min(byWords.length, KEYWORD_TOP);
   }
 
-  // ── By meaning: only when the question and passages have vectors.
   const similarity = new Map<string, number>();
   const byMeaning: Hit[] = [];
   if (mode !== 'keyword' && queryVector && chunkVectors) {
@@ -307,19 +292,17 @@ export function retrieve(query: string, chunks: Chunk[], options: RetrieveOption
     byMeaning.length = Math.min(byMeaning.length, VECTOR_TOP);
   }
 
-  // ── Fused by rank, since the two scores aren't on one scale.
   const fused = new Map<string, Hit>();
-  const add = (ranking: Hit[], weight: number) =>
+  const add = (ranking: Hit[]) =>
     ranking.forEach(({ chunk }, rank) => {
       const hit = fused.get(chunk.id) ?? { chunk, score: 0 };
-      hit.score += weight / (RRF_K + rank + 1);
+      hit.score += rrfScore(rank);
       fused.set(chunk.id, hit);
     });
-  add(byWords, weights.keyword);
-  add(byMeaning, weights.vector);
+  add(byWords);
+  add(byMeaning);
   let ranked = [...fused.values()].sort((a, b) => b.score - a.score || b.chunk.createdAt - a.chunk.createdAt);
 
-  // ── The best twenty, ranked again on how well each covers the question.
   if (options.rerank !== false && ranked.length > 1) {
     const termSet = new Set(terms);
     const totalIdf = terms.reduce((sum, t) => sum + idf(t), 0) || 1;
@@ -354,7 +337,6 @@ export function retrieve(query: string, chunks: Chunk[], options: RetrieveOption
     ranked = [...top, ...ranked.slice(RERANK_TOP)];
   }
 
-  // ── The same thing said twice shows once; one thread can't fill the list.
   const kept: Hit[] = [];
   const perThread = new Map<string, number>();
   const threadShare = Math.max(3, Math.ceil(limit / 2));
@@ -371,14 +353,11 @@ export function retrieve(query: string, chunks: Chunk[], options: RetrieveOption
 /** A passage not made by `chunkEntries` (a test's, the evaluation's). */
 function fallbackPiece(chunk: Chunk): Piece {
   const tokens = tokenize(chunk.text);
-  const tf = new Map<string, number>();
-  for (const t of tokens) tf.set(t, (tf.get(t) ?? 0) + 1);
-  const piece = { text: chunk.text, hash: chunk.hash, tokens, tf };
+  const piece = { text: chunk.text, hash: chunk.hash, tokens, tf: termCounts(tokens) };
   pieceOf.set(chunk, piece);
   return piece;
 }
 
-/** Whether two passages say the same thing: the same text, nearly the same words, or nearly the same vector. */
 export function sameThing(a: Chunk, b: Chunk, vectors?: Map<string, Float32Array>): boolean {
   if (a.hash === b.hash) return true;
   const va = vectors?.get(a.hash);

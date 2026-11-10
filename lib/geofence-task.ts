@@ -1,9 +1,9 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as TaskManager from 'expo-task-manager';
 import { GeofencingEventType, type LocationRegion } from 'expo-location';
 
 import { logError } from '@/lib/errors';
 import { forgetWatch, GEOFENCE_EVENT_KEY, GEOFENCE_TASK, handleGeofenceEvent } from '@/lib/geofence';
+import { writeJson } from '@/lib/storage';
 
 // Android starts Mnemo's JS in the background to run this, even with the
 // app closed, so it's defined when the app's entry file loads (index.ts),
@@ -19,8 +19,7 @@ TaskManager.defineTask<{ eventType: GeofencingEventType; region: LocationRegion 
   if (!data?.region?.identifier) return;
   const event = data.eventType === GeofencingEventType.Enter ? 'enter' : data.eventType === GeofencingEventType.Exit ? 'exit' : null;
   if (!event) return;
-  // The last event heard, for the problem report: whether the phone ever tells Mnemo anything.
-  await AsyncStorage.setItem(GEOFENCE_EVENT_KEY, JSON.stringify({ at: Date.now(), event })).catch(() => {});
+  await writeJson(GEOFENCE_EVENT_KEY, { at: Date.now(), event }).catch(() => {});
   try {
     await handleGeofenceEvent(event, data.region.identifier);
   } catch (e) {

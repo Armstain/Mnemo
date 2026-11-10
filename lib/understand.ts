@@ -1,10 +1,11 @@
-import { isCurrency, numberTokens, scanNumbers, metricKey, type NumberSpan } from '@/lib/measures';
-import type { Category, ChecklistItem, LaterStep, Measure, Rollup, ThreadKind } from '@/types/mnemo';
+import { isCurrency, MAX_MEASURES, numberTokens, scanNumbers, metricKey, type NumberSpan } from '@/lib/measures';
+import type { Category, ChecklistItem, LaterStep, Measure, Repeat, Rollup, ThreadKind } from '@/types/mnemo';
 import { capitalize, hostOf, nfc } from '@/utils/text';
 import { DAY_MS } from '@/utils/time';
 import { queueSteps } from '@/lib/when';
-import { isPlan, MONTH_WORDS, opensInPast, readWhenFull, withoutWhen, type Repeat } from '@/lib/when-read';
+import { isPlan, MONTH_WORDS, opensInPast, readWhenFull, withoutWhen } from '@/lib/when-read';
 import { readKind } from '@/lib/kind';
+import { generateId } from '@/lib/ids';
 
 // On-device note reading, no AI: English, Bangla and Banglish, typed or spoken. Offline's only path and what every note shows before Gemini answers.
 
@@ -33,11 +34,11 @@ export interface KnownMetric {
   unit?: string;
 }
 
+export const MAX_TAGS = 8;
 const TITLE_MAX = 48;
 const STEP_MAX = 120;
 
-let idCounter = 0;
-const itemId = () => `ck_${Date.now().toString(36)}_${(idCounter++).toString(36)}`;
+const itemId = () => generateId('ck');
 
 function clip(text: string, max: number): string {
   if (text.length <= max) return text;
@@ -93,7 +94,7 @@ function endsClause(word: string, next: string | undefined): boolean {
 }
 
 /** Only for reading: the note keeps the words as said. */
-export function spokenClauses(text: string): string {
+function spokenClauses(text: string): string {
   const words = text.trim().split(/\s+/);
   if (words.length < SPOKEN_MIN_WORDS || /[.!?।\n]/.test(text)) return text;
   const pieces = text.trim().replace(CLAUSE_START, '\n').split('\n');
@@ -123,8 +124,6 @@ export function spokenClauses(text: string): string {
   }
   return merged.map((c) => c.join(' ')).join('\n');
 }
-
-// ─── Lists ──────────────────────────────────────────────────────
 
 const LIST_LINE = /^\s*(?:[-*•▪◦–]|\[\s?[xX✓ ]?\s?\]|\d{1,2}[.)]|[০-৯]{1,2}[.)])\s+(.+)$/;
 const DONE_LINE = /^\s*(?:[-*•▪◦–]\s+)?\[\s?[xX✓]\s?\]/;
@@ -167,8 +166,6 @@ function readList(text: string): { text: string; items: ChecklistItem[] } {
   return { text, items: [] };
 }
 
-// ─── Links ──────────────────────────────────────────────────────
-
 function readLinks(text: string): string[] {
   const found = text.match(/\b(?:https?:\/\/|www\.)[^\s<>()\[\]"']+/gi) ?? [];
   return [
@@ -177,8 +174,6 @@ function readLinks(text: string): string[] {
     ),
   ];
 }
-
-// ─── Numbers worth tracking ─────────────────────────────────────
 
 type UnitKind = 'money' | 'distance' | 'weight' | 'time' | 'pages' | 'steps' | 'energy' | 'reps' | 'sets' | 'volume' | 'glasses';
 
@@ -386,7 +381,6 @@ function groupFor(words: string[]): string | undefined {
   return undefined;
 }
 
-/** Clauses: sentences, then commas that aren't inside a number. */
 function clauses(text: string): string[] {
   return sentences(text)
     .flatMap((s) => s.split(/,(?!\d)|;|:(?!\d)|\s+then\s+|\s+tarpor\s+|\s+তারপর\s+/i))
@@ -468,10 +462,8 @@ export function readMeasures(text: string, known: KnownMetric[] = [], currency?:
   if (out.filter((m) => isCurrency(m.unit)).length >= 2) {
     for (const m of out) if (m.metric === 'amount') m.metric = 'spent';
   }
-  return out.slice(0, 30);
+  return out.slice(0, MAX_MEASURES);
 }
-
-// ─── Next step, where it stopped ────────────────────────────────
 
 const INTENT_EN =
   /\b(need(?:s)? to|have to|has to|got to|gotta|must|should|remember to|remind(?: me)?(?: to)?|don'?t forget(?: to)?|do not forget(?: to)?|todo|to-do|next step|next:|next (?:is|up)|i'll|i will|we'll|we will|going to|plan to|planning to|let'?s|tomorrow|by (?:monday|tuesday|wednesday|thursday|friday|saturday|sunday))\b/i;
@@ -491,9 +483,14 @@ const straightQuotes = (s: string) => s.replace(/[’‘ʼ`]/g, "'");
 /** "- ", "Remember: ", "I have a ": not part of what to do. */
 const STEP_LEAD = /^(?:[-*•]\s+)?(?:(?:remember|reminder|todo|to-do|note|task)\s*:\s*)?(?:(?:i|we)\s+(?:have|'ve got|got)\s+(?:a|an|the|my|our)\s+)?/i;
 
+const REQUEST_ONLY = 'remind me|reminder|মনে করিয়ে দিও|mone koriye dio|(?:can|could|would|will) you|please|pls|plz';
+const NOTHING_TO_NAME = new RegExp(`^(?:${REQUEST_ONLY})$`, 'i');
+const NOTHING_TO_DO = new RegExp(`^(?:${REQUEST_ONLY}|kindly)?$`, 'i');
+
+const withoutLeads = (s: string) => s.replace(STEP_LEAD, '').replace(LEAD_INS, '').replace(REMIND_TAIL, '');
+
 function cleanStep(sentence: string): string {
-  const stripped = trimEnd(sentence.replace(STEP_LEAD, '').replace(LEAD_INS, '').replace(REMIND_TAIL, ''));
-  return clip(capitalize(stripped), STEP_MAX);
+  return clip(capitalize(trimEnd(withoutLeads(sentence))), STEP_MAX);
 }
 
 const isIntent = (s: string) => INTENT_EN.test(s) || INTENT_BN.test(nfc(s)) || INTENT_LATIN_BN.test(s);
@@ -536,10 +533,8 @@ function readLeftOff(text: string, nextSentence?: string): string | undefined {
   return hit ? clip(capitalize(trimEnd(hit)), STEP_MAX) : undefined;
 }
 
-// ─── When ───────────────────────────────────────────────────────
 // lib/when-read.ts reads times, days, repeats and whether it's a plan.
 
-/** A day (and time) named in a sentence, as a timestamp in the future. */
 export function readWhen(sentence: string, now = Date.now(), monthFirst = false): number | undefined {
   return readWhenFull(sentence, now, monthFirst)?.at;
 }
@@ -570,7 +565,7 @@ function readCategory(words: string[]): Category | undefined {
 
 function readTags(text: string): string[] {
   const tags = (text.match(/(?:^|\s)#([^\s#.,;:!?()[\]{}"']{2,30})/g) ?? []).map((t) => t.trim().slice(1).toLowerCase());
-  return [...new Set(tags)].slice(0, 8);
+  return [...new Set(tags)].slice(0, MAX_TAGS);
 }
 
 const TITLE_LEAD =
@@ -594,14 +589,12 @@ function readTitle(text: string, items: ChecklistItem[], hasWhen: boolean): stri
   title = title.replace(/\b(?:https?:\/\/|www\.)\S+/gi, '').replace(/(?:^|\s)#\S+/g, '').trim();
   title = trimEnd(title.replace(/\s+(?:and|or|at|on|by)$/i, ''));
   // "Remind me tomorrow": nothing left to name it by.
-  if (/^(?:remind me|reminder|মনে করিয়ে দিও|mone koriye dio|(?:can|could|would|will) you|please|pls|plz)$/i.test(title)) title = '';
+  if (NOTHING_TO_NAME.test(title)) title = '';
   const link = readLinks(text)[0];
   if (link && title.split(/\s+/).length < 2) return hostOf(link);
   if (!title) return items[0] ? clip(items[0].text, TITLE_MAX) : '';
   return clip(capitalize(title), TITLE_MAX);
 }
-
-// ─── All of it ──────────────────────────────────────────────────
 
 /** Speech services write "i" for "I"; a title or step shouldn't. */
 function upperI<T extends string | undefined>(s: T): T {
@@ -639,8 +632,8 @@ export function understand(
   // The time lives in the reminder; the step says what to do.
   const bare = (t?: string) => {
     if (!t) return undefined;
-    const out = trimEnd(withoutWhen(t).replace(STEP_LEAD, '').replace(LEAD_INS, '').replace(REMIND_TAIL, '').replace(/\s+(?:at|on|by)$/i, ''));
-    return /^(?:remind me|reminder|মনে করিয়ে দিও|mone koriye dio|(?:can|could|would|will) you|please|pls|plz|kindly)?$/i.test(out) ? undefined : capitalize(out);
+    const out = trimEnd(withoutLeads(withoutWhen(t)).replace(/\s+(?:at|on|by)$/i, ''));
+    return NOTHING_TO_DO.test(out) ? undefined : capitalize(out);
   };
   let nextStep = due ? bare(step ?? planStep) : step;
   // Said in clauses, a step can lose its subject ("dite hobe"); the clause before has it.

@@ -1,6 +1,6 @@
 import { formatValue, numbersToShow, summarizeMeasures, type MetricSummary } from '@/lib/measures';
 import type { Entry, MnemoItem } from '@/types/mnemo';
-import { DAY_MS } from '@/utils/time';
+import { DAY_MS, startOfDay } from '@/utils/time';
 
 // Wrapping up a thread: when a trip, project or errand is over, one card
 // says what it was. When it ran, how much went into it, what the numbers
@@ -20,12 +20,6 @@ export interface ThreadWrap {
   /** Next steps never ticked off and unticked list items, newest first. */
   openSteps: string[];
   numbers: MetricSummary[];
-}
-
-function dayOf(ts: number): number {
-  const d = new Date(ts);
-  d.setHours(0, 0, 0, 0);
-  return d.getTime();
 }
 
 /**
@@ -53,7 +47,7 @@ export function wrapThread(thread: MnemoItem, entries: Entry[]): ThreadWrap {
   return {
     from,
     to,
-    days: Math.round((dayOf(to) - dayOf(from)) / DAY_MS) + 1,
+    days: Math.round((startOfDay(to).getTime() - startOfDay(from).getTime()) / DAY_MS) + 1,
     entries: mine.length,
     voice: mine.filter((e) => e.source === 'voice').length,
     photos: blocks.filter((b) => b.kind === 'image').length,
@@ -75,18 +69,16 @@ export function spanLabel(from: number, to: number, now = Date.now()): string {
   const thisYear = new Date(now).getFullYear();
   const sameYear = a.getFullYear() === b.getFullYear();
   const year = (d: Date) => (sameYear && d.getFullYear() === thisYear ? '' : `, ${d.getFullYear()}`);
-  if (dayOf(from) === dayOf(to)) return `${month(a)} ${a.getDate()}${year(a)}`;
+  if (startOfDay(from).getTime() === startOfDay(to).getTime()) return `${month(a)} ${a.getDate()}${year(a)}`;
   if (sameYear && a.getMonth() === b.getMonth()) return `${month(a)} ${a.getDate()} – ${b.getDate()}${year(b)}`;
   return `${month(a)} ${a.getDate()}${sameYear ? '' : year(a)} – ${month(b)} ${b.getDate()}${year(b)}`;
 }
 
-/** The headline figure of a tracked number, as its card shows it. */
 export function headline(s: MetricSummary): string {
   const v = s.rollup === 'sum' ? s.total : s.rollup === 'latest' ? s.latest : s.rollup === 'average' ? s.average : s.options?.[0]?.value;
   return formatValue(v ?? 0, s.unit);
 }
 
-/** The wrap-up as plain text, for sharing where an image can't go. */
 export function wrapText(thread: MnemoItem, w: ThreadWrap): string {
   const lines = [
     thread.title,

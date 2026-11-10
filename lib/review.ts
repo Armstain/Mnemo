@@ -1,6 +1,6 @@
 import { countsAsHappened, metricKey, summarizeMeasures } from '@/lib/measures';
 import { nextOccurrence } from '@/lib/when';
-import type { Entry, MnemoItem } from '@/types/mnemo';
+import { isOpenStatus, type Entry, type MnemoItem } from '@/types/mnemo';
 import { DAY_MS } from '@/utils/time';
 
 // The weekly review: one look back at the week and ahead at the next,
@@ -8,11 +8,11 @@ import { DAY_MS } from '@/utils/time';
 // steps are open, which threads went quiet, and what the numbers added up to.
 
 /** Quiet this long and a thread is worth a decision: keep going, pause, or wrap up. */
-export const QUIET_DAYS = 7;
+const QUIET_DAYS = 7;
 /** Past this it's not "quiet", it's forgotten; the review stops listing it. */
 const FORGOTTEN_DAYS = 60;
 /** A reminder missed longer ago than this is old news; the thread may just be quiet. */
-const MISSED_DAYS = 30;
+export const MISSED_DAYS = 30;
 /** "Still on it" holds off the question for this long. */
 export const STILL_ON_IT_DAYS = 30;
 
@@ -54,7 +54,7 @@ export interface WeekReview {
   finished: MnemoItem[];
 }
 
-const isOpen = (t: MnemoItem) => (t.status === 'active' || t.status === 'paused') && !t.pending;
+const isOpenThread = (t: MnemoItem) => isOpenStatus(t.status) && !t.pending;
 
 function startOfDay(ts: number): number {
   const d = new Date(ts);
@@ -105,7 +105,7 @@ export function weekReview(items: MnemoItem[], entries: Entry[], now = Date.now(
     const end = addDays(from, i + 1);
     return { start, notes: thisWeek.filter((e) => e.createdAt >= start && e.createdAt < end).length };
   });
-  const open = items.filter(isOpen);
+  const open = items.filter(isOpenThread);
 
   const due: DueThread[] = [];
   for (const item of open) {
@@ -170,12 +170,11 @@ export function weekReview(items: MnemoItem[], entries: Entry[], now = Date.now(
   };
 }
 
-/** Next steps still open across what the review lists. */
-export function openStepCount(r: WeekReview): number {
+function openStepCount(r: WeekReview): number {
   return [...r.due.map((d) => d.item), ...r.steps, ...r.quiet.map((q) => q.item)].filter((t) => t.nextStep).length;
 }
 
-/** Home's short version: "5 notes · 2 steps open · 1 quiet". Empty if there's nothing. */
+/** "5 notes · 2 steps open · 1 quiet". */
 export function shortLine(r: WeekReview): string {
   const open = openStepCount(r);
   return [

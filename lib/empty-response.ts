@@ -70,7 +70,7 @@ export function topSafety(attempts: EmptyAttempt[]): SafetyRating | null {
 
 export const isBlocked = (a: EmptyAttempt): boolean => !!a.blockReason || BLOCKED_FINISH.test(a.finishReason ?? '');
 
-export function emptyKind(attempts: EmptyAttempt[], input?: InputInfo): EmptyKind {
+function emptyKind(attempts: EmptyAttempt[], input?: InputInfo): EmptyKind {
   if (input?.none) return 'empty-input';
   if (attempts.some(isBlocked)) return 'blocked';
   if (attempts.some((a) => a.finishReason === 'MAX_TOKENS')) return 'truncated';
@@ -95,8 +95,7 @@ export class EmptyResponseError extends Error {
 }
 
 /** Parses the kind from error text, which survives logging and re-throwing. */
-export function emptyKindOf(err: unknown): EmptyKind | null {
-  const msg = String((err as { message?: string })?.message ?? err);
+export function emptyKindOf(msg: string): EmptyKind | null {
   const m = msg.match(/(?:The model|Gemini) returned (?:no|unreadable) (?:text) \((blocked|truncated|empty-input|unreadable|empty)\)/);
   return (m?.[1] as EmptyKind | undefined) ?? null;
 }

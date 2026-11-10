@@ -1,9 +1,16 @@
 import React from 'react';
 import { FlexWidget, SvgWidget, TextWidget } from 'react-native-android-widget';
 
+import { recordNowHref } from '@/lib/launch-key';
+import { captureHref, dumpHref } from '@/lib/routes';
+
 // The home-screen widget: what to pick up next, and one tap to record or
 // write. Drawn by Android from this description (no React Native views);
 // colours are the app's palette, written out.
+
+export const WIDGET_NAME = 'Capture';
+
+const appLink = (href: string) => `mnemo://${href}`;
 
 export interface WidgetSnapshot {
   id?: string;
@@ -62,7 +69,7 @@ function Widget({ snapshot, theme }: { snapshot: WidgetSnapshot; theme: keyof ty
     >
       <FlexWidget
         clickAction="OPEN_URI"
-        clickActionData={{ uri: hasThread ? `mnemo:///context?id=${snapshot.id}` : 'mnemo:///' }}
+        clickActionData={{ uri: appLink(hasThread ? `/context?id=${snapshot.id}` : '/') }}
         style={{ width: 'match_parent', flexDirection: 'column' }}
       >
         <TextWidget
@@ -83,8 +90,8 @@ function Widget({ snapshot, theme }: { snapshot: WidgetSnapshot; theme: keyof ty
         />
       </FlexWidget>
       <FlexWidget style={{ width: 'match_parent', flexDirection: 'row', flexGap: 8, marginTop: 14 }}>
-        <Button label="Record" svg={micSvg(c.ink)} uri={snapshot.launchKey ? `mnemo:///dump?autostart=1&key=${snapshot.launchKey}` : 'mnemo:///dump'} bg={c.accent} fg={c.ink} />
-        <Button label="Write" svg={penSvg(c.fg)} uri="mnemo:///capture" bg={c.chip} fg={c.fg} />
+        <Button label="Record" svg={micSvg(c.ink)} uri={appLink(snapshot.launchKey ? recordNowHref(snapshot.launchKey) : dumpHref())} bg={c.accent} fg={c.ink} />
+        <Button label="Write" svg={penSvg(c.fg)} uri={appLink(captureHref())} bg={c.chip} fg={c.fg} />
       </FlexWidget>
     </FlexWidget>
   );

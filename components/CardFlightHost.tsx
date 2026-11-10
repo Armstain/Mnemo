@@ -94,7 +94,7 @@ function FlightView({ flight, onGone }: { flight: Flight; onGone: () => void }) 
   }, false);
 
   React.useEffect(() => {
-    const off = onFlightTarget((threadId, rect) => {
+    const off = onFlightTarget(({ threadId, rect }) => {
       if (threadId !== flight.threadId) return;
       targetX.value = rect.x;
       targetY.value = rect.y;

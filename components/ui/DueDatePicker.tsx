@@ -1,13 +1,16 @@
 import React, { useState } from 'react';
 import { View, Pressable, Platform } from 'react-native';
-import { haptic } from '@/utils/haptics';
 import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
 
 import { Text } from '@/components/ui/Text';
 import { useThemeColors } from '@/hooks/use-theme';
 import { Icon } from '@/components/ui/Icon';
 import { Button } from '@/components/ui/Button';
-import { formatReminder, quickTimes, REPEAT_LABEL, type Repeat } from '@/lib/when';
+import { Pill } from '@/components/ui/Pill';
+import { formatReminder, quickTimes, REPEAT_LABEL } from '@/lib/when';
+import { REPEATS, type Repeat } from '@/types/mnemo';
+import { HOUR_MS } from '@/lib/reminders';
+import { isOverdue } from '@/utils/time';
 
 interface DueDatePickerProps {
   value?: number; // timestamp
@@ -23,45 +26,6 @@ export function formatDueDate(timestamp: number): string {
   return timestamp < Date.now() ? `Overdue · ${when}` : `Due ${when.charAt(0).toLowerCase()}${when.slice(1)}`;
 }
 
-const REPEATS: (Repeat | undefined)[] = [undefined, 'daily', 'weekly', 'monthly'];
-
-function Chip({
-  label,
-  selected,
-  onPress,
-  icon,
-}: {
-  label: string;
-  selected?: boolean;
-  onPress: () => void;
-  icon?: 'clock' | 'repeat' | 'calendar';
-}) {
-  const colors = useThemeColors();
-  return (
-    <Pressable
-      onPress={() => {
-        haptic.select();
-        onPress();
-      }}
-      accessibilityRole="button"
-      accessibilityState={{ selected: !!selected }}
-      className="flex-row items-center rounded-full px-3.5 h-9 active:opacity-70"
-      style={{
-        backgroundColor: selected ? colors.accentSoft : colors.surface,
-        borderWidth: 1,
-        borderColor: selected ? `${colors.accent}40` : colors.border,
-      }}
-    >
-      {icon ? <Icon name={icon} size={13} color={selected ? colors.accent : colors.fgTertiary} /> : null}
-      <Text
-        className={`font-sans-medium text-sm ${icon ? 'ml-1.5' : ''}`}
-        style={{ color: selected ? colors.accent : colors.fgSecondary }}
-      >
-        {label}
-      </Text>
-    </Pressable>
-  );
-}
 
 /** The web has no native picker: the browser's own date-and-time field. */
 function WebDateTime({ value, onPick }: { value?: number; onPick: (ts: number) => void }) {
@@ -100,7 +64,7 @@ export function DueDatePicker({ value, onChange, repeat, onRepeatChange }: DueDa
   const [pickedDay, setPickedDay] = useState<Date | null>(null);
   const [custom, setCustom] = useState(false);
   const quick = quickTimes();
-  const isOverdue = value ? value < Date.now() && !repeat : false;
+  const late = value ? isOverdue(value, repeat) : false;
 
   const onNative = (event: DateTimePickerEvent, selected?: Date) => {
     if (event.type !== 'set' || !selected) {
@@ -120,7 +84,7 @@ export function DueDatePicker({ value, onChange, repeat, onRepeatChange }: DueDa
   };
 
   const startValue = value ? new Date(value) : (() => {
-    const d = new Date(Date.now() + 60 * 60 * 1000);
+    const d = new Date(Date.now() + HOUR_MS);
     d.setMinutes(0, 0, 0);
     return d;
   })();
@@ -132,13 +96,13 @@ export function DueDatePicker({ value, onChange, repeat, onRepeatChange }: DueDa
           <View
             className="flex-row items-center rounded-full px-4 h-10"
             style={{
-              backgroundColor: isOverdue ? `${colors.error}24` : colors.accentSoft,
+              backgroundColor: late ? `${colors.error}24` : colors.accentSoft,
               borderWidth: 1,
-              borderColor: isOverdue ? `${colors.error}59` : `${colors.accent}40`,
+              borderColor: late ? `${colors.error}59` : `${colors.accent}40`,
             }}
           >
-            <Icon name={repeat ? 'repeat' : 'clock'} size={14} color={isOverdue ? colors.error : colors.accent} />
-            <Text className="font-sans-medium text-sm ml-2" style={{ color: isOverdue ? colors.error : colors.accent }}>
+            <Icon name={repeat ? 'repeat' : 'clock'} size={14} color={late ? colors.error : colors.accent} />
+            <Text className="font-sans-medium text-sm ml-2" style={{ color: late ? colors.error : colors.accent }}>
               {formatReminder(value)}
               {repeat ? ` · ${REPEAT_LABEL[repeat].toLowerCase()}` : ''}
             </Text>
@@ -160,28 +124,38 @@ export function DueDatePicker({ value, onChange, repeat, onRepeatChange }: DueDa
 
       <View className="flex-row flex-wrap gap-2">
         {quick.map((q) => (
-          <Chip key={q.key} label={q.label} selected={value === q.at} onPress={() => onChange(q.at)} />
+          <Pill key={q.key} size="lg" soft tone={colors.accent} selected={value === q.at} onPress={() => onChange(q.at)}>
+            {q.label}
+          </Pill>
         ))}
-        <Chip
-          label="Pick a time…"
+        <Pill
+          size="lg"
+          soft
+          tone={colors.accent}
           icon="calendar"
           selected={custom}
           onPress={() => (Platform.OS === 'web' ? setCustom((v) => !v) : setStep('date'))}
-        />
+        >
+          Pick a time…
+        </Pill>
       </View>
 
       {Platform.OS === 'web' && custom ? <WebDateTime value={value} onPick={onChange} /> : null}
 
       {value && onRepeatChange ? (
         <View className="flex-row flex-wrap gap-2">
-          {REPEATS.map((r) => (
-            <Chip
+          {[undefined, ...REPEATS].map((r) => (
+            <Pill
               key={r ?? 'once'}
-              label={r ? REPEAT_LABEL[r] : 'Once'}
+              size="lg"
+              soft
+              tone={colors.accent}
               icon={r ? 'repeat' : undefined}
               selected={repeat === r}
               onPress={() => onRepeatChange(r)}
-            />
+            >
+              {r ? REPEAT_LABEL[r] : 'Once'}
+            </Pill>
           ))}
         </View>
       ) : null}
@@ -220,12 +194,12 @@ export function DueDatePicker({ value, onChange, repeat, onRepeatChange }: DueDa
 /** Compact inline display of a reminder, for use in cards. */
 export function DueDateLabel({ dueDate, repeat }: { dueDate: number; repeat?: Repeat }) {
   const colors = useThemeColors();
-  const isOverdue = dueDate < Date.now() && !repeat;
+  const late = isOverdue(dueDate, repeat);
 
   return (
     <View className="flex-row items-center">
-      <Icon name={repeat ? 'repeat' : 'clock'} size={14} color={isOverdue ? colors.error : colors.fgTertiary} />
-      <Text className="font-sans text-sm ml-1.5" style={{ color: isOverdue ? colors.error : colors.fgTertiary }}>
+      <Icon name={repeat ? 'repeat' : 'clock'} size={14} color={late ? colors.error : colors.fgTertiary} />
+      <Text className="font-sans text-sm ml-1.5" style={{ color: late ? colors.error : colors.fgTertiary }}>
         {formatDueDate(dueDate)}
         {repeat ? ` · ${REPEAT_LABEL[repeat].toLowerCase()}` : ''}
       </Text>

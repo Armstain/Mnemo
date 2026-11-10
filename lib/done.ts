@@ -1,4 +1,5 @@
-import type { Entry, MnemoItem } from '@/types/mnemo';
+import { isOpenStatus, type Entry, type MnemoItem } from '@/types/mnemo';
+import { createEmitter } from '@/lib/emitter';
 import { kindOf } from '@/lib/kind';
 import { repeatsAtPlace } from '@/lib/places';
 import { DAY_MS } from '@/utils/time';
@@ -24,7 +25,6 @@ export function isRealTask(
   return entries.some((e) => e.stepDone || e.blocks.some((b) => b.kind === 'checklist'));
 }
 
-/** The line under "Done": how many steps it took, and how long. '' when there's nothing to say. */
 export function doneSummary(
   thread: Pick<MnemoItem, 'createdAt'>,
   entries: Pick<Entry, 'stepDone' | 'nextStep'>[],
@@ -40,7 +40,6 @@ export function doneSummary(
     .join(' · ');
 }
 
-// ─── The moment itself ───────────────────────────────────────────
 // Screens announce a finished task; the host at the app root plays it, so it
 // survives the navigation that usually follows (back to Home, say).
 
@@ -50,16 +49,10 @@ export interface Celebration {
   detail?: string;
 }
 
-const listeners = new Set<(c: Celebration) => void>();
+const celebrations = createEmitter<Celebration>();
 
-export function celebrate(c: Celebration): void {
-  listeners.forEach((l) => l(c));
-}
-
-export function onCelebrate(listener: (c: Celebration) => void): () => void {
-  listeners.add(listener);
-  return () => listeners.delete(listener);
-}
+export const celebrate = celebrations.emit;
+export const onCelebrate = celebrations.on;
 
 /**
  * What finishing this thread looks like, decided in one place for every screen that finishes one
@@ -77,7 +70,6 @@ export function completionFeedback(
   return { celebration: { title: thread.title, ...(detail ? { detail } : {}) }, toast };
 }
 
-// ─── What "Done" does on a thread ────────────────────────────────
 // One rule for every Done (the thread screen, the step check on Welcome and the weekly review,
 // a notification's Done), worked out each time from what the thread is now; nothing new is
 // stored (docs/plans/2026-11-root-fixes.md, B2).
@@ -96,8 +88,7 @@ export function finishModel(
   thread: Pick<MnemoItem, 'kind' | 'pinned' | 'category' | 'nextStep' | 'dueDate' | 'repeat' | 'laterSteps' | 'place' | 'status'>,
   entries: Pick<Entry, 'nextStep' | 'stepDone'>[],
 ): FinishModel {
-  const open = thread.status === 'active' || thread.status === 'paused';
-  if (repeatsAtPlace(thread) || (open && !!thread.repeat && !!thread.dueDate)) return 'occurrence';
+  if (repeatsAtPlace(thread) || (isOpenStatus(thread.status) && !!thread.repeat && !!thread.dueDate)) return 'occurrence';
   if (kindOf(thread, entries.length) === 'project') return 'steps';
   // Steps queued with their own times ("bring the file at 10, send it at 11").
   if ((thread.laterSteps?.length ?? 0) > 0) return 'steps';

@@ -3,9 +3,10 @@ import { Platform, ScrollView, Share, View } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { MotiView } from 'moti';
 import * as Sharing from 'expo-sharing';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { Button, IconButton } from '@/components/ui/Button';
+import { Button } from '@/components/ui/Button';
+import { HeroCard } from '@/components/ui/HeroCard';
+import { ScreenHeader, useSafeBottom, useSafeTop } from '@/components/ui/Screen';
 import { Text } from '@/components/ui/Text';
 import { OpenRing } from '@/components/ui/ThreadRing';
 import { useMnemoStore } from '@/hooks/use-mnemo-store';
@@ -14,8 +15,9 @@ import { useUndoToast } from '@/hooks/use-undo-toast';
 import { formatValue } from '@/lib/measures';
 import { headline, spanLabel, wrapText, wrapThread } from '@/lib/wrapup';
 import { useCompleteThread } from '@/hooks/use-complete-thread';
-import { useCategories } from '@/utils/categories';
-import { useEnter } from '@/utils/motion';
+import { useCategories } from '@/hooks/use-categories';
+import { useEnter } from '@/hooks/use-enter';
+import { capitalize } from '@/utils/text';
 
 /**
  * Wrapping up a thread: one card for what it was (when it ran, how much
@@ -24,7 +26,8 @@ import { useEnter } from '@/utils/motion';
  */
 export default function WrapUpScreen() {
   const { id, from } = useLocalSearchParams<{ id: string; from?: string }>();
-  const insets = useSafeAreaInsets();
+  const top = useSafeTop();
+  const bottom = useSafeBottom();
   const colors = useThemeColors();
   const enter = useEnter();
   const categories = useCategories();
@@ -37,10 +40,8 @@ export default function WrapUpScreen() {
 
   if (!thread || !w) {
     return (
-      <View style={{ flex: 1, backgroundColor: colors.bg, paddingTop: Math.max(insets.top, 16) }}>
-        <View className="px-6">
-          <IconButton icon="x" label="Close" variant="bare" onPress={() => router.back()} />
-        </View>
+      <View style={{ flex: 1, backgroundColor: colors.bg, paddingTop: top }}>
+        <ScreenHeader onClose={() => router.back()} className="px-6 mb-0" />
         <View className="flex-1 items-center justify-center px-10">
           <Text className="font-sans text-body text-center" style={{ color: colors.fgSecondary }}>
             This thread isn't here any more.
@@ -59,7 +60,6 @@ export default function WrapUpScreen() {
     w.stepsDone > 0 ? [w.stepsDone, w.stepsDone === 1 ? 'step done' : 'steps done'] : null,
   ].filter(Boolean) as [number, string][];
 
-  // An image of the card where the phone can make one; the text otherwise.
   const share = async () => {
     const text = wrapText(thread, w);
     try {
@@ -94,23 +94,18 @@ export default function WrapUpScreen() {
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.bg }}>
-      <ScrollView contentContainerStyle={{ paddingTop: Math.max(insets.top, 16), paddingBottom: Math.max(insets.bottom, 24) + 24 }}>
-        <View className="px-6 flex-row items-center justify-between mb-4">
-          <IconButton icon="x" label="Close" variant="bare" onPress={() => router.back()} />
-          <Text className="font-sans-medium text-sm" style={{ color: colors.fgSecondary }}>
-            {done ? 'Finished' : 'Wrap up'}
-          </Text>
-          <View style={{ width: 44 }} />
-        </View>
+      <ScrollView contentContainerStyle={{ paddingTop: top, paddingBottom: bottom + 24 }}>
+        <ScreenHeader
+          onClose={() => router.back()}
+          title={done ? 'Finished' : 'Wrap up'}
+          trailing={<View style={{ width: 44 }} />}
+          className="px-6 mb-4"
+        />
 
-        {/* The card: what this thread was, at a glance. */}
         <MotiView {...enter.rise(0)} className="px-3">
           {/* Captured for sharing: the page colour around the card keeps its corners from going black. */}
           <View ref={card} collapsable={false} style={{ backgroundColor: colors.bg, padding: 12 }}>
-            <View className="rounded-xl overflow-hidden" style={{ backgroundColor: colors.hero, padding: 24 }}>
-              <View pointerEvents="none" style={{ position: 'absolute', top: -40, right: -40, opacity: 0.1 }}>
-                <OpenRing size={220} color={colors.onHero} core={false} weight={0.11} />
-              </View>
+            <HeroCard padding={24} ringOffset={-40} ringOpacity={0.1}>
               <Text className="font-sans-semi text-sm" style={{ color: colors.heroAccent }}>
                 {category.label} · {spanLabel(w.from, w.to)} · {w.days} {w.days === 1 ? 'day' : 'days'}
               </Text>
@@ -137,7 +132,7 @@ export default function WrapUpScreen() {
                 <View key={s.key} className="mt-5 pt-4" style={{ borderTopWidth: 1, borderTopColor: colors.heroSoft }}>
                   <View className="flex-row items-baseline justify-between">
                     <Text className="font-sans-semi text-sm" style={{ color: colors.onHeroMuted }}>
-                      {s.metric.charAt(0).toUpperCase() + s.metric.slice(1)}
+                      {capitalize(s.metric)}
                     </Text>
                     <Text className="font-display" style={{ color: colors.onHero, fontSize: 26, fontVariant: ['tabular-nums'] }}>
                       {headline(s)}
@@ -146,7 +141,7 @@ export default function WrapUpScreen() {
                   {s.byGroup?.slice(0, 4).map((g) => (
                     <View key={g.group} className="flex-row justify-between mt-1.5">
                       <Text className="font-sans text-sm" style={{ color: colors.onHeroMuted }}>
-                        {g.group.charAt(0).toUpperCase() + g.group.slice(1)}
+                        {capitalize(g.group)}
                       </Text>
                       <Text className="font-sans-medium text-sm" style={{ color: colors.onHero, fontVariant: ['tabular-nums'] }}>
                         {formatValue(g.total, s.unit)}
@@ -180,7 +175,7 @@ export default function WrapUpScreen() {
                   Kept with Mnemo
                 </Text>
               </View>
-            </View>
+            </HeroCard>
           </View>
         </MotiView>
 

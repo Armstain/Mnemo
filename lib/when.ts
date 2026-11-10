@@ -1,23 +1,9 @@
-import type { LaterStep, MnemoItem } from '@/types/mnemo';
-import { DAY_MS } from '@/utils/time';
+import type { LaterStep, MnemoItem, Repeat } from '@/types/mnemo';
+import { addDays, atTime as at, DAY_MS } from '@/utils/time';
 
 // Reminder times: the quick choices offered, the next time a repeating one
 // comes round, and how a reminder reads. Pure, so it's easy to test.
 
-export type Repeat = NonNullable<MnemoItem['repeat']>;
-
-
-function at(day: Date, hour: number, minute = 0): Date {
-  const d = new Date(day);
-  d.setHours(hour, minute, 0, 0);
-  return d;
-}
-
-function addDays(day: Date, n: number): Date {
-  const d = new Date(day);
-  d.setDate(d.getDate() + n);
-  return d;
-}
 
 /** Same day of the month, clamped: a monthly on the 31st lands on Feb 28/29. */
 function addMonths(day: Date, n: number): Date {
@@ -30,7 +16,6 @@ function addMonths(day: Date, n: number): Date {
   return d;
 }
 
-/** The first time at or after `now` a repeating reminder comes round. */
 export function nextOccurrence(due: number, repeat: Repeat | undefined, now = Date.now()): number {
   if (!repeat || due > now) return due;
   let d = new Date(due);
@@ -122,8 +107,6 @@ export const REPEAT_LABEL: Record<Repeat, string> = {
   weekly: 'Every week',
   monthly: 'Every month',
 };
-
-// ─── Which thread to pick back up ───────────────────────────────
 
 const HALF_LIFE_MS = 3 * DAY_MS;
 

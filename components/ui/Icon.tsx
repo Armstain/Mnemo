@@ -126,7 +126,7 @@ const ICONS: Record<IconName, IconComponent> = {
   locate: LocateFixed,
 };
 
-export interface IconProps {
+interface IconProps {
   name: IconName;
   /** Rendered box in px. Default 20. */
   size?: number;

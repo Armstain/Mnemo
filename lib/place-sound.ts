@@ -1,7 +1,7 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Platform } from 'react-native';
 
-import { Notifications, notificationsAvailable } from '@/lib/notifications';
+import { askNotificationPermission, Notifications, notificationsAvailable, type NotificationData } from '@/lib/notifications';
+import { readSavedPreferences } from '@/lib/preferences';
 import { buzz } from '@/lib/reliability';
 import { ensureReminderCategory, REMINDER_CATEGORY } from '@/lib/reminders';
 
@@ -39,25 +39,22 @@ const OLD_CHANNEL_IDS = [
 ];
 const LONG_BUZZ = [0, 500, 250, 500, 250, 500];
 
-/**
- * The chosen sound, read from storage: the background task runs before the
- * app's preferences are loaded, so it can't ask them.
- */
-export async function readPlaceSound(): Promise<PlaceSound> {
+const soundFile = (sound: PlaceSound) => PLACE_SOUNDS.find((p) => p.key === sound)?.file;
+
+/** Read from storage: the background task runs before the app's preferences are loaded. */
+async function readPlaceSound(): Promise<PlaceSound> {
   try {
-    const raw = Platform.OS === 'web' ? localStorage.getItem('mnemo-preferences') : await AsyncStorage.getItem('mnemo-preferences');
-    const s = raw ? JSON.parse(raw)?.placeSound : undefined;
+    const s = (await readSavedPreferences()).placeSound;
     return PLACE_SOUNDS.some((p) => p.key === s) ? (s as PlaceSound) : DEFAULT_PLACE_SOUND;
   } catch {
     return DEFAULT_PLACE_SOUND;
   }
 }
 
-/** Makes the channel for this sound (Android), and tidies away the unused ones. */
-export async function ensurePlaceChannel(sound: PlaceSound): Promise<string> {
+async function ensurePlaceChannel(sound: PlaceSound): Promise<string> {
   const id = channelId(sound);
   if (Platform.OS !== 'android') return id;
-  const file = PLACE_SOUNDS.find((p) => p.key === sound)?.file;
+  const file = soundFile(sound);
   await Notifications.setNotificationChannelAsync(id, {
     name: 'Place reminders',
     description: 'When you arrive at or leave a place you saved',
@@ -76,12 +73,12 @@ export async function ensurePlaceChannel(sound: PlaceSound): Promise<string> {
 }
 
 /** Rings now: a place reminder, or the test from Settings. */
-export async function ringPlaceReminder(content: { title: string; body: string; data?: Record<string, unknown> }, sound?: PlaceSound): Promise<void> {
+export async function ringPlaceReminder(content: { title: string; body: string; data?: NotificationData }, sound?: PlaceSound): Promise<void> {
   if (!notificationsAvailable) return;
   const chosen = sound ?? (await readPlaceSound());
   const channel = await ensurePlaceChannel(chosen);
   await ensureReminderCategory();
-  const file = PLACE_SOUNDS.find((p) => p.key === chosen)?.file;
+  const file = soundFile(chosen);
   await Notifications.scheduleNotificationAsync({
     content: {
       ...content,
@@ -103,8 +100,7 @@ export async function allowPlaceNotifications(): Promise<void> {
   if (!notificationsAvailable || Platform.OS === 'web') return;
   try {
     await ensurePlaceChannel(await readPlaceSound());
-    const now = await Notifications.getPermissionsAsync();
-    if (!now.granted && now.canAskAgain !== false) await Notifications.requestPermissionsAsync();
+    await askNotificationPermission();
   } catch {
     // Settings → Location says if they're still off.
   }

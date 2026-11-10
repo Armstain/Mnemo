@@ -1,28 +1,31 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Linking, Platform } from 'react-native';
 import * as Location from 'expo-location';
 
 import { getAllItems, updatePartialItem } from '@/lib/db';
+import { createEmitter } from '@/lib/emitter';
 import { nativeGeofencing } from '@/lib/geofence-native';
-import { outcomeProblem, outcomeReport, type GeofenceOutcome } from '@/lib/geofence-outcome';
+import { outcomeProblem, outcomeReport, type GeofenceOutcome, type OutcomeCause } from '@/lib/geofence-outcome';
 import { logError } from '@/lib/errors';
 import { loadPlaces } from '@/lib/place-store';
 import { afterCrossing, isArmed, onFix, onPlaceEvent, pickWatched, placeLabel, PLACE_NOTIFICATION, ringNow, watchedRadius, type PlaceEvent } from '@/lib/places';
 import { ringPlaceReminder } from '@/lib/place-sound';
 import { getPreferences } from '@/lib/preferences';
 import { openSettings, reminderHealth, type CheckState } from '@/lib/reliability';
+import { readJson, storage, writeJson } from '@/lib/storage';
+import { DAY_MS } from '@/utils/time';
 import type { MnemoItem, Place, PlaceReminder } from '@/types/mnemo';
 
 // Phone side of location reminders (rules in lib/places.ts). Background events need "all the time"
 // location, and a phone may still hold one back, so opening Mnemo catches it (`catchUp`).
 
 export const GEOFENCE_TASK = 'mnemo-geofence';
-export const geofencingAvailable = Platform.OS === 'android' || Platform.OS === 'ios';
+const geofencingAvailable = Platform.OS === 'android' || Platform.OS === 'ios';
 
 const WATCH_KEY = 'mnemo-geofence-watch';
 /** The last enter/exit the background task heard (lib/geofence-task.ts), for the problem report. */
 export const GEOFENCE_EVENT_KEY = 'mnemo-geofence-event';
 const LATE_KEY = 'mnemo-geofence-late';
+const EMPTY_WATCH = { signature: '', since: 0 };
 
 export interface Fix {
   latitude: number;
@@ -30,7 +33,7 @@ export interface Fix {
   accuracy: number;
 }
 
-export async function allowForeground(): Promise<boolean> {
+async function allowForeground(): Promise<boolean> {
   try {
     const now = await Location.getForegroundPermissionsAsync();
     if (now.granted) return true;
@@ -82,7 +85,7 @@ async function lastFix(): Promise<Fix | null> {
   }
 }
 
-export interface PlaceHealth {
+interface PlaceHealth {
   available: boolean;
   services: CheckState;
   /** Android's network location ("Google Location Accuracy"): geofences run on it, so without it they may never fire. */
@@ -103,20 +106,17 @@ export interface PlaceProblem {
   fix?: () => void;
 }
 
-const LATE_MEMORY_MS = 14 * 24 * 60 * 60 * 1000;
+const LATE_MEMORY_MS = 14 * DAY_MS;
 
 export async function placeHealth(): Promise<PlaceHealth> {
-  const late = Number(await AsyncStorage.getItem(LATE_KEY).catch(() => null)) || 0;
+  const late = Number(await storage.get(LATE_KEY).catch(() => null)) || 0;
   const lateAt = late && Date.now() - late < LATE_MEMORY_MS ? late : null;
   if (!geofencingAvailable) {
     return { available: false, services: 'check', network: 'check', foreground: 'check', background: 'fix', notifications: 'check', battery: null, lateAt, registration: null };
   }
   const ok = (b: boolean): CheckState => (b ? 'ok' : 'fix');
   const services = await Location.hasServicesEnabledAsync().catch(() => true);
-  const network =
-    Platform.OS === 'android' && services
-      ? await Location.getProviderStatusAsync().then((s) => s.networkAvailable !== false).catch(() => true)
-      : true;
+  const network = Platform.OS === 'android' && services ? await networkLocationOn() : true;
   const fg = await Location.getForegroundPermissionsAsync().catch(() => ({ granted: false }));
   const bg = await Location.getBackgroundPermissionsAsync().catch(() => ({ granted: false }));
   const r = await reminderHealth().catch(() => null);
@@ -133,18 +133,26 @@ export async function placeHealth(): Promise<PlaceHealth> {
   };
 }
 
+const openLocationSettings = () => void Linking.openSettings().catch(() => {});
+const enableNetworkLocation = () => void Location.enableNetworkProviderAsync().catch(openLocationSettings);
+const CAUSE_FIX: Partial<Record<OutcomeCause, () => void>> = {
+  accuracy: enableNetworkLocation,
+  background: () => void allowBackground(),
+  services: openLocationSettings,
+};
+
 export function placeProblems(h: PlaceHealth): PlaceProblem[] {
   if (!h.available) return [{ key: 'web', text: 'Place reminders need the phone app; here places can only be saved.' }];
   const out: PlaceProblem[] = [];
   if (h.services === 'fix') {
-    out.push({ key: 'services', text: 'Location is turned off on this phone.', action: 'Turn on', fix: () => Linking.openSettings().catch(() => {}) });
+    out.push({ key: 'services', text: 'Location is turned off on this phone.', action: 'Turn on', fix: CAUSE_FIX.services });
   }
   if (h.network === 'fix') {
     out.push({
       key: 'network',
       text: 'Google Location Accuracy is off. Android notices places with it, so without it reminders may never go off.',
       action: 'Turn on',
-      fix: () => void Location.enableNetworkProviderAsync().catch(() => Linking.openSettings().catch(() => {})),
+      fix: CAUSE_FIX.accuracy,
     });
   }
   if (h.foreground === 'fix' || h.background === 'fix') {
@@ -152,7 +160,7 @@ export function placeProblems(h: PlaceHealth): PlaceProblem[] {
       key: 'background',
       text: "Mnemo can't notice places while it's closed. Allow location “All the time”.",
       action: 'Allow',
-      fix: () => void allowBackground(),
+      fix: CAUSE_FIX.background,
     });
   }
   // What Android itself answered, unless a check above already says the same thing. This is the
@@ -165,11 +173,7 @@ export function placeProblems(h: PlaceHealth): PlaceProblem[] {
     : said?.cause === 'services' ? h.services === 'fix'
     : false;
   if (said && !alreadyShown) {
-    const fix =
-      said.cause === 'accuracy' ? () => void Location.enableNetworkProviderAsync().catch(() => Linking.openSettings().catch(() => {}))
-      : said.cause === 'background' ? () => void allowBackground()
-      : said.cause === 'services' ? () => Linking.openSettings().catch(() => {})
-      : undefined;
+    const fix = CAUSE_FIX[said.cause];
     out.push({ key: 'registration', text: said.text, action: fix ? (said.cause === 'background' ? 'Allow' : 'Turn on') : undefined, fix });
   }
   if (h.notifications === 'fix') {
@@ -196,15 +200,14 @@ interface Watch {
 
 async function loadWatch(): Promise<Watch> {
   try {
-    const raw = await AsyncStorage.getItem(WATCH_KEY);
-    const w = raw ? JSON.parse(raw) : null;
+    const w = (await readJson(WATCH_KEY)) as { signature?: unknown; since?: unknown } | null;
     return { signature: String(w?.signature ?? ''), since: Number(w?.since) || 0 };
   } catch {
     return { signature: '', since: 0 };
   }
 }
 
-export function watchList(items: MnemoItem[], places: Place[]): Location.LocationRegion[] {
+function watchList(items: MnemoItem[], places: Place[]): Location.LocationRegion[] {
   return pickWatched(items, places).watched.map((p) => ({
     identifier: p.id,
     latitude: p.latitude,
@@ -220,7 +223,11 @@ export function watchList(items: MnemoItem[], places: Place[]): Location.Locatio
  * mode turned off) and won't bring them back: forget the list, so the next sync sets it again.
  */
 export async function forgetWatch(): Promise<void> {
-  await AsyncStorage.setItem(WATCH_KEY, JSON.stringify({ signature: '', since: 0 })).catch(() => {});
+  await writeJson(WATCH_KEY, EMPTY_WATCH).catch(() => {});
+}
+
+async function markWatched(signature: string): Promise<void> {
+  await writeJson(WATCH_KEY, { signature, since: Date.now() });
 }
 
 async function networkLocationOn(): Promise<boolean> {
@@ -230,14 +237,9 @@ async function networkLocationOn(): Promise<boolean> {
 }
 
 /** Told after each registration, so screens showing Android's answer refresh (usePlaceProblems). */
-const outcomeListeners = new Set<() => void>();
+const outcomes = createEmitter();
+export const onGeofenceOutcome = outcomes.on;
 
-export function onGeofenceOutcome(listener: () => void): () => void {
-  outcomeListeners.add(listener);
-  return () => outcomeListeners.delete(listener);
-}
-
-/** Android's last answer to Mnemo's geofences (null without the native registration). */
 export function geofenceOutcome(): GeofenceOutcome | null {
   return nativeGeofencing?.outcome() ?? null;
 }
@@ -261,7 +263,7 @@ export async function syncGeofences(items: MnemoItem[], places: Place[]): Promis
     const watch = await loadWatch();
     if (regions.length === 0) {
       if (started) await (native ? native.stop(GEOFENCE_TASK) : Location.stopGeofencingAsync(GEOFENCE_TASK));
-      if (watch.signature) await AsyncStorage.setItem(WATCH_KEY, JSON.stringify({ signature: '', since: 0 }));
+      if (watch.signature) await writeJson(WATCH_KEY, EMPTY_WATCH);
       return;
     }
     if (started && watch.signature === signature && setThisLaunch) return;
@@ -274,12 +276,12 @@ export async function syncGeofences(items: MnemoItem[], places: Place[]): Promis
       const outcome = await native.start(GEOFENCE_TASK, regions);
       setThisLaunch = true;
       if (outcome.state === 'ok') {
-        await AsyncStorage.setItem(WATCH_KEY, JSON.stringify({ signature, since: Date.now() }));
+        await markWatched(signature);
       } else {
         await forgetWatch();
         logError('geofence register', new Error(outcomeReport(outcome)));
       }
-      outcomeListeners.forEach((l) => l());
+      outcomes.emit();
       return;
     }
     // expo-location (iOS, and Android builds without the module) can't say whether Android
@@ -294,23 +296,18 @@ export async function syncGeofences(items: MnemoItem[], places: Place[]): Promis
     }
     await Location.startGeofencingAsync(GEOFENCE_TASK, regions);
     setThisLaunch = true;
-    await AsyncStorage.setItem(WATCH_KEY, JSON.stringify({ signature, since: Date.now() }));
+    await markWatched(signature);
   } catch (e) {
     logError('geofence sync', e);
   }
 }
 
-type Listener = (itemId: string, place: PlaceReminder) => void;
-const listeners = new Set<Listener>();
-
-export function onPlaceReminderChange(listener: Listener): () => void {
-  listeners.add(listener);
-  return () => listeners.delete(listener);
-}
+const placeChanges = createEmitter<{ itemId: string; place: PlaceReminder }>();
+export const onPlaceReminderChange = placeChanges.on;
 
 async function save(item: MnemoItem, place: PlaceReminder): Promise<void> {
   await updatePartialItem(item.id, { place });
-  listeners.forEach((l) => l(item.id, place));
+  placeChanges.emit({ itemId: item.id, place });
 }
 
 async function show(item: MnemoItem, placeName: string | undefined, note?: string): Promise<void> {
@@ -374,7 +371,7 @@ async function applyFix(items: MnemoItem[], here: Fix, opening: boolean): Promis
     } else if (action === 'fire' && opening) {
       // Watched and still missed: the phone held it back. Unwatched: only noticeable now.
       const rang = await fire(item, place, now, watching ? 'late: your phone held it back' : 'noticed when you opened Mnemo', watching);
-      if (rang && watching) await AsyncStorage.setItem(LATE_KEY, String(Date.now())).catch(() => {});
+      if (rang && watching) await storage.set(LATE_KEY, String(Date.now())).catch(() => {});
     } else if (action === 'fire') {
       await fire(item, place, now);
     }
@@ -420,5 +417,21 @@ export async function watchWhileOpen(getItems: () => MnemoItem[]): Promise<() =>
     return () => sub.remove();
   } catch {
     return () => {};
+  }
+}
+
+/** For the problem report: how many places the phone watches since when, and the last event it sent. No coordinates. */
+export async function placeReport(): Promise<string> {
+  try {
+    const [watch, event] = (await Promise.all([readJson(WATCH_KEY), readJson(GEOFENCE_EVENT_KEY)])) as [
+      { signature?: unknown; since?: unknown } | null,
+      { event: string; at: number } | null,
+    ];
+    const count = watch?.signature ? String(watch.signature).split('|').length : 0;
+    const when = (at: unknown) => (Number(at) ? new Date(Number(at)).toISOString() : 'never');
+    const android = nativeGeofencing ? `\n${outcomeReport(nativeGeofencing.outcome())}` : '';
+    return `Places watched: ${count}${count ? ` since ${when(watch?.since)}` : ''} · last place event: ${event ? `${event.event} ${when(event.at)}` : 'never'}${android}`;
+  } catch {
+    return 'Places: unreadable';
   }
 }

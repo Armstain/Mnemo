@@ -1,16 +1,16 @@
 import React from 'react';
 import { ActivityIndicator, Pressable, View } from 'react-native';
-import { router } from 'expo-router';
 
 import { Icon } from '@/components/ui/Icon';
 import { Text } from '@/components/ui/Text';
 import { useMnemoStore } from '@/hooks/use-mnemo-store';
 import { useThemeColors } from '@/hooks/use-theme';
-import { aiErrorText } from '@/lib/api-key';
+import { aiErrorText } from '@/lib/ai-error';
 import { askNotes, type NoteForQuestion } from '@/lib/gemini';
 import { packContext, type Hit } from '@/lib/retrieve';
 import { findPassages } from '@/lib/search';
 import type { MnemoItem } from '@/types/mnemo';
+import { openThread } from '@/lib/navigation';
 
 const QUESTION =
   /\?\s*$|^(what|when|where|who|which|why|how|did|do|does|is|are|was|were|can|should|kobe|koto|ki|kokhon|kothay|keno|kara)\b|^(কত|কি|কী|কখন|কোথায়|কে|কেন|কবে|কারা)/i;
@@ -109,7 +109,7 @@ export function AskCard({
                 return (
                   <Pressable
                     key={id}
-                    onPress={() => router.push(`/(tabs)/context?id=${id}`)}
+                    onPress={() => openThread(id)}
                     accessibilityRole="button"
                     className="rounded-full px-3 h-8 items-center justify-center active:opacity-70"
                     style={{ backgroundColor: colors.surfaceLowest, maxWidth: '100%' }}
@@ -133,7 +133,7 @@ export function AskCard({
           {hits.map(({ chunk }) => (
             <Pressable
               key={chunk.id}
-              onPress={() => router.push(`/(tabs)/context?id=${chunk.threadId}`)}
+              onPress={() => openThread(chunk.threadId)}
               accessibilityRole="button"
               accessibilityLabel={`${chunk.title}: ${chunk.text.slice(0, SHOWN_CHARS)}`}
               className="rounded-md px-3 py-2.5 mb-2 active:opacity-70"

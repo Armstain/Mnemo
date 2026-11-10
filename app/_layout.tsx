@@ -14,7 +14,6 @@ import { NotoSerifBengali_500Medium } from '@expo-google-fonts/noto-serif-bengal
 import { DarkTheme, DefaultTheme, ThemeProvider } from 'expo-router/react-navigation';
 import { useFonts } from 'expo-font';
 import { router, Stack } from 'expo-router';
-import * as SecureStore from 'expo-secure-store';
 import * as SplashScreen from 'expo-splash-screen';
 import { useEffect } from 'react';
 import { LogBox, Platform } from 'react-native';
@@ -24,7 +23,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { Notifications, notificationsAvailable } from '@/lib/notifications';
 import "../global.css";
 
-import { ONBOARDING_KEY } from '@/app/onboarding';
+import { isOnboarded } from '@/lib/onboarding';
 import { NudgeScheduler } from '@/components/NudgeScheduler';
 import { PlaceReminderSync } from '@/components/PlaceReminderSync';
 import { AutoBackup } from '@/components/AutoBackup';
@@ -39,7 +38,8 @@ import { CelebrationHost } from '@/components/CelebrationHost';
 import { CardFlightHost } from '@/components/CardFlightHost';
 import { MnemoStoreProvider } from '@/hooks/use-mnemo-store';
 import { UndoToastProvider } from '@/hooks/use-undo-toast';
-import { applyStoredThemePreference, PALETTE, useThemeName } from '@/hooks/use-theme';
+import { applyStoredThemePreference, useThemeName } from '@/hooks/use-theme';
+import { PALETTE } from '@/utils/palette';
 import { appReady } from '@/lib/ai-mode';
 
 // moti still bundles an unused MotiSafeAreaView built on RN's deprecated
@@ -67,8 +67,6 @@ if (notificationsAvailable) {
   });
 }
 
-// Anything that breaks while drawing shows a way back instead of a blank
-// screen, and is noted in the local problem log.
 export { CrashScreen as ErrorBoundary } from '@/components/CrashScreen';
 installGlobalErrorLog();
 
@@ -77,13 +75,10 @@ export const unstable_settings = {
   initialRouteName: '(tabs)',
 };
 
-// Prevent the splash screen from auto-hiding before asset loading is complete.
 SplashScreen.preventAutoHideAsync();
 
-// Apply any persisted manual theme choice before first render.
 applyStoredThemePreference();
 
-// Navigation themes derived from the app palette (see hooks/use-theme.tsx).
 export const NavThemes = {
   dark: {
     ...DarkTheme,
@@ -146,21 +141,14 @@ export default function RootLayout() {
 function RootLayoutNav() {
   const theme = useThemeName();
 
-  // Redirect to onboarding on first launch.
   useEffect(() => {
-    (async () => {
-      try {
-        const done =
-          Platform.OS === 'web'
-            ? localStorage.getItem(ONBOARDING_KEY)
-            : await SecureStore.getItemAsync(ONBOARDING_KEY);
-        if (done !== 'true') {
-          router.replace('/onboarding');
-        }
-      } catch {
-        // Fail open — show main app if storage unavailable.
-      }
-    })();
+    isOnboarded()
+      .then((done) => {
+        if (!done) router.replace('/onboarding');
+      })
+      .catch(() => {
+        // Fail open: show the main app if storage is unavailable.
+      });
   }, []);
 
   return (
@@ -218,19 +206,15 @@ function RootLayoutNav() {
           </Stack>
           <PendingProcessor />
           <FilingNotifier />
-          {/* Tapping a reminder or a nudge opens its thread; reminder buttons act on it. */}
           <ReminderActions />
-          {/* Something shared to Mnemo from another app opens the Save screen. */}
           <ShareIntake />
           <WidgetSync />
           <NudgeScheduler />
           <PlaceReminderSync />
-          {/* The daily backup into the person's chosen folder, when it's on. */}
           <AutoBackup />
           <UndoToastHost />
-          {/* The Resume card opening into its thread, over the screen it opens. */}
           <CardFlightHost />
-          {/* A real task finished: the ring closes. Above everything, toast included. */}
+          {/* Last, so it draws above everything, the toast included. */}
           <CelebrationHost />
         </ThemeProvider>
         </UndoToastProvider>

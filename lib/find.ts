@@ -1,7 +1,7 @@
 import { tokenize } from '@/lib/bm25';
 import { metricKey } from '@/lib/measures';
 import type { Entry, MnemoItem } from '@/types/mnemo';
-import { DAY_MS } from '@/utils/time';
+import { DAY_MS, startOfDay } from '@/utils/time';
 
 // Finding things on the phone: a time span said in the search ("cng last
 // week", "গত মাসে বাজার"), totals of the numbers that match across every
@@ -15,16 +15,10 @@ export interface Period {
 }
 
 
-function startOfDay(ts: number): number {
-  const d = new Date(ts);
-  d.setHours(0, 0, 0, 0);
-  return d.getTime();
-}
-
 function startOfWeek(ts: number): number {
   // Weeks start on Saturday in Bangladesh and Sunday or Monday elsewhere;
   // "this week" here is simply the last seven days including today.
-  return startOfDay(ts) - 6 * DAY_MS;
+  return startOfDay(ts).getTime() - 6 * DAY_MS;
 }
 
 const MONTHS = [
@@ -49,11 +43,11 @@ interface PeriodRule {
 }
 
 const RULES: PeriodRule[] = [
-  { re: /\b(today|ajke|aj)\b|আজকে|আজ/i, label: 'Today', make: (now) => ({ from: startOfDay(now), to: now + DAY_MS }) },
+  { re: /\b(today|ajke|aj)\b|আজকে|আজ/i, label: 'Today', make: (now) => ({ from: startOfDay(now).getTime(), to: now + DAY_MS }) },
   {
     re: /\b(yesterday|gotokal)\b|গতকাল/i,
     label: 'Yesterday',
-    make: (now) => ({ from: startOfDay(now) - DAY_MS, to: startOfDay(now) }),
+    make: (now) => ({ from: startOfDay(now).getTime() - DAY_MS, to: startOfDay(now).getTime() }),
   },
   {
     re: /\b(this week|past week)\b|এই সপ্তাহে?|\bei (shoptah|soptah)e?\b/i,
@@ -94,7 +88,7 @@ const RULES: PeriodRule[] = [
     label: '',
     make: (now, m) => {
       const n = Number((m[1] ?? m[2]).replace(/[০-৯]/g, (c) => String(c.charCodeAt(0) - 0x9e6)));
-      return { from: startOfDay(now) - (n - 1) * DAY_MS, to: now + DAY_MS, label: `Last ${n} days` };
+      return { from: startOfDay(now).getTime() - (n - 1) * DAY_MS, to: now + DAY_MS, label: `Last ${n} days` };
     },
   },
 ];

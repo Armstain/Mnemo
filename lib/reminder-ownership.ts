@@ -13,7 +13,6 @@ import type { LaterStep, MnemoItem, PlaceReminder } from '@/types/mnemo';
 
 type Reminders = Pick<MnemoItem, 'title' | 'status' | 'place' | 'dueDate' | 'repeat' | 'laterSteps' | 'nextStep'>;
 
-/** The thread's place reminder, while it can still ring. */
 export function armedPlace(t: Pick<MnemoItem, 'place' | 'status'>): PlaceReminder | undefined {
   return isArmed(t) ? t.place : undefined;
 }
@@ -23,14 +22,13 @@ export function samePlaceReminder(a: PlaceReminder, b: Pick<PlaceReminder, 'plac
   return a.placeId === b.placeId && a.on === b.on && a.repeat === b.repeat && String(a.days ?? '') === String(b.days ?? '');
 }
 
-/** Setting `next` on this thread would replace a different place reminder that can still ring. */
 export function replacesPlaceReminder(t: Pick<MnemoItem, 'place' | 'status'>, next: Pick<PlaceReminder, 'placeId' | 'on' | 'repeat' | 'days'>): boolean {
   const current = armedPlace(t);
   return !!current && !samePlaceReminder(current, next);
 }
 
 /** A time reminder that will still go off: a future one, a repeating one, or steps still queued. */
-function hasLiveTime(t: Pick<MnemoItem, 'dueDate' | 'repeat' | 'laterSteps'>, now: number): boolean {
+export function hasLiveTime(t: Pick<MnemoItem, 'dueDate' | 'repeat' | 'laterSteps'>, now = Date.now()): boolean {
   return (!!t.dueDate && (!!t.repeat || t.dueDate > now)) || (t.laterSteps ?? []).some((l) => l.at > now);
 }
 
@@ -63,7 +61,7 @@ export function mayAutoFile(own: Pick<MnemoItem, 'place' | 'status' | 'dueDate' 
   return !armedPlace(own) && !(own.repeat && own.dueDate);
 }
 
-export type Fold = { ok: true; carry: Partial<MnemoItem> } | { ok: false; reason: string };
+type Fold = { ok: true; carry: Partial<MnemoItem> } | { ok: false; reason: string };
 
 /**
  * `from` is about to lose its last note to `to` and be removed. What `to` takes over so no

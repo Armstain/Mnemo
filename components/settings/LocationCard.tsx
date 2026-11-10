@@ -1,19 +1,22 @@
 import React from 'react';
-import { AppState, Platform, Pressable, Switch, View } from 'react-native';
+import { ToggleSwitch } from '@/components/ui/ToggleRow';
+import { Surface } from '@/components/ui/Card';
+import { AppState, Platform, Pressable, View } from 'react-native';
 import { router } from 'expo-router';
-import { haptic } from '@/utils/haptics';
+import { haptic } from '@/lib/haptics';
 
 import { Button } from '@/components/ui/Button';
 import { Icon } from '@/components/ui/Icon';
 import { Text } from '@/components/ui/Text';
-import { usePlaceProblems } from '@/components/PlaceWarnings';
+import { useGeofenceAnswers, usePlaceProblems } from '@/components/PlaceWarnings';
 import { useMnemoStore } from '@/hooks/use-mnemo-store';
 import { useThemeColors } from '@/hooks/use-theme';
 import { usePlaces } from '@/lib/place-store';
 import { formatMeters, isArmed, watchedRadius } from '@/lib/places';
 import { setPreferences, usePreferences } from '@/lib/preferences';
-import { allowBackground, geofenceOutcome, onGeofenceOutcome } from '@/lib/geofence';
+import { allowBackground, geofenceOutcome } from '@/lib/geofence';
 import { outcomeLine } from '@/lib/geofence-outcome';
+import { placeHref, remindersCheckHref } from '@/lib/routes';
 import { allowPlaceNotifications, DEFAULT_PLACE_SOUND, PLACE_SOUNDS, ringPlaceReminder } from '@/lib/place-sound';
 import { Pill } from '@/components/ui/Pill';
 import { confirmAction } from '@/utils/confirm';
@@ -39,8 +42,7 @@ export function LocationCard() {
   }, []);
   const problems = usePlaceProblems(`${returns}:${on}`);
   // What Android answered when the places were last set: read on each return and each answer.
-  const [answers, setAnswers] = React.useState(0);
-  React.useEffect(() => onGeofenceOutcome(() => setAnswers((n) => n + 1)), []);
+  const answers = useGeofenceAnswers();
   const watching = React.useMemo(() => (on && waiting.length > 0 ? outcomeLine(geofenceOutcome()) : null), [on, waiting.length, returns, answers]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const toggle = (next: boolean) => {
@@ -62,20 +64,13 @@ export function LocationCard() {
   };
 
   return (
-    <View className="bg-surface rounded-lg p-5 border border-border/50 gap-4">
+    <Surface tone="soft" className="rounded-lg p-5 gap-4">
       <View className="flex-row items-center justify-between">
         <View className="flex-row items-center flex-1 mr-3">
           <Icon name="mapPin" size={15} color={colors.accent} stroke={2} />
           <Text className="font-sans-semi text-sm text-fg ml-2">Place reminders</Text>
         </View>
-        <Switch
-          value={!!on}
-          onValueChange={toggle}
-          accessibilityLabel="Place reminders"
-          trackColor={{ false: colors.border, true: colors.accent }}
-          thumbColor={Platform.OS === 'android' ? colors.surfaceLowest : undefined}
-          ios_backgroundColor={colors.border}
-        />
+        <ToggleSwitch value={!!on} onValueChange={toggle} label="Place reminders" />
       </View>
 
       {!on ? <Text className="font-sans text-sm text-fg-secondary">Ring when you arrive somewhere or leave.</Text> : null}
@@ -95,7 +90,7 @@ export function LocationCard() {
           {/* What may stop it lives on the check page; here, just that there is something. */}
           {problems && problems.length > 0 ? (
             <Pressable
-              onPress={() => router.push('/reminders-check')}
+              onPress={() => router.push(remindersCheckHref)}
               accessibilityRole="button"
               className="flex-row items-center active:opacity-70"
               style={{ gap: 8 }}
@@ -113,7 +108,7 @@ export function LocationCard() {
             return (
               <Pressable
                 key={p.id}
-                onPress={() => router.push(`/place?id=${p.id}`)}
+                onPress={() => router.push(placeHref(p.id))}
                 accessibilityRole="button"
                 accessibilityLabel={`${p.name}. Change or remove.`}
                 className="pt-4 border-t border-border/50 gap-2 active:opacity-80"
@@ -133,7 +128,7 @@ export function LocationCard() {
             );
           })}
 
-          <Button variant="quiet" size="sm" icon="plus" onPress={() => router.push('/place')}>
+          <Button variant="quiet" size="sm" icon="plus" onPress={() => router.push(placeHref())}>
             Add a place
           </Button>
 
@@ -148,9 +143,6 @@ export function LocationCard() {
                   <Pill
                     key={p.key}
                     tone={colors.accent}
-                    size="md"
-                    dot={false}
-                    outline={sound !== p.key}
                     selected={sound === p.key}
                     onPress={() => {
                       setPreferences({ placeSound: p.key });
@@ -181,6 +173,6 @@ export function LocationCard() {
           ) : null}
         </>
       ) : null}
-    </View>
+    </Surface>
   );
 }

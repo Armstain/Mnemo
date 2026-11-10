@@ -7,8 +7,8 @@
 // For a wide release, point TILE_URL at a provider with a key (MapTiler,
 // Stadia): OpenStreetMap's own servers are for light use.
 
-export const TILE_URL = 'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
-export const TILE_ATTRIBUTION = '© OpenStreetMap contributors';
+const TILE_URL = 'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
+const TILE_ATTRIBUTION = '© OpenStreetMap contributors';
 
 /** Messages the app sends the page. */
 export type ToMap =

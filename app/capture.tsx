@@ -7,29 +7,32 @@ import { Bold, Clock, ImagePlus, ListChecks, MapPin, StepForward, Tag, Type, typ
 
 import { TextInput } from '@/components/ui/TextInput';
 import { Text } from '@/components/ui/Text';
-import { Button, IconButton } from '@/components/ui/Button';
+import { Button } from '@/components/ui/Button';
+import { useSurfaceStyle } from '@/components/ui/Card';
+import { ScreenHeader, useSafeTop } from '@/components/ui/Screen';
 import { Icon } from '@/components/ui/Icon';
 import { CategoryPicker } from '@/components/ui/CategoryPicker';
 import { LabeledInput } from '@/components/ui/LabeledInput';
 import { ChecklistEditor } from '@/components/ui/ChecklistEditor';
 import { DueDatePicker, formatDueDate } from '@/components/ui/DueDatePicker';
-import { toggleBold, toggleHeading, type TextSelection } from '@/components/ui/EditorToolbar';
+import { toggleBold, toggleHeading, type TextSelection } from '@/utils/text';
 import { FocusDestination } from '@/components/ui/FocusDestination';
 import { PlaceChoice, type PlacePick } from '@/components/PlaceChoice';
 import { useCaptureTarget } from '@/hooks/use-capture-target';
 import { useKeyboardInset } from '@/hooks/use-keyboard-inset';
 import { useMnemoStore } from '@/hooks/use-mnemo-store';
 import { useThemeColors } from '@/hooks/use-theme';
-import { saveTextNote } from '@/lib/capture';
+import { saveNote } from '@/lib/capture';
 import { allowBackground } from '@/lib/geofence';
 import { imageUri, pickPhotos, type ImageBlock } from '@/lib/images';
 import { usePlaces } from '@/lib/place-store';
 import { placeLabel } from '@/lib/places';
 import { usePreferences } from '@/lib/preferences';
-import { useCategories } from '@/utils/categories';
-import { useEnter } from '@/utils/motion';
+import { useCategories } from '@/hooks/use-categories';
+import { useEnter } from '@/hooks/use-enter';
 import { noFocusRing } from '@/utils/web';
 import type { Category, ChecklistItem } from '@/types/mnemo';
+import { openSaved } from '@/lib/navigation';
 
 type Panel = 'category' | 'remind' | 'place' | 'details';
 
@@ -46,13 +49,14 @@ type Panel = 'category' | 'remind' | 'place' | 'details';
 export default function CaptureScreen() {
   const enter = useEnter();
   const insets = useSafeAreaInsets();
+  const top = useSafeTop();
+  const surface = useSurfaceStyle();
   const { height: windowHeight } = useWindowDimensions();
   const store = useMnemoStore();
   const colors = useThemeColors();
   const categories = useCategories();
   const places = usePlaces();
   const { places: placesOn } = usePreferences();
-  // ?threadId=… adds an entry to that thread instead of starting a new one.
   const { threadId } = useLocalSearchParams<{ threadId?: string }>();
   const target = useCaptureTarget(threadId);
   const targetThread = target.destination;
@@ -88,7 +92,6 @@ export default function CaptureScreen() {
     ]);
   };
 
-  /** Opens a panel where the keyboard was; the same button again goes back to typing. */
   const toggle = (next: Panel) => {
     if (panel === next) {
       setPanel(null);
@@ -107,9 +110,7 @@ export default function CaptureScreen() {
 
   const handleSave = () => {
     if (!canSave) return;
-    // One save path for typed notes (lib/capture.ts): instant, and tidied
-    // up by AI in the background only when AI is on.
-    const saved = saveTextNote({
+    const saved = saveNote('text', {
       text,
       category,
       threadId: targetThread?.id,
@@ -122,10 +123,9 @@ export default function CaptureScreen() {
       images: photos,
       store,
     });
-    router.replace(`/(tabs)/context?id=${saved.threadId}`);
+    openSaved(saved);
   };
 
-  // What's been chosen, under the text: tap to change, × to take off.
   const chips: { key: string; label: string; panel: Panel; clear: () => void }[] = [
     ...(!targetThread && category !== 'general'
       ? [{ key: 'category', label: categories[category].label, panel: 'category' as const, clear: () => setCategory('general') }]
@@ -176,19 +176,17 @@ export default function CaptureScreen() {
 
   return (
     <View ref={rootRef} style={{ flex: 1, backgroundColor: colors.bg, paddingBottom: keyboard.inset }}>
-      {/* Header: Cancel and Save, always in reach. */}
-      <MotiView
-        {...enter.rise(0)}
-        className="flex-row items-center justify-between px-6 mb-3"
-        style={{ paddingTop: Math.max(insets.top, 16) }}
-      >
-        <IconButton icon="x" label="Cancel" variant="bare" onPress={() => router.back()} />
-        <Text className="flex-1 text-center font-sans-medium text-sm text-fg-secondary mx-3" numberOfLines={1}>
-          {targetThread ? `Add to ${targetThread.title}` : 'New thought'}
-        </Text>
-        <Button onPress={handleSave} disabled={!canSave} variant="primary" size="sm" icon="check">
-          Save
-        </Button>
+      <MotiView {...enter.rise(0)} style={{ paddingTop: top }}>
+        <ScreenHeader
+          onClose={() => router.back()}
+          label="Cancel"
+          title={targetThread ? `Add to ${targetThread.title}` : 'New thought'}
+          trailing={
+            <Button onPress={handleSave} disabled={!canSave} variant="primary" size="sm" icon="check">
+              Save
+            </Button>
+          }
+        />
       </MotiView>
 
       <ScrollView
@@ -256,7 +254,7 @@ export default function CaptureScreen() {
                 <View
                   key={c.key}
                   className="flex-row items-center rounded-full pl-3 h-9"
-                  style={{ backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, maxWidth: '100%' }}
+                  style={[surface, { maxWidth: '100%' }]}
                 >
                   <Pressable onPress={() => toggle(c.panel)} accessibilityRole="button" accessibilityLabel={`${c.label}. Change.`} className="shrink">
                     <Text className="font-sans-medium text-sm" style={{ color: colors.fg }} numberOfLines={1}>
@@ -273,7 +271,6 @@ export default function CaptureScreen() {
         </MotiView>
       </ScrollView>
 
-      {/* Formatting: a row above the bar while it's on. */}
       {showFormat && (
         <View className="flex-row items-center px-4 py-2 gap-2" style={{ borderTopWidth: 1, borderTopColor: colors.border }}>
           <Pressable
@@ -310,7 +307,6 @@ export default function CaptureScreen() {
         </View>
       )}
 
-      {/* The bar: every option, docked right above the keyboard. */}
       <View
         className="flex-row items-center justify-between px-3"
         style={{ borderTopWidth: 1, borderTopColor: colors.border, backgroundColor: colors.bg, paddingVertical: 6 }}
@@ -333,7 +329,6 @@ export default function CaptureScreen() {
         ))}
       </View>
 
-      {/* The open option, where the keyboard was. */}
       {panel ? (
         <View style={{ height: panelHeight, maxHeight: keyboard.open ? 230 : undefined, backgroundColor: colors.surface }}>
           <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ padding: 20, paddingBottom: keyboard.open ? 20 : Math.max(insets.bottom, 16) + 8, gap: 14 }}>

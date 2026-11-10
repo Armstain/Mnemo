@@ -1,9 +1,7 @@
 import { StatusBar } from 'expo-status-bar';
-import { useEnter } from '@/utils/motion';
-import { useState } from 'react';
-import { View, ScrollView, Pressable, Platform, Switch } from 'react-native';
-import * as Clipboard from 'expo-clipboard';
-import { clearErrors, problemReport } from '@/lib/errors';
+import { useEnter } from '@/hooks/use-enter';
+import { View, ScrollView, Pressable, Platform } from 'react-native';
+import { useProblemReport } from '@/hooks/use-problem-report';
 import { setPreferences, usePreferences } from '@/lib/preferences';
 import { Text } from '@/components/ui/Text';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -11,11 +9,15 @@ import { router } from 'expo-router';
 import { MotiView } from 'moti';
 import { Moon, Smartphone, Sun } from 'lucide-react-native';
 import Constants from 'expo-constants';
-import { haptic } from '@/utils/haptics';
-import { Eyebrow } from '@/components/ui/Eyebrow';
+import { haptic } from '@/lib/haptics';
+import { Surface } from '@/components/ui/Card';
+import { ToggleRow } from '@/components/ui/ToggleRow';
+import { LinkRow } from '@/components/settings/LinkRow';
+import { useSafeBottom } from '@/components/ui/Screen';
+import { SettingsSection } from '@/components/settings/SettingsSection';
 import { AutoBackupCard, BackupCard } from '@/components/settings/BackupCard';
 import { AiModeCard } from '@/components/settings/AiModeCard';
-import { Icon, type IconName } from '@/components/ui/Icon';
+import { helpHref, onboardingHref, privacyHref, remindersCheckHref } from '@/lib/routes';
 import { useThemeColors, useThemeName, useThemePreference, type ThemePreference } from '@/hooks/use-theme';
 import { NudgeSettingsCard } from '@/components/settings/NudgeSettingsCard';
 import { LocationCard } from '@/components/settings/LocationCard';
@@ -27,54 +29,30 @@ const THEME_OPTIONS: { key: ThemePreference; label: string; icon: typeof Sun }[]
   { key: 'dark', label: 'Dark', icon: Moon },
 ];
 
-function LinkRow({ icon, title, onPress, silent = false, chevron = true }: { icon: IconName; title: string; onPress: () => void; silent?: boolean; chevron?: boolean }) {
-  const colors = useThemeColors();
-  return (
-    <Pressable
-      onPress={() => {
-        if (!silent) haptic.select();
-        onPress();
-      }}
-      accessibilityRole="button"
-      className="bg-surface rounded-lg px-5 py-4 border border-border/50 flex-row items-center active:opacity-80"
-    >
-      <Icon name={icon} size={15} color={colors.accent} />
-      <Text className="font-sans-semi text-sm text-fg ml-2 flex-1">{title}</Text>
-      {chevron ? <Icon name="chevronRight" size={16} color={colors.fgTertiary} /> : null}
-    </Pressable>
-  );
-}
-
 function HapticsRow() {
-  const colors = useThemeColors();
   const { haptics } = usePreferences();
   return (
-    <View className="bg-surface rounded-lg px-5 py-3 border border-border/50 flex-row items-center">
-      <Text className="font-sans-semi text-sm text-fg flex-1">Vibration feedback</Text>
-      <Switch
-        value={haptics !== false}
-        onValueChange={(on) => {
-          if (!on) haptic.toggle(false);
-          setPreferences({ haptics: on });
-          if (on) haptic.toggle(true);
-        }}
-        accessibilityLabel="Vibration feedback"
-        trackColor={{ false: colors.border, true: colors.accent }}
-        thumbColor={Platform.OS === 'android' ? colors.surfaceLowest : undefined}
-        ios_backgroundColor={colors.border}
-      />
-    </View>
+    <ToggleRow
+      title="Vibration feedback"
+      className="px-5 py-3"
+      value={haptics !== false}
+      onValueChange={(on) => {
+        if (!on) haptic.toggle(false);
+        setPreferences({ haptics: on });
+        if (on) haptic.toggle(true);
+      }}
+    />
   );
 }
 
 export default function ModalScreen() {
   const enter = useEnter();
   const insets = useSafeAreaInsets();
+  const bottom = useSafeBottom();
   const colors = useThemeColors();
   const theme = useThemeName();
   const { preference, setPreference } = useThemePreference();
-  const [reportCopied, setReportCopied] = useState(false);
-  const [logCleared, setLogCleared] = useState(false);
+  const report = useProblemReport();
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.bg }}>
@@ -84,7 +62,7 @@ export default function ModalScreen() {
           contentContainerStyle={{
             paddingHorizontal: 24,
             paddingTop: insets.top + 32,
-            paddingBottom: Math.max(insets.bottom, 24) + 48,
+            paddingBottom: bottom + 48,
           }}
           showsVerticalScrollIndicator={false}
         >
@@ -97,13 +75,8 @@ export default function ModalScreen() {
             </Text>
           </MotiView>
 
-          {/* Appearance */}
-          <MotiView {...enter.rise(0)}
-            className="gap-3 mb-10"
-          >
-            <Eyebrow className="mb-1">Appearance</Eyebrow>
-
-            <View className="bg-surface rounded-lg p-2 border border-border/50 flex-row gap-1">
+          <SettingsSection title="Appearance" step={0}>
+            <Surface tone="soft" className="rounded-lg p-2 flex-row gap-1">
               {THEME_OPTIONS.map(({ key, label, icon: Icon }) => {
                 const selected = preference === key;
                 return (
@@ -118,11 +91,7 @@ export default function ModalScreen() {
                       borderColor: selected ? `${colors.border}99` : 'transparent',
                     }}
                   >
-                    <Icon
-                      size={14}
-                      color={selected ? colors.accent : colors.fgTertiary}
-                      strokeWidth={2}
-                    />
+                    <Icon size={14} color={selected ? colors.accent : colors.fgTertiary} strokeWidth={2} />
                     <Text
                       className="font-sans-medium text-sm ml-1.5"
                       style={{ color: selected ? colors.fg : colors.fgTertiary }}
@@ -132,92 +101,52 @@ export default function ModalScreen() {
                   </Pressable>
                 );
               })}
-            </View>
+            </Surface>
             <HapticsRow />
-          </MotiView>
+          </SettingsSection>
 
-          {/* Nudges — local notifications, so there's nothing to show on web. */}
           {Platform.OS !== 'web' && (
-            <MotiView {...enter.rise(1)}
-              className="gap-3 mb-10"
-            >
-              <Eyebrow className="mb-1">Nudges</Eyebrow>
-
+            <SettingsSection title="Nudges" step={1}>
               <NudgeSettingsCard />
-            </MotiView>
+            </SettingsSection>
           )}
 
-          {/* Location: optional place reminders, off until turned on. */}
-          <MotiView {...enter.rise(1)} className="gap-3 mb-10">
-            <Eyebrow className="mb-1">Location</Eyebrow>
+          <SettingsSection title="Location" step={1}>
             <LocationCard />
-          </MotiView>
+          </SettingsSection>
 
-          {/* AI */}
-          <MotiView {...enter.rise(1)}
-            className="gap-3 mb-10"
-          >
-            <Eyebrow className="mb-1">How Mnemo thinks</Eyebrow>
-
+          <SettingsSection title="How Mnemo thinks" step={1}>
             <AiModeCard>
               <ApiKeyConfigCard />
               <ApiKeyConfigCard provider={GROQ} />
             </AiModeCard>
-          </MotiView>
+          </SettingsSection>
 
-          {/* Backup */}
-          <MotiView {...enter.rise(2)} className="gap-3 mb-10">
-            <Eyebrow className="mb-1">Backup</Eyebrow>
+          <SettingsSection title="Backup" step={2}>
             <AutoBackupCard />
             <BackupCard />
-          </MotiView>
+          </SettingsSection>
 
-          <MotiView {...enter.rise(2)} className="gap-3 mb-10">
-            <Eyebrow className="mb-1">Something not working?</Eyebrow>
-            <LinkRow
-              icon="copy"
-              title={reportCopied ? 'Problem report copied' : 'Copy problem report'}
-              silent
-              chevron={false}
-              onPress={async () => {
-                await Clipboard.setStringAsync(await problemReport());
-                haptic.success();
-                setReportCopied(true);
-                setLogCleared(false);
-              }}
-            />
-            <LinkRow
-              icon="trash"
-              title={logCleared ? 'Error log cleared' : 'Clear error log'}
-              silent
-              chevron={false}
-              onPress={async () => {
-                await clearErrors();
-                haptic.success();
-                setLogCleared(true);
-                setReportCopied(false);
-              }}
-            />
-          </MotiView>
+          <SettingsSection title="Something not working?" step={2}>
+            <LinkRow icon="copy" title={report.reportTitle} silent chevron={false} onPress={report.copyReport} />
+            <LinkRow icon="trash" title={report.clearTitle} silent chevron={false} onPress={report.clearLog} />
+          </SettingsSection>
 
-          {/* Everything that explains rather than sets: one row each, on its own page. */}
-          <MotiView {...enter.rise(2)} className="gap-3">
-            <Eyebrow className="mb-1">Help</Eyebrow>
-            <LinkRow icon="sparkles" title="How Mnemo works" onPress={() => router.push('/help')} />
+          <SettingsSection title="Help" step={2} last>
+            <LinkRow icon="sparkles" title="How Mnemo works" onPress={() => router.push(helpHref)} />
             {Platform.OS !== 'web' ? (
-              <LinkRow icon="alert" title="Check that reminders arrive" onPress={() => router.push('/reminders-check')} />
+              <LinkRow icon="alert" title="Check that reminders arrive" onPress={() => router.push(remindersCheckHref)} />
             ) : null}
-            <LinkRow icon="pin" title="Privacy and your data" onPress={() => router.push('/privacy')} />
+            <LinkRow icon="pin" title="Privacy and your data" onPress={() => router.push(privacyHref)} />
             <LinkRow
               icon="repeat"
               title="Go through setup again"
               onPress={() => {
-                // Nothing is cleared: onboarding only rewrites the choices it asks about.
                 router.dismissAll();
-                router.replace('/onboarding');
+                router.replace(onboardingHref);
               }}
             />
-          </MotiView>
+          </SettingsSection>
         </ScrollView>
 
       <StatusBar style={theme === 'dark' ? 'light' : 'dark'} />

@@ -1,9 +1,11 @@
 import React from 'react';
-import { Platform, Pressable, Switch, View } from 'react-native';
+import { Pressable, View } from 'react-native';
 import { Text } from '@/components/ui/Text';
-import { haptic } from '@/utils/haptics';
+import { haptic } from '@/lib/haptics';
 
+import { Surface } from '@/components/ui/Card';
 import { Icon, type IconName } from '@/components/ui/Icon';
+import { ToggleRow } from '@/components/ui/ToggleRow';
 import { useThemeColors } from '@/hooks/use-theme';
 import { getActiveApiKey } from '@/lib/api-key';
 import { setPreferences, usePreferences, type AiMode } from '@/lib/preferences';
@@ -25,28 +27,19 @@ const MODES: { value: Exclude<AiMode, 'unset'>; icon: IconName; title: string; b
 
 /** Off by default: each note is sent once, to be written up; on, a second time to be found by meaning. */
 function MeaningSearchRow() {
-  const colors = useThemeColors();
   const { meaningSearch } = usePreferences();
   return (
-    <View className="bg-surface rounded-lg p-5 border border-border/50 flex-row items-start" style={{ gap: 12 }}>
-      <View className="flex-1">
-        <Text className="font-sans-semi text-sm text-fg">Search by meaning</Text>
-        <Text className="font-sans text-sm text-fg-secondary leading-relaxed mt-1">
-          Uses about twice the free quota.
-        </Text>
-      </View>
-      <Switch
-        value={meaningSearch === true}
-        onValueChange={(on) => {
-          haptic.toggle(on);
-          setPreferences({ meaningSearch: on });
-        }}
-        accessibilityLabel="Search by meaning"
-        trackColor={{ false: colors.border, true: colors.accent }}
-        thumbColor={Platform.OS === 'android' ? colors.surfaceLowest : undefined}
-        ios_backgroundColor={colors.border}
-      />
-    </View>
+    <ToggleRow
+      title="Search by meaning"
+      body="Uses about twice the free quota."
+      className="p-5"
+      align="items-start"
+      value={meaningSearch === true}
+      onValueChange={(on) => {
+        haptic.toggle(on);
+        setPreferences({ meaningSearch: on });
+      }}
+    />
   );
 }
 
@@ -58,7 +51,7 @@ export function AiModeCard({ children }: { children?: React.ReactNode }) {
 
   return (
     <View className="gap-3">
-      <View className="bg-surface rounded-lg p-2 border border-border/50 gap-1">
+      <Surface tone="soft" className="rounded-lg p-2 gap-1">
         {MODES.map((m) => {
           const selected = mode === m.value;
           return (
@@ -98,11 +91,10 @@ export function AiModeCard({ children }: { children?: React.ReactNode }) {
             </Pressable>
           );
         })}
-      </View>
+      </Surface>
 
       {mode === 'gemini' ? <MeaningSearchRow /> : null}
       {mode === 'gemini' ? children : null}
-
     </View>
   );
 }

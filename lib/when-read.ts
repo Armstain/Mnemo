@@ -1,8 +1,8 @@
 import { nfc } from '@/utils/text';
+import { addDays, atTime, startOfDay } from '@/utils/time';
+import type { Repeat } from '@/types/mnemo';
 
 // Hermes has no lookbehind and no \p{…}, so Bangla word edges are spelled out.
-
-export type Repeat = 'daily' | 'weekly' | 'monthly';
 
 export interface When {
   at: number;
@@ -25,7 +25,7 @@ const BL_HOURS: [string, number][] = [
   ['ek', 1], ['dui', 2], ['du', 2], ['tin', 3], ['char', 4], ['pach', 5], ['panch', 5], ['choy', 6], ['soy', 6], ['sat', 7], ['saat', 7], ['at', 8], ['aat', 8], ['noy', 9], ['dosh', 10], ['egaro', 11], ['baro', 12],
 ];
 
-export function normalizeWhen(text: string): string {
+function normalizeWhen(text: string): string {
   let t = nfc(text)
     .toLowerCase()
     .replace(/[’‘ʼ`]/g, "'")
@@ -232,21 +232,7 @@ function hourWithPart(c: Clock, part: Part | undefined): { hour: number; nextDay
   }
 }
 
-function startOfDay(ts: number): Date {
-  const d = new Date(ts);
-  d.setHours(0, 0, 0, 0);
-  return d;
-}
-const addDays = (d: Date, n: number) => {
-  const x = new Date(d);
-  x.setDate(x.getDate() + n);
-  return x;
-};
-const at = (d: Date, hour: number, minute: number) => {
-  const x = new Date(d);
-  x.setHours(hour, minute, 0, 0);
-  return x.getTime();
-};
+const at = (d: Date, hour: number, minute: number) => atTime(d, hour, minute).getTime();
 
 const weekdayIndex = (w: string) => WEEKDAYS.findIndex((names) => names.includes(w));
 const monthIndex = (w: string) => MONTHS.findIndex((names) => names.includes(w));
@@ -401,6 +387,8 @@ const PAST_VERBS = new Set(
 const IMPERATIVE = new Set(
   'call ring text email mail message whatsapp pick pay send buy get take meet go visit submit book finish bring collect check clean wake cook fix renew return drop leave start join attend charge water feed print sign order cancel reply apply prepare study wash iron pack catch board drink eat sleep ask tell remind remember review practice practise post upload download install update backup back'.split(' '),
 );
+const NOT_PAST_ED = /^(need|bed|red|feed|speed|seed|shed|wed)$/;
+const isPastVerb = (w: string) => PAST_VERBS.has(w) || (/^[a-z]{3,}ed$/.test(w) && !NOT_PAST_ED.test(w));
 const BN_PAST = /(^|\s)\S+(লাম|েছি|েছিলাম)(\s|$)|(^|\s)[a-z]+(lam|echi|echilam)(\s|$)/;
 
 /** Only the leading verb counts, so "call about the signed form friday" is still a plan. */
@@ -409,7 +397,7 @@ export function opensInPast(sentence: string): boolean {
   if (PAST.test(t) || BN_PAST.test(t)) return true;
   const ws = t.split(/[\s,.;:!?()'"]+/).filter(Boolean);
   const verb = /^(i|we|he|she|they)$/.test(ws[0] ?? '') ? ws[1] : ws[0];
-  return !!verb && (PAST_VERBS.has(verb) || (/^[a-z]{3,}ed$/.test(verb) && !/^(need|bed|red|feed|speed|seed|shed|wed)$/.test(verb)));
+  return !!verb && isPastVerb(verb);
 }
 
 const FACT_VERBS = /\b(opens|closes|starts|ends|is|are|runs|leaves|arrives|departs)\b/;
@@ -425,8 +413,7 @@ export function isPlan(sentence: string, intent: boolean): boolean {
   if (aheadDay) return true;
   if (/\b(rescheduled|moved|postponed|shifted|pushed|changed)\s+to\b/.test(t)) return true;
   if (IMPERATIVE.has(ws[0] ?? '') || (/^(please|pls|plz|kindly)$/.test(ws[0] ?? '') && IMPERATIVE.has(ws[1] ?? ''))) return true;
-  const pastVerb = ws.some((w) => PAST_VERBS.has(w) || (/^[a-z]{3,}ed$/.test(w) && !/^(need|bed|red|feed|speed|seed|shed|wed)$/.test(w)));
-  if (pastVerb) return false;
+  if (ws.some(isPastVerb)) return false;
   if (fromNow(t) !== undefined) return true;
   if (new RegExp(`^(?:on |by |next |this |before |between |from |সাড়ে |পৌনে |সোয়া |sare |poune |shoa )?(?:\\d|(?:${TOMORROW}|${DAY_AFTER}|${TODAY}|${WEEKDAY_E}|${MONTH_ALT}|${PART_ALT})(?:[\\s,.:]|$))`).test(t) && !FACT_VERBS.test(t)) return true;
   const named = t.replace(/^(?:i|we|you)\s+(?:have|got|'ve got)\s+(?:a |an |the |my |our )?|^(?:there's|there is)\s+(?:a |an )?/, '');
@@ -438,10 +425,10 @@ const D = '[0-9০-৯]';
 const UNIT_AFTER = String.raw`(?!\s*(?:km|kms|kg|kgs|mi|miles?|min|mins|minutes?|hrs?|hours?|days?|weeks?|tk|taka|৳|%|people|persons?|pages?|pcs|pieces?|items?|times?|steps?)\b)`;
 
 const SLANG_DAY = String.raw`(?:2moro|2morrow|2mrw|2mro|tomoro|tomorow|tmrrw|tonite|2nite|tonyt|this eve)`;
-const BN_HOUR_WORDS = '(?:এক|দুই|দু|তিন|চার|পাঁচ|ছয়|ছ|সাত|আট|নয়|ন|দশ|এগারো|বারো)';
-const BL_HOUR_WORDS = '(?:ek|dui|du|tin|char|pach|panch|choy|soy|sat|saat|at|aat|noy|dosh|egaro|baro)';
+const BN_HOUR_WORDS = `(?:${BN_HOURS.map(([word]) => word).join('|')})`;
+const BL_HOUR_WORDS = `(?:${BL_HOURS.map(([word]) => word).join('|')})`;
 
-export const STRIP: RegExp[] = [
+const STRIP: RegExp[] = [
   new RegExp(String.raw`${S}${SLANG_DAY}${E}`, 'gi'),
   new RegExp(String.raw`${S}(?:at|by|around|before)\s+(?:${EN_HOUR_ALT})(?:\s+(?:fifteen|thirty|forty[ -]five|o five|oh five))?(?:\s*(?:am|pm|a\.m\.?|p\.m\.?|o'clock))?${E}`, 'gi'),
   new RegExp(String.raw`${S}(?:${EN_HOUR_ALT})(?:\s+(?:fifteen|thirty|forty[ -]five))?\s*(?:am|pm|a\.m\.?|p\.m\.?|o'clock)${E}`, 'gi'),

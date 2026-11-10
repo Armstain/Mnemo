@@ -1,44 +1,35 @@
-import { Notifications } from '@/lib/notifications';
 import { Platform } from 'react-native';
 import type { NotificationRequest, NotificationTriggerInput } from 'expo-notifications';
-import type { MnemoItem } from '@/types/mnemo';
+import {
+  ACTIONS,
+  askNotificationPermission,
+  CHANNELS,
+  ensureChannel,
+  hasNotificationPermission,
+  Notifications,
+  type NotificationData,
+} from '@/lib/notifications';
+import { hasLiveTime } from '@/lib/reminder-ownership';
+import { isOpenStatus, type MnemoItem } from '@/types/mnemo';
 
-// Reminders pop up and make a sound (HIGH). Android never raises an existing
-// channel's importance, so they moved off the first, quieter channel.
-export const ANDROID_CHANNEL_ID = 'reminder-alerts';
-const LEGACY_CHANNEL_ID = 'reminders';
+export const HOUR_MS = 60 * 60 * 1000;
+// Edits arrive in bursts; rescheduling waits for them to settle.
+export const EDIT_SETTLE_MS = 1500;
 
-// Only asked once per app session — if the user declines, we don't nag on
-// every single due-date set afterward. They can still grant it from OS
-// settings and the next sync (app restart, or any future item mutation
-// once permission changes) will pick it up.
+// Asked once per app session: after a refusal, setting another due date doesn't nag.
 let permissionPromptedThisSession = false;
 
 async function ensurePermission(): Promise<boolean> {
-  const current = await Notifications.getPermissionsAsync();
-  if (current.granted) return true;
+  if (await hasNotificationPermission()) return true;
   if (permissionPromptedThisSession) return false;
   permissionPromptedThisSession = true;
-  const requested = await Notifications.requestPermissionsAsync();
-  return requested.granted;
+  return askNotificationPermission();
 }
 
-let androidChannelReady = false;
-export async function ensureAndroidChannel(): Promise<void> {
-  if (androidChannelReady || Platform.OS !== 'android') return;
-  await Notifications.setNotificationChannelAsync(ANDROID_CHANNEL_ID, {
-    name: 'Reminders',
-    description: 'The reminders you set on a thread, at the time you chose',
-    importance: Notifications.AndroidImportance.HIGH,
-    enableVibrate: true,
-    vibrationPattern: [0, 250, 200, 250],
-  });
-  // Anything still on the old channel is re-set on this one by rearmReminders.
-  await Notifications.deleteNotificationChannelAsync(LEGACY_CHANNEL_ID).catch(() => {});
-  androidChannelReady = true;
-}
+/** The fields a thread's scheduled reminder is built from: a change to any of them reschedules it. */
+export const REMINDER_FIELDS = ['dueDate', 'status', 'title', 'repeat', 'nextStep', 'whereLeftOff', 'laterSteps'] as const;
 
-type ReminderItem = Pick<MnemoItem, 'id' | 'title' | 'dueDate' | 'status' | 'repeat' | 'nextStep' | 'whereLeftOff' | 'laterSteps'>;
+type ReminderItem = Pick<MnemoItem, 'id' | (typeof REMINDER_FIELDS)[number]>;
 
 const stepPrefix = (id: string) => `${id}:step:`;
 
@@ -51,17 +42,13 @@ async function cancelLaterSteps(id: string, scheduled?: NotificationRequest[]): 
 export const REMINDER_CATEGORY = 'reminder';
 let categoryReady = false;
 
-/**
- * The buttons under a reminder or nudge: tick the step off, put it off, or
- * reply with what happened (it goes into the thread). Android shows three.
- */
 export async function ensureReminderCategory(): Promise<void> {
   if (categoryReady) return;
   await Notifications.setNotificationCategoryAsync(REMINDER_CATEGORY, [
-    { identifier: 'done', buttonTitle: 'Done', options: { opensAppToForeground: true } },
-    { identifier: 'hour', buttonTitle: 'In an hour', options: { opensAppToForeground: true } },
+    { identifier: ACTIONS.done, buttonTitle: 'Done', options: { opensAppToForeground: true } },
+    { identifier: ACTIONS.hour, buttonTitle: 'In an hour', options: { opensAppToForeground: true } },
     {
-      identifier: 'reply',
+      identifier: ACTIONS.reply,
       buttonTitle: 'Reply',
       textInput: { submitButtonTitle: 'Add', placeholder: 'What happened?' },
       options: { opensAppToForeground: true },
@@ -70,7 +57,6 @@ export async function ensureReminderCategory(): Promise<void> {
   categoryReady = true;
 }
 
-/** What the reminder says: the step to take, or where they left off. */
 function reminderBody(item: ReminderItem): string {
   if (item.nextStep) return `Next: ${item.nextStep}`;
   if (item.whereLeftOff) return `You left off: ${item.whereLeftOff}`;
@@ -78,14 +64,14 @@ function reminderBody(item: ReminderItem): string {
 }
 
 const onceAt = (at: number) =>
-  ({ type: Notifications.SchedulableTriggerInputTypes.DATE, date: new Date(at), channelId: ANDROID_CHANNEL_ID }) as const;
+  ({ type: Notifications.SchedulableTriggerInputTypes.DATE, date: new Date(at), channelId: CHANNELS.reminders }) as const;
 
 function notify(
   identifier: string,
   item: ReminderItem,
   trigger: NotificationTriggerInput,
   body = reminderBody(item),
-  data: Record<string, unknown> = { itemId: item.id },
+  data: NotificationData = { itemId: item.id },
 ) {
   return Notifications.scheduleNotificationAsync({
     identifier,
@@ -99,40 +85,29 @@ function repeatingTrigger(item: ReminderItem & { dueDate: number }) {
   const hour = d.getHours();
   const minute = d.getMinutes();
   const T = Notifications.SchedulableTriggerInputTypes;
-  const channelId = ANDROID_CHANNEL_ID;
+  const channelId = CHANNELS.reminders;
   if (item.repeat === 'daily') return { type: T.DAILY, hour, minute, channelId } as const;
   if (item.repeat === 'weekly') return { type: T.WEEKLY, weekday: d.getDay() + 1, hour, minute, channelId } as const;
   return { type: T.MONTHLY, day: d.getDate(), hour, minute, channelId } as const;
 }
 
 /**
- * Schedules or cancels a local reminder for an item's due date, based on
- * its current dueDate/status/repeat. The scheduled notification's
- * identifier is always the item's own id, so calling this again for the
- * same item safely replaces any previous reminder rather than accumulating
- * duplicates — callers don't need to track whether one already exists.
- *
- * Best-effort by design, matching the rest of the AI/background layer:
- * permission denial, platform quirks, or scheduling failures are silently
- * absorbed rather than surfaced or thrown — a reminder is a convenience on
- * top of an already-saved note, never something a mutation should block on.
+ * The notification's identifier is the item's own id, so calling this again
+ * replaces the previous reminder. Best-effort: a reminder is a convenience on
+ * top of a saved note, so denial and scheduling failures never reach the caller.
  */
 export async function syncReminderForItem(item: ReminderItem, scheduled?: NotificationRequest[]): Promise<void> {
   try {
-    // Clear any existing reminder first — covers the due date being
-    // removed, moved into the past, or the item being completed/archived.
     await Notifications.cancelScheduledNotificationAsync(item.id);
     await cancelLaterSteps(item.id, scheduled);
 
-    const isActive = item.status === 'active' || item.status === 'paused';
-    if (!isActive || !item.dueDate) return;
+    if (!isOpenStatus(item.status) || !item.dueDate) return;
     const now = Date.now();
+    if (!hasLiveTime(item, now)) return;
     const later = (item.laterSteps ?? []).filter((s) => s.at > now);
     const current = !!item.repeat || item.dueDate > now;
-    if (!current && later.length === 0) return;
 
-    // Channel first: Android 13+ shows no permission prompt until one exists.
-    await ensureAndroidChannel();
+    await ensureChannel('reminders');
     const granted = await ensurePermission();
     if (!granted) return;
 
@@ -145,7 +120,7 @@ export async function syncReminderForItem(item: ReminderItem, scheduled?: Notifi
       await notify(`${stepPrefix(item.id)}${s.at}`, item, onceAt(s.at), s.step ? `Next: ${s.step}` : undefined, { itemId: item.id, at: s.at });
     }
   } catch {
-    // See doc comment — never let this surface or block the caller.
+    // Best-effort, see above.
   }
 }
 
@@ -155,7 +130,7 @@ export async function syncReminderForItem(item: ReminderItem, scheduled?: Notifi
  */
 export async function remindOnce(item: ReminderItem, at: number): Promise<void> {
   try {
-    await ensureAndroidChannel();
+    await ensureChannel('reminders');
     await ensureReminderCategory();
     await notify(`${item.id}:again`, item, onceAt(at));
   } catch {
@@ -174,7 +149,7 @@ export async function remindOnce(item: ReminderItem, at: number): Promise<void> 
 export async function rearmReminders(items: ReminderItem[]): Promise<void> {
   if (Platform.OS === 'web') return;
   try {
-    if (!(await Notifications.getPermissionsAsync()).granted) return;
+    if (!(await hasNotificationPermission())) return;
     const byId = new Map(items.map((i) => [i.id, i]));
     // One-off "In an hour" reminders on repeating threads: same time again.
     const scheduled = await Notifications.getAllScheduledNotificationsAsync();
@@ -192,7 +167,6 @@ export async function rearmReminders(items: ReminderItem[]): Promise<void> {
   }
 }
 
-/** Cancels a single item's reminder, e.g. on delete. Safe to call even if none was scheduled. */
 export async function cancelReminder(id: string): Promise<void> {
   try {
     await Notifications.cancelScheduledNotificationAsync(id);
@@ -202,7 +176,6 @@ export async function cancelReminder(id: string): Promise<void> {
   }
 }
 
-/** Cancels every scheduled reminder — used by "Clear all data". */
 export async function cancelAllReminders(): Promise<void> {
   try {
     await Notifications.cancelAllScheduledNotificationsAsync();
