@@ -153,13 +153,13 @@ export default function ThreadScreen() {
       return;
     }
     let cancelled = false;
-    relatedThreads(thread.id, items).then((found) => {
+    relatedThreads(thread.id, items, { entries: store.entries, places: savedPlaces }).then((found) => {
       if (!cancelled) setRelated(found);
     });
     return () => {
       cancelled = true;
     };
-  }, [thread?.id, items]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [thread?.id, items, store.entries, savedPlaces]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!isLoaded) {
     return (
