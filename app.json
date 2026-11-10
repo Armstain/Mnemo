@@ -88,6 +88,7 @@
       ],
       "expo-quick-actions",
       "./plugins/with-shortcut-icons",
+      "./plugins/with-kept-sounds",
       "expo-asset",
       [
         "expo-speech-recognition",

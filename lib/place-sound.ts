@@ -2,6 +2,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Platform } from 'react-native';
 
 import { Notifications, notificationsAvailable } from '@/lib/notifications';
+import { buzz } from '@/lib/reliability';
 import { ensureReminderCategory, REMINDER_CATEGORY } from '@/lib/reminders';
 
 // What a place reminder sounds like. It goes off when you're walking in
@@ -26,10 +27,16 @@ export const DEFAULT_PLACE_SOUND: PlaceSound = 'chime';
 // Android brings a deleted channel back with its old settings, sound included, when the same id is
 // made again, so a channel first made with the default sound kept it however it was set after. New ids
 // (bump CHANNEL_VERSION when a channel's sound or importance changes), and the old ones are removed.
-const CHANNEL_VERSION = 2;
+// v3: release builds had been emptying the sound files (plugins/with-kept-sounds.js), so every v2
+// channel was made with the phone's own sound and would have kept it.
+const CHANNEL_VERSION = 3;
 const channelId = (s: PlaceSound) => `place-${s}-v${CHANNEL_VERSION}`;
 // "Your own…" (a channel to change in Android's settings) was removed: its picker fell back to the default sound.
-const OLD_CHANNEL_IDS = [...PLACE_SOUNDS.map((p) => `place-${p.key}`), 'place-custom', 'place-custom-v2'];
+const OLD_CHANNEL_IDS = [
+  ...PLACE_SOUNDS.flatMap((p) => [`place-${p.key}`, `place-${p.key}-v2`]),
+  'place-custom',
+  'place-custom-v2',
+];
 const LONG_BUZZ = [0, 500, 250, 500, 250, 500];
 
 /**
@@ -86,6 +93,9 @@ export async function ringPlaceReminder(content: { title: string; body: string; 
     },
     trigger: Platform.OS === 'android' ? { channelId: channel } : null,
   });
+  // The channel's own buzz follows the phone's "vibrate for notifications" setting, which many
+  // phones ship switched off. This one doesn't, and works with the app closed.
+  buzz(LONG_BUZZ);
 }
 
 /** Asks to show notifications (Android 13+ asks only once a channel exists). */
