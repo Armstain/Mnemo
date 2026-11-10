@@ -227,8 +227,8 @@ function awayTrailing(row: AwayRow): { label: string; tone?: 'error' | 'accent' 
 }
 
 const AI_PROBLEM_TEXT: Record<AiProblem, string> = {
-  invalid: "Gemini isn't accepting your key. Notes are saved as you wrote them.",
-  quota: "Your Gemini key's limit is used up. Notes are saved and tidied up later.",
+  invalid: "Your key isn't being accepted. Notes are saved as you wrote them.",
+  quota: "Your key's limit is used up. Notes are saved and tidied up later.",
 };
 
 export function PulseHome() {

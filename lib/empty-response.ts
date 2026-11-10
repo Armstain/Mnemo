@@ -88,7 +88,7 @@ export class EmptyResponseError extends Error {
     // Cause, input and safety category come first: the log truncates long messages.
     const top = kind === 'blocked' ? topSafety(attempts) : null;
     const safety = top ? ` · safety=${top.category}:${top.probability}` : '';
-    super(`Gemini returned ${kind === 'unreadable' ? 'unreadable text' : 'no text'} (${kind})${safety} · input: ${input?.label ?? 'unknown'} · ${tried}`);
+    super(`The model returned ${kind === 'unreadable' ? 'unreadable text' : 'no text'} (${kind})${safety} · input: ${input?.label ?? 'unknown'} · ${tried}`);
     this.name = 'EmptyResponseError';
     this.kind = kind;
   }
@@ -97,6 +97,6 @@ export class EmptyResponseError extends Error {
 /** Parses the kind from error text, which survives logging and re-throwing. */
 export function emptyKindOf(err: unknown): EmptyKind | null {
   const msg = String((err as { message?: string })?.message ?? err);
-  const m = msg.match(/Gemini returned (?:no|unreadable) (?:text) \((blocked|truncated|empty-input|unreadable|empty)\)/);
+  const m = msg.match(/(?:The model|Gemini) returned (?:no|unreadable) (?:text) \((blocked|truncated|empty-input|unreadable|empty)\)/);
   return (m?.[1] as EmptyKind | undefined) ?? null;
 }

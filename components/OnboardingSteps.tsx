@@ -233,7 +233,7 @@ export function AiChoiceStep({
         <MotiView {...enter.rise(1)}>
           <ChoiceCard
             icon="sparkles"
-            title="Smart, with your free Gemini key"
+            title="Smart, with your free Google key"
             recommended
             points={[
               'No account, no server, no bill — the key lives only on this phone',
@@ -257,7 +257,7 @@ export function AiChoiceStep({
         </MotiView>
       </View>
       <Text className="font-sans text-sm text-center" style={{ color: colors.fgTertiary }}>
-        With a key, Gemini writes voice notes out; offline, your phone does. Mnemo never keeps the audio.
+        With a key, Smart mode writes voice notes out; offline, your phone does. Mnemo never keeps the audio.
       </Text>
     </StepFrame>
   );
@@ -393,7 +393,7 @@ export function KeyStep({ onDone, onOffline, onBack }: { onDone: () => void; onO
           <View
             className="flex-row items-center rounded-md p-3 mb-2"
             style={{ backgroundColor: colors.accentSoft, borderWidth: 1, borderColor: colors.accent }}
-            accessibilityLabel="A Gemini key was found in your clipboard"
+            accessibilityLabel="A key was found in your clipboard"
           >
             <View className="flex-1 mr-2">
               <Text className="font-sans-semi text-sm" style={{ color: colors.fg }}>
@@ -427,7 +427,7 @@ export function KeyStep({ onDone, onOffline, onBack }: { onDone: () => void; onO
             placeholderTextColor={colors.fgTertiary}
             autoCapitalize="none"
             autoCorrect={false}
-            accessibilityLabel="Gemini API key"
+            accessibilityLabel="Google AI key"
             className="flex-1 font-sans text-body"
             style={[{ color: colors.fg }, noFocusRing]}
           />
@@ -624,7 +624,7 @@ export function RevealStep({ itemId, onContinue }: { itemId: string; onContinue:
     : stillWorking
       ? 'Turning that into a note…'
       : ai
-        ? "Saved as you said it. Mnemo will tidy it up as soon as it can reach Gemini."
+        ? "Saved as you said it. Mnemo will tidy it up as soon as it can connect."
         : 'Saved as you said it.';
 
   return (

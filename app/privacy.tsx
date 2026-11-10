@@ -20,18 +20,18 @@ import { ONBOARDING_KEY } from '@/app/onboarding';
 // What leaves the phone, and when: said plainly, every case.
 const PRIVACY_FACTS = [
   {
-    title: 'With Gemini on',
+    title: 'With Smart mode on',
     body:
-      'Sent to Google with your key: the text of each new note, the recording of a voice note, and any photo on it; the title and description of a page you saved a link to, as your phone read them, so the note can be understood; the titles and a line from your recently active threads, so it can file the note; your question and the notes that best match it, when you ask; note text for meaning search, if you turn it on (notes written before you turned Gemini on only if you say so), and the notes of a thread when you ask to organise them. On a free key, Google may use what you send to improve its products, and people may review it. Offline, none of this happens.',
+      'Sent to Google with your key: the text of each new note, the recording of a voice note, and any photo on it; the title and description of a page you saved a link to, as your phone read them, so the note can be understood; the titles and a line from your recently active threads, so it can file the note; your question and the notes that best match it, when you ask; note text for meaning search, if you turn it on (notes written before you turned Smart mode on only if you say so), and the notes of a thread when you ask to organise them. On a free key, Google may use what you send to improve its products, and people may review it. Offline, none of this happens.',
   },
   {
     title: 'Voice',
     body:
-      "With Gemini on, a voice note is recorded and sent to Gemini to be written out (to Groq instead, if you added a Groq key and Gemini can't), then the recording is deleted from the phone. Offline, nothing is recorded: your phone's speech service turns what you say into text as you talk (on many phones that is Google's, which may process it online). Mnemo never keeps the audio.",
+      "With Smart mode on, a voice note is recorded and sent to Google to be written out (to Groq instead, if you added a Groq key and Google can't), then the recording is deleted from the phone. Offline, nothing is recorded: your phone's speech service turns what you say into text as you talk (on many phones that is Google's, which may process it online). Mnemo never keeps the audio.",
   },
   {
     title: 'Links',
-    body: 'A link you save is opened by the phone, once, to show its title and picture. That page sees the request like any visit. With Gemini on, the title and description it gives are sent with your note; the page itself is not.',
+    body: 'A link you save is opened by the phone, once, to show its title and picture. That page sees the request like any visit. With Smart mode on, the title and description it gives are sent with your note; the page itself is not.',
   },
   {
     title: 'Location',

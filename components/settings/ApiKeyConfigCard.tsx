@@ -33,12 +33,12 @@ interface KeyProvider {
 }
 
 const GEMINI: KeyProvider = {
-  name: 'Gemini API key',
+  name: 'Google AI key',
   placeholder: 'AIzaSy...',
   get: getActiveApiKey,
   save: saveApiKey,
   validate: validateApiKey,
-  working: 'Connection successful! Gemini API is working.',
+  working: 'Connection successful! Your key is working.',
   consoleUrl: 'https://aistudio.google.com/app/apikey',
   consoleName: 'Google AI Studio',
 };
@@ -46,11 +46,11 @@ const GEMINI: KeyProvider = {
 export const GROQ: KeyProvider = {
   name: 'Groq API key (optional)',
   placeholder: 'gsk_...',
-  note: "A backup for voice notes: when Gemini can't write one out (down, or today's free limit is used up), Groq's Whisper does. The recording goes to Groq only then.",
+  note: "A backup for voice notes: when Smart mode can't write one out (down, or today's free limit is used up), Groq's Whisper does. The recording goes to Groq only then.",
   get: getActiveGroqApiKey,
   save: saveGroqApiKey,
   validate: validateGroqApiKey,
-  working: 'Groq is working. It writes out voice notes when Gemini can’t.',
+  working: 'Groq is working. It writes out voice notes when Smart mode can’t.',
   consoleUrl: 'https://console.groq.com/keys',
   consoleName: 'console.groq.com',
 };

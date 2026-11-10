@@ -60,7 +60,7 @@ export async function saveApiKey(key: string): Promise<void> {
       }
     }
   } catch (e) {
-    console.error('Failed to save Gemini API key:', e);
+    console.error('Failed to save the API key:', e);
     throw e;
   }
 }
@@ -96,21 +96,21 @@ export function aiErrorText(err: unknown): string {
   const problem = classifyAiError(err);
   if (problem !== 'quota') return KEY_PROBLEM_TEXT[problem];
   const info = quotaInfo(err);
-  if (info?.daily) return `Gemini's free daily limit is used up. ${dailyResetText()} Notes are saved and will be tidied up later.`;
+  if (info?.daily) return `Today's free limit is used up. ${dailyResetText()} Notes are saved and will be tidied up later.`;
   const retry = info?.retryMs ? `Try again in ${waitText(info.retryMs)}.` : 'Try again in a minute.';
-  return `Gemini is getting too many requests this minute. ${retry} Notes are saved and will be tidied up later.`;
+  return `Too many requests this minute. ${retry} Notes are saved and will be tidied up later.`;
 }
 
 const RETRIED_BY_ITSELF: KeyProblem[] = ['offline', 'quota', 'busy'];
 
 export function retryProblemText(err: unknown): { title: string; message: string } {
   const problem = classifyAiError(err);
-  const title = problem === 'offline' ? 'Still offline?' : 'Gemini had a problem';
+  const title = problem === 'offline' ? 'Still offline?' : 'Smart mode had a problem';
   if (problem === 'blocked') {
     return {
       title,
       message:
-        "Gemini's safety filter declined to process this note. It's saved as you wrote it. It won't be tried again until you edit it or tap Retry.",
+        "The safety filter declined to process this note. It's saved as you wrote it. It won't be tried again until you edit it or tap Retry.",
     };
   }
   const text = aiErrorText(err);
@@ -123,20 +123,20 @@ export function isNoConnection(err: unknown): boolean {
 }
 
 export const KEY_PROBLEM_TEXT: Record<KeyProblem, string> = {
-  invalid: "Gemini didn't accept this key. Check you copied all of it.",
+  invalid: "This key wasn't accepted. Check you copied all of it.",
   quota: "This key's free limit is used up. Notes are saved and will be tidied up later.",
-  offline: "Couldn't reach Gemini. Check your connection; notes are saved either way.",
-  busy: 'Gemini is busy right now. Notes are saved and will be tidied up later.',
-  blocked: "Gemini's safety filter declined to process this note. It's saved as you wrote it.",
-  truncated: "Gemini's answer for this note was cut off. It's saved as you wrote it.",
-  empty: 'Gemini sent back nothing for this note (it may have had nothing to process). It\'s saved as you wrote it.',
-  other: 'Gemini returned an error. Notes are saved either way.',
+  offline: "Couldn't connect. Check your connection; notes are saved either way.",
+  busy: 'Smart mode is busy right now. Notes are saved and will be tidied up later.',
+  blocked: "The safety filter declined to process this note. It's saved as you wrote it.",
+  truncated: "The answer for this note was cut off. It's saved as you wrote it.",
+  empty: 'Nothing came back for this note (it may have had nothing to process). It\'s saved as you wrote it.',
+  other: 'Smart mode returned an error. Notes are saved either way.',
 };
 
 /** Lists models: uses no generation quota. */
 export async function validateApiKey(keyToTest?: string): Promise<{ valid: boolean; error?: string; problem?: KeyProblem }> {
   const key = keyToTest !== undefined ? keyToTest.trim() : getActiveApiKey();
-  if (!key) return { valid: false, error: 'Paste your Gemini key first.', problem: 'invalid' };
+  if (!key) return { valid: false, error: 'Paste your key first.', problem: 'invalid' };
   try {
     const client = new GoogleGenAI({ apiKey: key });
     await client.models.list({ config: { pageSize: 1 } });

@@ -270,7 +270,7 @@ export function EntryCard({
             style={{ backgroundColor: colors.surfaceHigh }}
           >
             <Text className="font-sans-medium text-xs" style={{ color: colors.fgSecondary }}>
-              {aiProblem ? 'Waiting for Gemini' : 'Processing'}
+              {aiProblem ? 'Waiting to be tidied' : 'Processing'}
               {onRetry ? ' · Retry' : ''}
             </Text>
           </Pressable>

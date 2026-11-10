@@ -143,7 +143,7 @@ describe('which safety category fired', () => {
   it('a block names the category and its probability, right after the cause', async () => {
     for (const m of ['gemini-3-flash-preview', 'gemini-2.5-flash', 'gemini-2.5-flash-lite']) behaviour.set(m, rated);
     const error = await processVoiceDump('Remind me when I get to Eastern').catch((e) => e);
-    expect(error.message).toMatch(/^Gemini returned no text \(blocked\) · safety=HARM_CATEGORY_DANGEROUS_CONTENT:HIGH · input: transcript 31 chars · /);
+    expect(error.message).toMatch(/^The model returned no text \(blocked\) · safety=HARM_CATEGORY_DANGEROUS_CONTENT:HIGH · input: transcript 31 chars · /);
     expect(error.message).toContain('block=PROHIBITED_CONTENT candidates=0');
     expect(emptyKindOf(error)).toBe('blocked');
     expect(classifyAiError(error)).toBe('blocked');

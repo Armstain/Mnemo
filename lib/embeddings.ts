@@ -81,7 +81,7 @@ export { dot } from '@/lib/vector-math';
 export async function embedText(text: string, taskType: EmbeddingTaskType): Promise<Float32Array> {
   const res = await embed(text, taskType);
   const values = res.embeddings?.[0]?.values;
-  if (!values) throw new Error('Gemini returned no embedding');
+  if (!values) throw new Error('No embedding was returned');
   return Float32Array.from(values);
 }
 
