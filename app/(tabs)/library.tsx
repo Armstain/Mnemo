@@ -194,7 +194,7 @@ export default function LibraryScreen() {
       </MotiView>
 
       {/* What the search found besides threads: its time span, and totals. */}
-      {period || totals.length > 0 || (ai && isQuestion(deferredQuery)) ? (
+      {period || totals.length > 0 || isQuestion(deferredQuery) ? (
         <View className="mb-3">
           {period ? (
             <View className="flex-row mb-2">
@@ -234,7 +234,9 @@ export default function LibraryScreen() {
               </Text>
             </View>
           ))}
-          {ai && isQuestion(deferredQuery) ? <AskCard question={deferredQuery} ranked={hybridResults ?? keywordResults} scope={inPeriod} /> : null}
+          {isQuestion(deferredQuery) ? (
+            <AskCard question={deferredQuery} ranked={hybridResults ?? keywordResults} scope={inPeriod} canAsk={ai} />
+          ) : null}
         </View>
       ) : null}
 

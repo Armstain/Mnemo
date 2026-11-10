@@ -143,13 +143,17 @@ export async function relatedThreads(
   }
 }
 
+/** How many passages answer a question: enough to answer from, few enough to keep the request small. */
+export const PASSAGES = 6;
+
 /**
  * "What did I say about X": the passages of these threads that best answer
  * a question (lib/retrieve.ts). Words are always read; meaning is added
- * when search by meaning is on and the passages have vectors. Never
- * throws: without vectors, or offline, it is the keyword ranking.
+ * when search by meaning is on and the passages have vectors; with it off
+ * nothing leaves the phone. Never throws: without vectors, or offline, it
+ * is the keyword ranking.
  */
-export async function findPassages(query: string, items: MnemoItem[], entries: Entry[], limit = 12): Promise<Hit[]> {
+export async function findPassages(query: string, items: MnemoItem[], entries: Entry[], limit = PASSAGES): Promise<Hit[]> {
   const chunks = chunkEntries(items, entries);
   let vectors: RetrieveOptions = {};
   try {
