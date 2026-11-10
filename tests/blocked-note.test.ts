@@ -93,7 +93,7 @@ describe('what the Retry dialog says', () => {
   );
   it('a block says it waits for an edit or Retry, not that it retries', () => {
     expect(retryProblemText(blockedError).message).toBe(
-      "Gemini's safety filter declined to process this note. It's saved as you wrote it. It won't be tried again until you edit it or tap Retry.",
+      "The safety filter declined to process this note. It's saved as you wrote it. It won't be tried again until you edit it or tap Retry.",
     );
     expect(retryProblemText(blockedError).message).not.toContain('by itself');
   });

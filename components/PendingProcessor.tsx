@@ -49,7 +49,7 @@ async function askAboutEarlierNotes(items: MnemoItem[], onYes: () => void): Prom
   confirmAction({
     title: 'Your earlier notes',
     message:
-      `${count} ${count === 1 ? 'thread was' : 'threads were'} written before Gemini was on, and stayed on this phone. ` +
+      `${count} ${count === 1 ? 'thread was' : 'threads were'} written before Smart mode was on, and stayed on this phone. ` +
       'Make them searchable by meaning too? Their text is sent to Google to do it. Either way, they keep their titles and stay where they are.',
     confirmLabel: 'Make searchable',
     cancelLabel: 'Keep on phone',

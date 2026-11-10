@@ -76,7 +76,7 @@ function allRestingError(): string {
 /** Flash-Lite writing a note means every full Flash model was resting: say so until one answers again. */
 function noteModelUsed(model: string, models: string[]): void {
   if (isLiteModel(model) && models.some((m) => !isLiteModel(m))) {
-    setAiNotice('Gemini Flash is out of quota for now, so Mnemo is using the lighter Flash-Lite. Notes may be a little less sharp.');
+    setAiNotice('The usual model is out of quota for now, so Mnemo is using a lighter one. Notes may be a little less sharp.');
   } else {
     setAiNotice(null);
   }

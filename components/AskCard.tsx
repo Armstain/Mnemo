@@ -26,8 +26,8 @@ const SHOWN_CHARS = 220;
 /**
  * A question typed into search. First, and always, what you said about it:
  * the passages that match best, found on the phone with nothing sent
- * anywhere, each opening its thread. Then, only if Gemini is on and you ask
- * for it, an answer written from those same passages.
+ * anywhere, each opening its thread. Then, only if Smart mode is on and you
+ * ask for it, an answer written from those same passages.
  */
 export function AskCard({
   question,
@@ -40,7 +40,7 @@ export function AskCard({
   ranked: MnemoItem[];
   /** Every thread the question may be answered from (those in the period searched). */
   scope: MnemoItem[];
-  /** Whether an answer can be asked of Gemini. */
+  /** Whether an answer can be written (Smart mode is on). */
   canAsk: boolean;
 }) {
   const colors = useThemeColors();
@@ -95,7 +95,7 @@ export function AskCard({
           <View className="flex-row items-center mb-1.5">
             <Icon name="sparkles" size={14} color={colors.accent} />
             <Text className="font-sans-semi text-xs ml-1.5" style={{ color: colors.accent }}>
-              GEMINI&apos;S ANSWER
+              SMART ANSWER
             </Text>
           </View>
           <Text className="font-sans text-body leading-relaxed" style={{ color: colors.fg }}>
@@ -154,7 +154,7 @@ export function AskCard({
         <Pressable onPress={ask} accessibilityRole="button" className="flex-row items-center h-9 active:opacity-70">
           <Icon name="sparkles" size={16} color={colors.accent} />
           <Text className="flex-1 font-sans-semi text-body ml-2" style={{ color: colors.fg }}>
-            {hits.length > 0 ? 'Answer from these with Gemini' : 'Ask your notes'}
+            {hits.length > 0 ? 'Write an answer from these' : 'Ask your notes'}
           </Text>
           <Text className="font-sans-semi text-sm" style={{ color: colors.accent }}>
             Ask

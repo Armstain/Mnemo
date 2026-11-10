@@ -199,7 +199,7 @@ export default function DumpScreen() {
                   className="font-display text-center"
                   style={{ color: speech.text ? colors.fg : colors.fgTertiary, fontSize: 22, lineHeight: 32 }}
                 >
-                  {speech.text || (speech.recording ? 'Listening… Gemini writes it out when you tap Done.' : 'Listening…')}
+                  {speech.text || (speech.recording ? 'Listening… Mnemo writes it out when you tap Done.' : 'Listening…')}
                 </Text>
               </ScrollView>
             ) : (

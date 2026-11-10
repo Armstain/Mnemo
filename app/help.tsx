@@ -19,9 +19,9 @@ import { useEnter } from '@/utils/motion';
 // this says what they do, so the person can read it once instead of scrolling past it each time.
 const TOPICS: { title: string; body: string[] }[] = [
   {
-    title: 'Smart, with Gemini',
+    title: 'Smart',
     body: [
-      'Each new note (and any photo on it) goes to Google with your key, with the titles of your recent threads so it can be filed. Gemini tidies it up, finds numbers and next steps, and files it into the right thread. Notes you wrote offline stay as they are.',
+      'Each new note (and any photo on it) goes to Google with your key, with the titles of your recent threads so it can be filed. Smart mode tidies it up, finds numbers and next steps, and files it into the right thread. Notes you wrote offline stay as they are.',
       "If Google's filter declines a note, the phone reads it instead, as offline, so it's never left waiting.",
     ],
   },
@@ -34,7 +34,7 @@ const TOPICS: { title: string; body: string[] }[] = [
   {
     title: 'Voice notes',
     body: [
-      "Speak in your own language, or mix them. With Gemini on, the note is recorded and Gemini writes it out, then the recording is deleted. Offline, your phone's speech service writes it out as you talk (on many phones that's Google's, which may work online). Mnemo never keeps the audio.",
+      "Speak in your own language, or mix them. With Smart mode on, the note is recorded and written out for you, then the recording is deleted. Offline, your phone's speech service writes it out as you talk (on many phones that's Google's, which may work online). Mnemo never keeps the audio.",
     ],
   },
   {

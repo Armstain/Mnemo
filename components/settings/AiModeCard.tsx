@@ -12,7 +12,7 @@ const MODES: { value: Exclude<AiMode, 'unset'>; icon: IconName; title: string; b
   {
     value: 'gemini',
     icon: 'sparkles',
-    title: 'Smart, with Gemini',
+    title: 'Smart',
     body: 'Notes are tidied and filed for you. Sent to Google with your key.',
   },
   {
