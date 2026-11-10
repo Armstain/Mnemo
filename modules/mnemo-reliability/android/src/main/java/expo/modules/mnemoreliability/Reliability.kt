@@ -6,10 +6,15 @@ import android.app.AppOpsManager
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
+import android.media.AudioAttributes
 import android.net.Uri
 import android.os.Build
 import android.os.PowerManager
 import android.os.Process
+import android.os.VibrationAttributes
+import android.os.VibrationEffect
+import android.os.Vibrator
+import android.os.VibratorManager
 import android.provider.Settings
 
 /**
@@ -148,5 +153,42 @@ object Reliability {
     }
     intents += appDetails(context)
     return launch(context, intents)
+  }
+
+  /**
+   * Vibrates in this pattern (wait, buzz, wait, buzz… in milliseconds), as an
+   * alarm: Android lets an app in the background do that, and it isn't held
+   * back by the "vibrate for notifications" setting the way a notification
+   * channel's own vibration is. False when the phone can't, or wouldn't.
+   */
+  fun buzz(context: Context, pattern: LongArray): Boolean {
+    if (pattern.isEmpty()) return false
+    return try {
+      val vibrator = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+        (context.getSystemService(Context.VIBRATOR_MANAGER_SERVICE) as VibratorManager).defaultVibrator
+      } else {
+        @Suppress("DEPRECATION")
+        context.getSystemService(Context.VIBRATOR_SERVICE) as Vibrator
+      }
+      if (!vibrator.hasVibrator()) return false
+      if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+        vibrator.vibrate(
+          VibrationEffect.createWaveform(pattern, -1),
+          VibrationAttributes.createForUsage(VibrationAttributes.USAGE_ALARM),
+        )
+      } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+        @Suppress("DEPRECATION")
+        vibrator.vibrate(
+          VibrationEffect.createWaveform(pattern, -1),
+          AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_ALARM).build(),
+        )
+      } else {
+        @Suppress("DEPRECATION")
+        vibrator.vibrate(pattern, -1)
+      }
+      true
+    } catch (e: Exception) {
+      false
+    }
   }
 }

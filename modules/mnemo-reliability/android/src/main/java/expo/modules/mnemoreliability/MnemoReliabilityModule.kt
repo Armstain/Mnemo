@@ -89,5 +89,9 @@ class MnemoReliabilityModule : Module() {
     Function("geofenceOutcome") {
       return@Function appContextOrNull?.let { GeofenceOutcomes.read(it) }
     }
+
+    Function("buzz") { pattern: List<Double> ->
+      return@Function Reliability.buzz(context, pattern.map { it.toLong() }.toLongArray())
+    }
   }
 }

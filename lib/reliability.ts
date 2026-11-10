@@ -1,6 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { requireOptionalNativeModule } from 'expo';
-import { Linking, Platform } from 'react-native';
+import { Linking, Platform, Vibration } from 'react-native';
 
 import { Notifications, notificationsAvailable } from '@/lib/notifications';
 import { ANDROID_CHANNEL_ID, ensureAndroidChannel } from '@/lib/reminders';
@@ -22,6 +22,8 @@ interface NativeReliability {
   openBattery(): boolean;
   openAutostart(): boolean;
   openNotifications(): boolean;
+  /** Absent in builds made before it was added. */
+  buzz?(pattern: number[]): boolean;
 }
 
 // Absent on iOS, the web, Expo Go and builds made before the module existed.
@@ -254,5 +256,23 @@ export async function markSetup(update: SetupState): Promise<void> {
     await AsyncStorage.setItem(SETUP_KEY, JSON.stringify({ ...(await loadSetup()), ...update }));
   } catch {
     // The prompt may show again; nothing worse.
+  }
+}
+
+// ─── A buzz that doesn't depend on the notification ─────────────
+
+/**
+ * Vibrates in this pattern (wait, buzz, wait, buzz… in milliseconds). Done as
+ * an alarm, so it isn't held back by the phone's "vibrate for notifications"
+ * setting and works from the background task. Without the native module it
+ * is the ordinary vibration, which Android only allows while the app is open.
+ */
+export function buzz(pattern: number[]): void {
+  if (Platform.OS === 'web') return;
+  try {
+    if (native?.buzz?.(pattern)) return;
+    Vibration.vibrate(pattern);
+  } catch {
+    // The notification still shows and sounds.
   }
 }
