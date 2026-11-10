@@ -1,8 +1,9 @@
 import { embedText, embeddingModel, dot } from '@/lib/embeddings';
-import { getVectors } from '@/lib/db';
+import { getChunkVectors, getVectors } from '@/lib/db';
 import { bm25Scored } from '@/lib/bm25';
 import { relatedLocally, type RelatedOptions, type RelatedThread } from '@/lib/related';
-import type { MnemoItem } from '@/types/mnemo';
+import { chunkEntries, retrieve, type Hit, type RetrieveOptions } from '@/lib/retrieve';
+import type { Entry, MnemoItem } from '@/types/mnemo';
 
 // The standard constant from the original Reciprocal Rank Fusion paper —
 // dampens the impact of rank 1 vs rank 2 so one retriever's top pick
@@ -29,6 +30,23 @@ const VECTOR_TOP_K = 30;
 // that this filters out — nothing is lost, only the weak semantic boost.
 const QUERY_MIN_SIMILARITY = 0.65;
 
+// The search box and "Ask your notes" ask about the same words moments
+// apart: the question is embedded once.
+let lastQuery: { text: string; model: string; vector: Promise<Float32Array> } | null = null;
+
+async function embedQuery(query: string): Promise<Float32Array> {
+  const text = query.trim();
+  const model = await embeddingModel();
+  if (lastQuery?.text !== text || lastQuery.model !== model) {
+    const vector = embedText(text, 'RETRIEVAL_QUERY');
+    lastQuery = { text, model, vector };
+    vector.catch(() => {
+      if (lastQuery?.vector === vector) lastQuery = null;
+    });
+  }
+  return lastQuery.vector;
+}
+
 /**
  * Ranks items by embedding similarity to the query, best first, excluding
  * anything below `QUERY_MIN_SIMILARITY`. Returns `[]` — never throws — if
@@ -40,7 +58,7 @@ async function vectorRank(query: string, items: MnemoItem[]): Promise<MnemoItem[
   const vectors = await getVectors(await embeddingModel());
   if (vectors.size === 0) return [];
 
-  const queryVector = await embedText(query, 'RETRIEVAL_QUERY');
+  const queryVector = await embedQuery(query);
 
   return items
     .map((item) => {
@@ -123,4 +141,25 @@ export async function relatedThreads(
   } catch {
     return [];
   }
+}
+
+/**
+ * "What did I say about X": the passages of these threads that best answer
+ * a question (lib/retrieve.ts). Words are always read; meaning is added
+ * when search by meaning is on and the passages have vectors. Never
+ * throws: without vectors, or offline, it is the keyword ranking.
+ */
+export async function findPassages(query: string, items: MnemoItem[], entries: Entry[], limit = 12): Promise<Hit[]> {
+  const chunks = chunkEntries(items, entries);
+  let vectors: RetrieveOptions = {};
+  try {
+    const model = await embeddingModel();
+    const chunkVectors = await getChunkVectors(model);
+    if (chunkVectors.size > 0) {
+      vectors = { queryVector: await embedQuery(query), chunkVectors, threadVectors: await getVectors(model) };
+    }
+  } catch {
+    // Search by meaning is off, or there's no connection.
+  }
+  return retrieve(query, chunks, { ...vectors, limit });
 }

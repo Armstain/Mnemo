@@ -234,7 +234,7 @@ export default function LibraryScreen() {
               </Text>
             </View>
           ))}
-          {ai && isQuestion(deferredQuery) ? <AskCard question={deferredQuery} ranked={hybridResults ?? keywordResults} /> : null}
+          {ai && isQuestion(deferredQuery) ? <AskCard question={deferredQuery} ranked={hybridResults ?? keywordResults} scope={inPeriod} /> : null}
         </View>
       ) : null}
 

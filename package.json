@@ -11,6 +11,7 @@
     "lint": "eslint .",
     "test": "vitest run",
     "corpus": "vitest run tests/money-corpus.test.ts --silent=false",
+    "eval:retrieval": "vitest run --config vitest.eval.config.ts",
     "check": "npm run typecheck && npm run lint && npm test"
   },
   "dependencies": {

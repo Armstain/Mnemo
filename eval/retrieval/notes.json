@@ -1,0 +1,99 @@
+[
+  { "id": "t1", "title": "Passport renewal", "entries": [
+    { "id": "t1e1", "day": 0, "text": "Went to the passport office in Agargaon today. They need the old passport, NID copy and two photos. Fee is 5,750 taka for regular delivery." },
+    { "id": "t1e2", "day": 2, "text": "Paid the fee through bKash. Biometric appointment is on the 14th at 10am." },
+    { "id": "t1e3", "day": 9, "text": "Biometric done. They said delivery takes 21 working days. Tracking number is 4000-112233." },
+    { "id": "t1e4", "day": 20, "text": "পাসপোর্ট অফিস থেকে এসএমএস এসেছে, পুলিশ ভেরিফিকেশন বাকি আছে। থানায় ফোন করতে হবে।" }
+  ] },
+  { "id": "t2", "title": "Sylhet trip", "entries": [
+    { "id": "t2e1", "day": 3, "text": "Sylhet trip plan: leave Thursday night by Parabat Express, come back Sunday. Budget around 15,000 taka for two." },
+    { "id": "t2e2", "day": 5, "text": "Hotel booked — Noorjahan Grand, 2 nights, 4,500 per night. Ratargul আর Jaflong দুইটাই যাবো, Bichanakandi বাদ।" },
+    { "id": "t2e3", "day": 6, "text": "Decided not to rent a car, CNG reserve is cheaper. Rahim bhai's number for CNG: he charges 2,500 for the full day." },
+    { "id": "t2e4", "day": 8, "text": "Sylhet e brishti hobe mone hocche, raincoat nite hobe. Tea garden er jonno shokal shokal ber hote hobe." }
+  ] },
+  { "id": "t3", "title": "Location reminders feature", "entries": [
+    { "id": "t3e1", "day": 1, "text": "Idea: remind me when I arrive at a place, not at a time. Geofence around saved places." },
+    { "id": "t3e2", "day": 4, "text": "Decided the minimum radius is 150 metres. Smaller circles miss arrivals because the phone's location is too rough indoors." },
+    { "id": "t3e3", "day": 11, "text": "Problem: on Xiaomi phones the geofence doesn't fire when battery saver is on. Need to warn the user instead of failing silently." },
+    { "id": "t3e4", "day": 15, "text": "Still unresolved: what to do when two places overlap. Maybe fire both, maybe ask. Haven't decided." },
+    { "id": "t3e5", "day": 18, "text": "Went with OpenStreetMap tiles for the pin picker — no API key needed and nothing goes to Google." }
+  ] },
+  { "id": "t4", "title": "Ammu's medicine", "entries": [
+    { "id": "t4e1", "day": 2, "text": "আম্মুর প্রেশারের ওষুধ শেষ হয়ে যাচ্ছে। Osartil 50 সকালে একটা, রাতে একটা।" },
+    { "id": "t4e2", "day": 7, "text": "ডাক্তার বলেছে লবণ কম খেতে হবে আর প্রতিদিন আধা ঘণ্টা হাঁটতে হবে।" },
+    { "id": "t4e3", "day": 12, "text": "Next checkup with Dr. Farzana on the 3rd, Labaid Dhanmondi, 6pm. রিপোর্টগুলো সাথে নিতে হবে।" },
+    { "id": "t4e4", "day": 25, "text": "Sugar test result came back 7.2 fasting. Doctor wants to repeat it in three months." }
+  ] },
+  { "id": "t5", "title": "Laptop buying", "entries": [
+    { "id": "t5e1", "day": 4, "text": "Comparing laptops: ThinkPad E14 at 92,000, Asus Vivobook at 78,000, MacBook Air M2 at 135,000." },
+    { "id": "t5e2", "day": 6, "text": "Leaning towards the ThinkPad — the keyboard is better and RAM can be upgraded later. The Asus screen looked dim." },
+    { "id": "t5e3", "day": 9, "text": "Ryans e ThinkPad er dam 2,000 taka kom, kintu warranty 2 bochor. Star Tech e 3 bochor warranty." },
+    { "id": "t5e4", "day": 13, "text": "Bought the ThinkPad from Star Tech. Paid 91,500 with the card, got a free bag." }
+  ] },
+  { "id": "t6", "title": "Flat hunting", "entries": [
+    { "id": "t6e1", "day": 5, "text": "Saw the flat in Mohammadpur. 1,250 sq ft, rent 28,000, service charge 4,000. South facing, 5th floor, lift works." },
+    { "id": "t6e2", "day": 10, "text": "Mirpur DOHS flat: rent 32,000 but includes gas. Landlord wants two months advance." },
+    { "id": "t6e3", "day": 14, "text": "Problem with the Mohammadpur flat: water pressure is low in the morning, the caretaker admitted it." },
+    { "id": "t6e4", "day": 1, "text": "বাড়িওয়ালা বলেছে জানুয়ারি থেকে ভাড়া দুই হাজার বাড়বে। নতুন বাসা খোঁজা দরকার।" }
+  ] },
+  { "id": "t7", "title": "Gym and running", "entries": [
+    { "id": "t7e1", "day": 3, "text": "Ran 5 km in 31 minutes this morning. Knee felt fine." },
+    { "id": "t7e2", "day": 8, "text": "Weight 78.4 kg. Target is 74 by March." },
+    { "id": "t7e3", "day": 16, "text": "Trainer said do squats twice a week and stop skipping warm-up. Left knee pain is from tight hamstrings." },
+    { "id": "t7e4", "day": 19, "text": "Aj gym e jai nai, shorir kharap lagchilo. Kal double korbo." }
+  ] },
+  { "id": "t8", "title": "Thesis", "entries": [
+    { "id": "t8e1", "day": 2, "text": "Supervisor meeting: she wants the literature review cut to 20 pages and more on methodology." },
+    { "id": "t8e2", "day": 9, "text": "Decided to use mixed methods — survey of 200 students plus 12 interviews." },
+    { "id": "t8e3", "day": 17, "text": "Deadline for the draft chapter is 30 November. Ethics approval form still not submitted." },
+    { "id": "t8e4", "day": 22, "text": "Read Creswell chapter 4. Good framework for explaining why qualitative data comes second." }
+  ] },
+  { "id": "t9", "title": "Wedding gift for Nadia", "entries": [
+    { "id": "t9e1", "day": 6, "text": "Nadia's wedding is on the 20th of December at Sena Kunja. Need a gift." },
+    { "id": "t9e2", "day": 12, "text": "Thinking a dinner set from Aarong, around 6,000. Or just cash in an envelope like everyone else." },
+    { "id": "t9e3", "day": 21, "text": "নাদিয়ার বিয়েতে শাড়ি পরবো নাকি সালোয়ার কামিজ ঠিক করতে পারছি না। নীল শাড়িটা ড্রাই ওয়াশে দিতে হবে।" }
+  ] },
+  { "id": "t10", "title": "Q3 roadmap", "entries": [
+    { "id": "t10e1", "day": 1, "text": "Roadmap meeting: search is the top priority, export is pushed to Q4. Tanvir disagreed about pushing export." },
+    { "id": "t10e2", "day": 7, "text": "Decision: we ship offline mode before the redesign. Design team needs three more weeks anyway." },
+    { "id": "t10e3", "day": 15, "text": "Blocker — the payment provider's sandbox has been down since Monday, can't test checkout." },
+    { "id": "t10e4", "day": 23, "text": "Asked Sadia to write the release notes. Launch date moved to the 8th." }
+  ] },
+  { "id": "t11", "title": "Car servicing", "entries": [
+    { "id": "t11e1", "day": 4, "text": "Car service due at 45,000 km. Currently at 44,200." },
+    { "id": "t11e2", "day": 13, "text": "Mechanic at Tejgaon said the brake pads need changing, 3,500 taka for both front. Engine oil 4,200." },
+    { "id": "t11e3", "day": 24, "text": "Garir AC thanda hocche na, gas refill korte hobe. Mechanic bolse 2,500 lagbe." }
+  ] },
+  { "id": "t12", "title": "Bills and money", "entries": [
+    { "id": "t12e1", "day": 5, "text": "Electricity bill 3,840 this month, highest this year. AC ran too much." },
+    { "id": "t12e2", "day": 10, "text": "Internet bill 1,050 paid. Changing from Link3 to Amber IT next month, same price but faster." },
+    { "id": "t12e3", "day": 18, "text": "রহিমকে পাঁচ হাজার টাকা ধার দিয়েছি, সামনের মাসে ফেরত দেবে বলেছে।" },
+    { "id": "t12e4", "day": 26, "text": "Credit card bill due on the 25th. Minimum is 4,000 but I should pay the full 23,600." }
+  ] },
+  { "id": "t13", "title": "Books and reading", "entries": [
+    { "id": "t13e1", "day": 3, "text": "Finished Sapiens. The part about the agricultural revolution being a trap was the best." },
+    { "id": "t13e2", "day": 14, "text": "হুমায়ূন আহমেদের 'দেয়াল' পড়া শুরু করেছি। ইতিহাস আর গল্প মিশিয়ে লেখা, ভালো লাগছে।" },
+    { "id": "t13e3", "day": 27, "text": "Want to read next: Atomic Habits, The Remains of the Day." }
+  ] },
+  { "id": "t14", "title": "Maisha's school", "entries": [
+    { "id": "t14e1", "day": 2, "text": "Parent-teacher meeting on Saturday at 11. Class teacher is Ms. Rumana." },
+    { "id": "t14e2", "day": 8, "text": "Maisha's math result ভালো হয়নি, 62 out of 100. Teacher বলেছে fractions এ সমস্যা।" },
+    { "id": "t14e3", "day": 16, "text": "Found a tutor — Shafiq sir, comes three days a week, 6,000 a month." },
+    { "id": "t14e4", "day": 28, "text": "School fees for the January term: 18,500. Last date 10 January." }
+  ] },
+  { "id": "t15", "title": "Recipes", "entries": [
+    { "id": "t15e1", "day": 6, "text": "Ammu's beef bhuna: marinate with yogurt and ginger-garlic for two hours. Low heat, at least 90 minutes." },
+    { "id": "t15e2", "day": 11, "text": "Khichuri te moog dal ar chal shoman shoman, ar ektu ghee dile bhalo hoy." },
+    { "id": "t15e3", "day": 20, "text": "Tried the pressure cooker for biryani. Rice got mushy — use less water next time, 1:1.25." }
+  ] },
+  { "id": "t16", "title": "App idea: expense splitter", "entries": [
+    { "id": "t16e1", "day": 7, "text": "Idea: an app to split bills among flatmates, works over SMS so nobody needs to install anything." },
+    { "id": "t16e2", "day": 13, "text": "Talked to Imran, he thinks bKash integration is the hard part. Their merchant API needs a trade licence." },
+    { "id": "t16e3", "day": 19, "text": "Parking this until after the thesis. Not enough time." }
+  ] },
+  { "id": "t17", "title": "Eid shopping", "entries": [
+    { "id": "t17e1", "day": 9, "text": "ঈদের কেনাকাটা: আব্বুর জন্য পাঞ্জাবি, আম্মুর জন্য শাড়ি, মাইশার জন্য জুতা।" },
+    { "id": "t17e2", "day": 15, "text": "Punjabi from Yellow, 3,200. Saree from Aarong 7,800 — over budget but Ammu liked it." },
+    { "id": "t17e3", "day": 22, "text": "Maisha r juta ekhono kena hoy nai, Bata te size pai nai. Apex e dekhte hobe." }
+  ] }
+]
