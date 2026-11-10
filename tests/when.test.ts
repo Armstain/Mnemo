@@ -53,6 +53,18 @@ describe('reminders', () => {
     ).map((x: { id: string }) => x.id);
     expect(order).toEqual(['pinned', 'recent', 'due', 'old']);
   });
+
+  it('a routine never takes the top for being due again, unless pinned or focused on', () => {
+    const t = (id: string, o: object) => ({ id, status: 'active', updatedAt: mon - 3600e3, ...o }) as never;
+    const daily = { repeat: 'daily', dueDate: mon - 9 * 864e5, nextStep: 'Take the pills' };
+    const ids = (threads: never[], focusId?: string) => resumeOrder(threads, { now: mon, focusId }).map((x: { id: string }) => x.id);
+    const old = t('old', { updatedAt: mon - 20 * 864e5 });
+    expect(ids([t('pills', daily), old])).toEqual(['old', 'pills']);
+    expect(ids([t('pills', daily), old], 'pills')).toEqual(['pills', 'old']);
+    expect(ids([old, t('pills', { ...daily, starred: true })])).toEqual(['pills', 'old']);
+    // With nothing else open, it is still what Home shows.
+    expect(ids([t('pills', daily)])).toEqual(['pills']);
+  });
 });
 
 describe('why a thread is on top of Home', () => {
