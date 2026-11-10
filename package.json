@@ -10,6 +10,7 @@
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
     "test": "vitest run",
+    "eval:retrieval": "vitest run --config vitest.eval.config.ts",
     "check": "npm run typecheck && npm run lint && npm test"
   },
   "dependencies": {

@@ -8,7 +8,8 @@ import { useMnemoStore } from '@/hooks/use-mnemo-store';
 import { useThemeColors } from '@/hooks/use-theme';
 import { aiErrorText } from '@/lib/api-key';
 import { askNotes, type NoteForQuestion } from '@/lib/gemini';
-import { entryText } from '@/lib/threads';
+import { packContext } from '@/lib/retrieve';
+import { findPassages } from '@/lib/search';
 import type { MnemoItem } from '@/types/mnemo';
 
 const QUESTION =
@@ -19,16 +20,24 @@ export function isQuestion(query: string): boolean {
   return QUESTION.test(query.trim().normalize('NFC'));
 }
 
-const PER_NOTE_CHARS = 1500;
-const MAX_NOTES = 8;
-
 /**
- * "Ask Mnemo": answers a question from the few notes that match it best
- * (picked on the phone), and shows which ones it used.
+ * "Ask Mnemo": answers a question from the passages that match it best
+ * (picked on the phone, from every entry of the threads in scope, not just
+ * each thread's first lines), and shows which threads it used.
  */
-export function AskCard({ question, ranked }: { question: string; ranked: MnemoItem[] }) {
+export function AskCard({
+  question,
+  ranked,
+  scope,
+}: {
+  question: string;
+  /** The threads the search found, best first. */
+  ranked: MnemoItem[];
+  /** Every thread the question may be answered from (those in the period searched). */
+  scope: MnemoItem[];
+}) {
   const colors = useThemeColors();
-  const { getEntries, getThread } = useMnemoStore();
+  const { getThread, snapshot } = useMnemoStore();
   const [state, setState] = React.useState<
     { kind: 'idle' } | { kind: 'asking' } | { kind: 'done'; answer: string; sources: string[] } | { kind: 'error'; message: string }
   >({ kind: 'idle' });
@@ -38,14 +47,12 @@ export function AskCard({ question, ranked }: { question: string; ranked: MnemoI
 
   const ask = async () => {
     setState({ kind: 'asking' });
-    const notes: NoteForQuestion[] = ranked.slice(0, MAX_NOTES).map((t) => {
-      const text = getEntries(t.id)
-        .map((e) => `[${new Date(e.createdAt).toDateString()}] ${entryText(e)}`)
-        .join('\n')
-        .slice(0, PER_NOTE_CHARS);
-      return { id: t.id, title: t.title, text: text || t.content.slice(0, PER_NOTE_CHARS) };
-    });
     try {
+      const notes: NoteForQuestion[] = packContext(await findPassages(question, scope, snapshot().entries));
+      // No passage shares a word with the question: the threads the search found, as they begin.
+      if (notes.length === 0) {
+        notes.push(...ranked.slice(0, 8).map((t) => ({ id: t.id, title: t.title, text: t.content.slice(0, 1500) })));
+      }
       const { answer, sourceIds } = await askNotes(question, notes);
       setState({ kind: 'done', answer, sources: sourceIds });
     } catch (e) {

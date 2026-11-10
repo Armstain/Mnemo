@@ -51,6 +51,14 @@ export function initDb(): Promise<void> {
         updatedAt INTEGER NOT NULL
       );
 
+      CREATE TABLE IF NOT EXISTS chunk_embeddings (
+        hash TEXT PRIMARY KEY NOT NULL,
+        vector BLOB NOT NULL,
+        model TEXT NOT NULL,
+        dims INTEGER NOT NULL,
+        updatedAt INTEGER NOT NULL
+      );
+
       CREATE TABLE IF NOT EXISTS entries (
         id TEXT PRIMARY KEY NOT NULL,
         threadId TEXT NOT NULL,
@@ -341,8 +349,9 @@ export async function deleteItemRow(id: string): Promise<void> {
 /** Wipes every item, entry and embedding. Used by "Clear all data" in Settings. */
 export async function deleteAllItems(): Promise<void> {
   const db = await getDb();
-  await db.execAsync('DELETE FROM items; DELETE FROM entries; DELETE FROM embeddings;');
+  await db.execAsync('DELETE FROM items; DELETE FROM entries; DELETE FROM embeddings; DELETE FROM chunk_embeddings;');
   vectorCache = new Map();
+  chunkVectorCache = new Map();
 }
 
 // ─── Entries ────────────────────────────────────────────────────
@@ -537,4 +546,66 @@ export async function deleteEmbedding(itemId: string): Promise<void> {
   vectorCache?.delete(itemId);
   const db = await getDb();
   await db.runAsync('DELETE FROM embeddings WHERE itemId = $itemId', { $itemId: itemId });
+}
+
+// ─── Passage embeddings ─────────────────────────────────────────
+// One vector per passage of a note (lib/retrieve.ts), kept by the hash of
+// the passage's text. So the same words said twice are embedded once, an
+// edited note is simply a new hash, and nothing here needs to know which
+// entry a passage came from. Vectors no passage uses any more are pruned.
+
+let chunkVectorCache: Map<string, { model: string; vector: Float32Array }> | null = null;
+let chunkVectorLoad: Promise<unknown> | null = null;
+
+async function loadChunkVectors(): Promise<Map<string, { model: string; vector: Float32Array }>> {
+  if (!chunkVectorCache) {
+    if (!chunkVectorLoad) {
+      chunkVectorLoad = getDb()
+        .then((db) => db.getAllAsync<{ hash: string; vector: Uint8Array; model: string }>('SELECT hash, vector, model FROM chunk_embeddings'))
+        .then((rows) => {
+          chunkVectorCache = new Map(rows.map((r) => [r.hash, { model: r.model, vector: decodeVector(r.vector) }]));
+        })
+        .finally(() => {
+          chunkVectorLoad = null;
+        });
+    }
+    await chunkVectorLoad;
+  }
+  return chunkVectorCache ?? new Map();
+}
+
+/** Every stored passage vector made by `model`, by the passage's hash. */
+export async function getChunkVectors(model: string): Promise<Map<string, Float32Array>> {
+  const out = new Map<string, Float32Array>();
+  for (const [hash, v] of await loadChunkVectors()) if (v.model === model) out.set(hash, v.vector);
+  return out;
+}
+
+export async function upsertChunkEmbeddings(records: { hash: string; vector: Uint8Array; model: string; dims: number }[]): Promise<void> {
+  if (records.length === 0) return;
+  const cache = await loadChunkVectors();
+  const db = await getDb();
+  await db.withTransactionAsync(async () => {
+    for (const r of records) {
+      await db.runAsync(
+        `INSERT INTO chunk_embeddings (hash, vector, model, dims, updatedAt)
+         VALUES ($hash, $vector, $model, $dims, $updatedAt)
+         ON CONFLICT(hash) DO UPDATE SET vector = $vector, model = $model, dims = $dims, updatedAt = $updatedAt`,
+        { $hash: r.hash, $vector: r.vector, $model: r.model, $dims: r.dims, $updatedAt: Date.now() },
+      );
+    }
+  });
+  for (const r of records) cache.set(r.hash, { model: r.model, vector: decodeVector(r.vector) });
+}
+
+/** Drops the vectors of passages that no longer exist (deleted or rewritten notes). */
+export async function pruneChunkEmbeddings(keep: Set<string>): Promise<void> {
+  const cache = await loadChunkVectors();
+  const gone = [...cache.keys()].filter((hash) => !keep.has(hash));
+  if (gone.length === 0) return;
+  const db = await getDb();
+  await db.withTransactionAsync(async () => {
+    for (const hash of gone) await db.runAsync('DELETE FROM chunk_embeddings WHERE hash = $hash', { $hash: hash });
+  });
+  for (const hash of gone) cache.delete(hash);
 }

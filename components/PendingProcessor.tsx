@@ -9,8 +9,9 @@ import { confirmAction } from '@/utils/confirm';
 import { onApiKeyChanged } from '@/lib/api-key';
 import { aiEnabled, appReady } from '@/lib/ai-mode';
 import { embedBatch, embeddableText, embeddingModel, meaningSearchOn, toBlob, EMBEDDING_DIMS } from '@/lib/embeddings';
-import { getEmbeddedItemIds, upsertEmbedding } from '@/lib/db';
-import type { MnemoItem } from '@/types/mnemo';
+import { getChunkVectors, getEmbeddedItemIds, pruneChunkEmbeddings, upsertChunkEmbeddings, upsertEmbedding } from '@/lib/db';
+import { chunkEntries } from '@/lib/retrieve';
+import type { Entry, MnemoItem } from '@/types/mnemo';
 
 // One request per batch, bounded so a single call can't grow unbounded as
 // the library does. Non-critical background maintenance — if a batch fails
@@ -91,6 +92,46 @@ async function backfillEmbeddings(items: MnemoItem[]): Promise<void> {
   }
 }
 
+// A long-used library has thousands of passages; a sweep embeds this many
+// batches and leaves the rest for the next time the app is opened.
+const PASSAGE_BATCHES_PER_SWEEP = 10;
+let embeddingPassages = false;
+
+/**
+ * Embeds the passages of notes that have no vector yet (new notes, edited
+ * ones, and the whole library the first time), so a question can be
+ * matched to the part of a thread that answers it. A passage's vector is
+ * kept by its text, so a note said twice costs nothing the second time.
+ */
+async function embedPassages(items: MnemoItem[], entries: Entry[]): Promise<void> {
+  if (embeddingPassages) return;
+  embeddingPassages = true;
+  try {
+    const model = await embeddingModel();
+    const chunks = chunkEntries(items, entries);
+    const have = await getChunkVectors(model);
+    await pruneChunkEmbeddings(new Set(chunks.map((c) => c.hash)));
+    const allowed = new Set(items.filter((item) => !item.pending && !earlier(item)).map((item) => item.id));
+    const missing = new Map<string, string>();
+    for (const c of chunks) if (allowed.has(c.threadId) && !have.has(c.hash)) missing.set(c.hash, c.text);
+    const todo = [...missing].slice(0, PASSAGE_BATCHES_PER_SWEEP * BACKFILL_BATCH_SIZE);
+    for (let i = 0; i < todo.length; i += BACKFILL_BATCH_SIZE) {
+      const batch = todo.slice(i, i + BACKFILL_BATCH_SIZE);
+      const vectors = await embedBatch(batch.map(([, text]) => text));
+      await upsertChunkEmbeddings(
+        batch.flatMap(([hash], idx) => {
+          const vector = vectors[idx];
+          return vector && vector.length > 0 ? [{ hash, vector: toBlob(vector), model, dims: EMBEDDING_DIMS }] : [];
+        }),
+      );
+    }
+  } catch {
+    // Offline or rate-limited: the next sweep carries on.
+  } finally {
+    embeddingPassages = false;
+  }
+}
+
 const SWEEP_EVERY_MS = 60_000;
 /**
  * Waiting notes sent at once. Every note walks the model ladder on its
@@ -122,8 +163,9 @@ async function sendWaiting(pending: Waiting[0][], store: Waiting[1]): Promise<vo
  *    comes back to the foreground, and every minute while any wait (each
  *    note backs off on its own after a failure; see resolvePendingEntry).
  * 2. Offline, finishes any waiting note with the phone's own reading.
- * 3. Backfills embeddings for notes that don't have one yet, except
- *    notes written before Gemini was turned on, until the person agrees.
+ * 3. Backfills embeddings for notes that don't have one yet, and for
+ *    their passages, except notes written before Gemini was turned on,
+ *    until the person agrees.
  */
 export function PendingProcessor() {
   const store = useMnemoStore();
@@ -154,6 +196,7 @@ export function PendingProcessor() {
         return;
       }
       void sendWaiting(pending, current);
+      if (meaningSearchOn()) void embedPassages(items, entries);
       if (!backfilled && meaningSearchOn()) {
         backfilled = true;
         backfillEmbeddings(items);
