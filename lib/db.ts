@@ -93,13 +93,18 @@ export function initDb(): Promise<void> {
 //   7 — places: items gain `place` (a reminder on arriving or leaving).
 const SCHEMA_VERSION = 7;
 
-// Every column, in one place, for the INSERT statements below.
-const ITEM_COLUMNS = [
-  'id', 'type', 'title', 'content', 'checklistItems', 'links', 'category', 'tags', 'status',
-  'nextStep', 'whereLeftOff', 'dueDate', 'createdAt', 'updatedAt', 'lastResumedAt',
-  'aiSummary', 'pending', 'pendingRawText', 'pendingAudioUri', 'pinned', 'repeat', 'starred',
-  'completedAt', 'quietUntil', 'overview', 'laterSteps', 'kind', 'place',
-];
+type ColumnKind = 'plain' | 'json' | 'flag';
+
+const ITEM_FIELDS: Record<string, ColumnKind> = {
+  id: 'plain', type: 'plain', title: 'plain', content: 'plain', checklistItems: 'json', links: 'json',
+  category: 'plain', tags: 'json', status: 'plain', nextStep: 'plain', whereLeftOff: 'plain',
+  dueDate: 'plain', createdAt: 'plain', updatedAt: 'plain', lastResumedAt: 'plain', aiSummary: 'json',
+  pending: 'flag', pendingRawText: 'plain', pendingAudioUri: 'plain', pinned: 'json', repeat: 'plain',
+  starred: 'flag', completedAt: 'plain', quietUntil: 'plain', overview: 'json', laterSteps: 'json',
+  kind: 'plain', place: 'json',
+};
+const ITEM_COLUMNS = Object.keys(ITEM_FIELDS);
+const columnsOfKind = (kind: ColumnKind) => new Set(ITEM_COLUMNS.filter((c) => ITEM_FIELDS[c] === kind));
 const ENTRY_COLUMNS = [
   'id', 'threadId', 'createdAt', 'updatedAt', 'source', 'transcript', 'blocks', 'leftOff', 'nextStep',
   'filing', 'pending', 'pendingRawText', 'pendingAudioUri', 'stepDone',
@@ -174,8 +179,6 @@ export async function ensureEntriesForItems(items: MnemoItem[]): Promise<Entry[]
   return created;
 }
 
-// Raw column shapes as SQLite returns them — JSON fields are strings,
-// booleans are 0/1, absent values are null (not undefined).
 interface ItemRow {
   id: string;
   type: string;
@@ -294,24 +297,17 @@ export async function insertItem(item: MnemoItem): Promise<void> {
   );
 }
 
-/** Bulk insert for the one-time legacy migration. Sequential to keep it simple — runs once, on a small dataset. */
+/** For the one-time legacy migration: sequential, on a small dataset. */
 export async function insertItems(items: MnemoItem[]): Promise<void> {
   for (const item of items) {
     await insertItem(item);
   }
 }
 
-// Columns updateItem is allowed to touch. Used both as a whitelist (so the
-// dynamic SET clause never interpolates anything but a known column name)
-// and to look up how each value needs to be serialized for storage.
-const JSON_COLUMNS = new Set(['checklistItems', 'links', 'tags', 'aiSummary', 'pinned', 'overview', 'laterSteps', 'place']);
-const BOOLEAN_COLUMNS = new Set(['pending', 'starred']);
-const COLUMN_KEYS = new Set([
-  'type', 'title', 'content', 'checklistItems', 'links', 'category', 'tags', 'status',
-  'nextStep', 'whereLeftOff', 'dueDate', 'createdAt', 'updatedAt', 'lastResumedAt',
-  'aiSummary', 'pending', 'pendingRawText', 'pendingAudioUri', 'pinned', 'repeat', 'starred',
-  'completedAt', 'quietUntil', 'overview', 'laterSteps', 'kind', 'place',
-]);
+// A whitelist, so the dynamic SET clause never interpolates anything but a known column name.
+const JSON_COLUMNS = columnsOfKind('json');
+const BOOLEAN_COLUMNS = columnsOfKind('flag');
+const COLUMN_KEYS = new Set(ITEM_COLUMNS.filter((c) => c !== 'id'));
 
 function serializeColumnValue(key: string, value: unknown): string | number | null {
   if (value === undefined || value === null) return null;
@@ -320,11 +316,7 @@ function serializeColumnValue(key: string, value: unknown): string | number | nu
   return value as string | number;
 }
 
-/**
- * Writes only the columns present in `updates` — mirrors how the store's
- * in-memory `{ ...item, ...updates }` merge behaves, without needing to
- * read the merged item back first.
- */
+/** Writes only the columns present in `updates`, like the store's in-memory `{ ...item, ...updates }` merge. */
 export async function updatePartialItem(id: string, updates: Partial<MnemoItem>): Promise<void> {
   const keys = Object.keys(updates).filter((k) => COLUMN_KEYS.has(k));
   if (keys.length === 0) return;
@@ -346,7 +338,6 @@ export async function deleteItemRow(id: string): Promise<void> {
   await deleteEmbedding(id);
 }
 
-/** Wipes every item, entry and embedding. Used by "Clear all data" in Settings. */
 export async function deleteAllItems(): Promise<void> {
   const db = await getDb();
   await db.execAsync('DELETE FROM items; DELETE FROM entries; DELETE FROM embeddings; DELETE FROM chunk_embeddings;');
@@ -530,7 +521,7 @@ export async function upsertEmbedding(record: EmbeddingRecord): Promise<void> {
   );
 }
 
-export async function getAllEmbeddings(): Promise<EmbeddingRow[]> {
+async function getAllEmbeddings(): Promise<EmbeddingRow[]> {
   const db = await getDb();
   return db.getAllAsync<EmbeddingRow>('SELECT * FROM embeddings');
 }

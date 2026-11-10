@@ -6,19 +6,22 @@ import {
   ActivityIndicator,
   Share,
   Alert,
-  KeyboardAvoidingView,
-  Platform,
 } from 'react-native';
 import { TextInput } from '@/components/ui/TextInput';
 import { Text } from '@/components/ui/Text';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams } from 'expo-router';
-import { haptic } from '@/utils/haptics';
+import { haptic } from '@/lib/haptics';
 import { AnimatePresence, MotiView } from 'moti';
 import { formatDistanceToNow } from 'date-fns';
 
-import { NAV_CLEARANCE } from '@/components/ui/FloatingTabBar';
+import { NAV_CLEARANCE } from '@/components/ui/nav-layout';
 import { Button, IconButton } from '@/components/ui/Button';
+import { useSurfaceStyle } from '@/components/ui/Card';
+import { FocusPill } from '@/components/ui/FocusPill';
+import { KeyboardAvoid } from '@/components/ui/Screen';
+import { QuietActions } from '@/components/thread/QuietActions';
+import { useDeleteThread } from '@/hooks/use-thread-actions';
 import { Eyebrow } from '@/components/ui/Eyebrow';
 import { Icon } from '@/components/ui/Icon';
 import { DoneCheck } from '@/components/ui/DoneCheck';
@@ -34,21 +37,22 @@ import { ThreadRing } from '@/components/ui/ThreadRing';
 import { EntryCard } from '@/components/thread/EntryCard';
 import { ThreadMenu, type ThreadMenuItem } from '@/components/thread/ThreadMenu';
 import { OrganiseOffer, OverviewCard } from '@/components/thread/OverviewCard';
-import { NumbersSection, type MetricFix } from '@/components/thread/Measures';
+import { NumbersSection } from '@/components/thread/Measures';
+import { applyMetricFix, type MetricFix } from '@/lib/measure-fix';
 import { useMnemoStore } from '@/hooks/use-mnemo-store';
 import { useRebrief } from '@/hooks/use-rebrief';
 import { useUndoToast } from '@/hooks/use-undo-toast';
 import { useThemeColors } from '@/hooks/use-theme';
 import { organiseNotes } from '@/lib/gemini';
-import { canOrganise, cleanOverview, notesSince, notesToOrganise, overviewText } from '@/lib/overview';
+import { canOrganise, cleanOverview, notesSince, notesToOrganise, overviewText, spanDays } from '@/lib/overview';
 import { aiEnabled } from '@/lib/ai-mode';
-import { aiErrorText, retryProblemText } from '@/lib/api-key';
+import { aiErrorText, retryProblemText } from '@/lib/ai-error';
 import { usePreferences } from '@/lib/preferences';
 import { retryEntryNow } from '@/lib/capture';
 import { relatedThreads, type RelatedThread } from '@/lib/search';
 import { entryText } from '@/lib/threads';
 import { matchEntries } from '@/lib/find';
-import { quietDays as quietFor, STILL_ON_IT_DAYS } from '@/lib/review';
+import { quietDays as quietFor } from '@/lib/review';
 import { openStepsOf } from '@/lib/wrapup';
 import { afterReminder, formatReminder, nextOccurrence, quickTimes, rescheduled } from '@/lib/when';
 import { occurrenceOf, placeLabel, repeatsAtPlace } from '@/lib/places';
@@ -56,11 +60,14 @@ import { usePlaces } from '@/lib/place-store';
 import { useCompleteThread, useStepDone } from '@/hooks/use-complete-thread';
 import { finishModel } from '@/lib/done';
 import { confirmAction } from '@/utils/confirm';
-import { metricKey, numbersToShow, summarizeMeasures, worthSummarizing, type MetricSummary } from '@/lib/measures';
-import { useCategories, useStatusConfig } from '@/utils/categories';
-import { DUR_BASE, EASE_IN_OUT, useEnter } from '@/utils/motion';
+import { numbersToShow, summarizeMeasures, worthSummarizing, type MetricSummary } from '@/lib/measures';
+import { useCategories, useStatusConfig } from '@/hooks/use-categories';
+import { useEnter } from '@/hooks/use-enter';
+import { DUR_BASE, EASE_IN_OUT } from '@/utils/motion';
 import { freshness } from '@/utils/time';
 import { reportFlightTarget } from '@/lib/card-flight';
+import { captureHref, dumpHref, threadHref, wrapupHref } from '@/lib/routes';
+import { isOpenStatus } from '@/types/mnemo';
 
 /** Route stays `context` so existing links and notifications work. */
 export default function ThreadScreen() {
@@ -71,12 +78,7 @@ export default function ThreadScreen() {
   const {
     items,
     updateItem,
-    deleteItem,
-    undoDelete,
     resumeItem,
-    pauseItem,
-    archiveItem,
-    restoreItem,
     getEntries,
     isLoaded,
     focusThreadId,
@@ -87,6 +89,8 @@ export default function ThreadScreen() {
   } = store;
   const { showUndoToast, showToast } = useUndoToast();
   const completeThread = useCompleteThread();
+  const deleteThread = useDeleteThread();
+  const surface = useSurfaceStyle();
   const stepDone = useStepDone();
   const rebrief = useRebrief();
   const colors = useThemeColors();
@@ -106,7 +110,7 @@ export default function ThreadScreen() {
   );
   const ai = aiEnabled();
   const openSteps = React.useMemo(() => openStepsOf(entries).slice(0, 5), [entries]);
-  const threadOpen = thread?.status === 'active' || thread?.status === 'paused';
+  const threadOpen = !!thread && isOpenStatus(thread.status);
   // Only what adds to the notes: one amount is already in its entry (lib/measures.ts worthSummarizing).
   const numbers = React.useMemo(
     () => numbersToShow(summarizeMeasures(entries), threadOpen).filter(worthSummarizing),
@@ -194,8 +198,6 @@ export default function ThreadScreen() {
   const status = statusColors[thread.status];
   const pendingEntries = entries.filter((e) => e.pending);
 
-  // ─── Actions ───
-
   const handleSaveEdit = () => {
     const nextStep = editNextStep.trim();
     const whereLeftOff = editWhereLeftOff.trim();
@@ -218,28 +220,15 @@ export default function ThreadScreen() {
     setIsEditing(false);
   };
 
-  // Renaming to another metric's name merges them.
   const fixMetric = (summary: MetricSummary, fix: MetricFix) => {
     for (const entry of entries) {
-      let touched = false;
-      const blocks = entry.blocks.map((b) => {
-        if (b.kind !== 'measures') return b;
-        return {
-          ...b,
-          items: b.items.map((m) => {
-            if (metricKey(m.metric) !== summary.key) return m;
-            touched = true;
-            return { ...m, ...(fix.metric ? { metric: fix.metric } : {}), ...(fix.rollup ? { rollup: fix.rollup } : {}) };
-          }),
-        };
-      });
-      if (touched) store.updateEntry(entry.id, { blocks });
+      const blocks = applyMetricFix(entry.blocks, summary, fix);
+      if (blocks) store.updateEntry(entry.id, { blocks });
     }
   };
 
   const hasHistory = entries.length >= 3 || numbers.length > 0;
 
-  // ─── Done ───
   // What Done does comes from one rule, `finishModel` (lib/done.ts): a repeating reminder
   // completes today's occurrence (finishing the thread is the ⋯ menu's choice); one thing to do
   // has a single Done that ticks its step and finishes it; a project ticks steps with their own
@@ -250,7 +239,7 @@ export default function ThreadScreen() {
   const doneToday = placeRepeats && occurrenceOf(thread.place!).state === 'done';
 
   const finishThread = () => {
-    if (hasHistory) router.push(`/wrapup?id=${thread.id}`);
+    if (hasHistory) router.push(wrapupHref(thread.id));
     else completeThread(thread.id);
   };
 
@@ -275,7 +264,7 @@ export default function ThreadScreen() {
   // DoneCheck already played ring and haptics. Only shown on a thread that has steps.
   const handleStepDone = () => stepDone(thread.id);
 
-  const showDue = !!thread.dueDate && (thread.status === 'active' || thread.status === 'paused');
+  const showDue = !!thread.dueDate && isOpenStatus(thread.status);
   const missed = showDue && !thread.repeat && thread.dueDate! < Date.now();
   const waiting = (thread.laterSteps ?? []).filter((l) => !thread.repeat || l.at > Date.now());
 
@@ -294,8 +283,7 @@ export default function ThreadScreen() {
 
   const handleDelete = () => {
     const remove = () => {
-      deleteItem(thread.id);
-      showUndoToast(`"${thread.title}" deleted`, () => undoDelete(thread.id));
+      deleteThread(thread);
       router.back();
     };
     if (entries.length <= 1) return remove();
@@ -334,9 +322,7 @@ export default function ThreadScreen() {
     }
   };
   const newSinceOverview = thread.overview ? notesSince(thread.overview, entries) : 0;
-  const noteSpanDays = entries.length
-    ? Math.round((Math.max(...entries.map((e) => e.createdAt)) - Math.min(...entries.map((e) => e.createdAt))) / 86_400_000)
-    : 0;
+  const noteSpanDays = spanDays(entries);
 
   const shareText = thread.overview
     ? overviewText(thread.title, thread.overview)
@@ -351,7 +337,7 @@ export default function ThreadScreen() {
 
   const followMove = (toThreadId: string) => {
     if (!snapshot().items.some((i) => i.id === thread.id)) {
-      router.replace(`/(tabs)/context?id=${toThreadId}`);
+      router.replace(threadHref(toThreadId));
     }
   };
 
@@ -367,9 +353,9 @@ export default function ThreadScreen() {
   };
 
   const addUpdate = (mode: 'write' | 'record') =>
-    router.push(`/${mode === 'write' ? 'capture' : 'dump'}?threadId=${thread.id}`);
+    router.push(mode === 'write' ? captureHref(thread.id) : dumpHref(thread.id));
 
-  const open = thread.status === 'active' || thread.status === 'paused';
+  const open = isOpenStatus(thread.status);
   const menuItems: ThreadMenuItem[] = [
     { icon: 'pencil', label: 'Edit thread', onPress: startEditing },
     ...(shareText
@@ -387,15 +373,12 @@ export default function ThreadScreen() {
     ...(recurring
       ? [{ icon: 'check' as const, label: 'Finish thread and its reminders', onPress: finishThread }]
       : []),
-    ...(thread.status === 'active' ? [{ icon: 'pause' as const, label: 'Pause', onPress: () => pauseItem(thread.id) }] : []),
-    ...(thread.status !== 'archived' ? [{ icon: 'archive' as const, label: 'Archive', onPress: () => archiveItem(thread.id) }] : []),
+    ...(thread.status === 'active' ? [{ icon: 'pause' as const, label: 'Pause', onPress: () => updateItem(thread.id, { status: 'paused' }) }] : []),
+    ...(thread.status !== 'archived' ? [{ icon: 'archive' as const, label: 'Archive', onPress: () => updateItem(thread.id, { status: 'archived' }) }] : []),
     { icon: 'trash', label: 'Delete thread', onPress: handleDelete, danger: true },
   ];
-
-  // ─── Render ───
-
   return (
-    <KeyboardAvoidingView className="flex-1" behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+    <KeyboardAvoid className="flex-1">
       <View className="flex-1">
         <View
           className="flex-row justify-between items-center px-5 pb-2"
@@ -443,7 +426,6 @@ export default function ThreadScreen() {
           keyboardShouldPersistTaps="handled"
           contentContainerStyle={{ paddingBottom: Math.max(insets.bottom, 20) + NAV_CLEARANCE }}
         >
-          {/* ─── Header ─── */}
           <MotiView {...enter.rise(0)} className="px-6 pt-3">
             <View className="flex-row items-center mb-4">
               <ThreadRing
@@ -535,7 +517,7 @@ export default function ThreadScreen() {
                 {missed ? (
                   <View
                     className="flex-row items-center rounded-md mt-3 pl-3.5 pr-2 py-2 gap-2"
-                    style={{ backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border }}
+                    style={surface}
                   >
                     <View className="flex-1" style={{ minWidth: 0 }}>
                       <Text className="font-sans text-sm" style={{ color: colors.fgTertiary }}>
@@ -593,7 +575,6 @@ export default function ThreadScreen() {
 
           {!isEditing && (
             <>
-              {/* ─── Where you are ─── */}
               {thread.whereLeftOff || thread.nextStep ? (
                 <MotiView {...enter.rise(1)} className="px-6 mt-6 gap-4">
                   {thread.whereLeftOff ? (
@@ -626,39 +607,18 @@ export default function ThreadScreen() {
                 </MotiView>
               ) : null}
 
-              {/* ─── Gone quiet ─── */}
               {!isEditing && quietDays !== null ? (
-                <MotiView {...enter.fade(1)} className="mx-6 mt-5 rounded-lg p-4" style={{ backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border }}>
+                <MotiView {...enter.fade(1)} className="mx-6 mt-5 rounded-lg p-4" style={surface}>
                   <Text className="font-sans-semi text-body" style={{ color: colors.fg }}>
                     Nothing new for {quietDays} days
                   </Text>
                   <Text className="font-sans text-sm mt-0.5" style={{ color: colors.fgSecondary }}>
                     Still going, or is it over?
                   </Text>
-                  <View className="flex-row gap-2 mt-3">
-                    <Button variant="tonal" size="sm" icon="check" onPress={() => router.push(`/wrapup?id=${thread.id}`)}>
-                      Wrap it up
-                    </Button>
-                    <Button
-                      variant="quiet"
-                      size="sm"
-                      onPress={() => {
-                        const before = thread;
-                        // Not activity: must not jump to the top of Home.
-                        updateItem(thread.id, { quietUntil: Date.now() + STILL_ON_IT_DAYS * 86_400_000 }, { touch: false });
-                        showUndoToast(`Won't ask about it for a month`, () => restoreItem(before));
-                      }}
-                    >
-                      Still on it
-                    </Button>
-                    <Button variant="ghost" size="sm" icon="pause" onPress={() => pauseItem(thread.id)}>
-                      Pause
-                    </Button>
-                  </View>
+                  <QuietActions item={thread} />
                 </MotiView>
               ) : null}
 
-              {/* ─── Primary actions ─── */}
               <MotiView {...enter.fade(1)} className="px-6 mt-5 flex-row gap-2">
                 {thread.status === 'active' ? (
                   <Button
@@ -701,7 +661,7 @@ export default function ThreadScreen() {
                     {recurring ? 'Done for today' : 'Done'}
                   </Button>
                 ) : hasHistory ? (
-                  <Button variant="quiet" icon="share" className="flex-1" onPress={() => router.push(`/wrapup?id=${thread.id}`)}>
+                  <Button variant="quiet" icon="share" className="flex-1" onPress={() => router.push(wrapupHref(thread.id))}>
                     Summary card
                   </Button>
                 ) : null}
@@ -731,49 +691,23 @@ export default function ThreadScreen() {
                   </Pressable>
                 </View>
               )}
-
-              {/* ─── Focus ─── */}
-              {isFocus && (thread.status === 'active' || thread.status === 'paused') && (
+              {isFocus && isOpenStatus(thread.status) && (
                 <MotiView {...enter.fade(1)} className="px-6 mt-3">
-                  <View
-                    className="flex-row items-center self-start rounded-full pl-3 pr-1.5 h-10"
-                    style={{ backgroundColor: colors.accentSoft, maxWidth: '100%' }}
-                  >
-                    <Icon name="pin" size={15} color={colors.accent} stroke={2.2} />
-                    <Text className="font-sans-medium text-sm ml-2 mr-2 shrink" style={{ color: colors.fg }} numberOfLines={1}>
-                      Quick captures land here
-                    </Text>
-                    <Pressable
-                      onPress={() => setFocusThread(null)}
-                      hitSlop={8}
-                      accessibilityRole="button"
-                      accessibilityLabel="Stop sending quick captures here"
-                      className="rounded-full px-3 h-7 items-center justify-center active:opacity-70"
-                      style={{ backgroundColor: colors.surfaceLowest }}
-                    >
-                      <Text className="font-sans-semi text-sm" style={{ color: colors.accent }}>
-                        Stop
-                      </Text>
-                    </Pressable>
-                  </View>
+                  <FocusPill onStop={() => setFocusThread(null)} stopLabel="Stop sending quick captures here">
+                    Quick captures land here
+                  </FocusPill>
                 </MotiView>
               )}
-
-              {/* ─── Numbers ─── */}
               {numbers.length > 0 && (
                 <MotiView {...enter.rise(2)} className="px-6 mt-9">
                   <NumbersSection summaries={numbers} onFix={fixMetric} />
                 </MotiView>
               )}
-
-              {/* ─── Organise ─── */}
               {ai && !finding && canOrganise(entries, thread.overview) && (
                 <MotiView {...enter.rise(2)} className="px-6 mt-7">
                   <OrganiseOffer count={entries.length} spanDays={noteSpanDays} busy={organising} onOrganise={handleOrganise} />
                 </MotiView>
               )}
-
-              {/* ─── Timeline ─── */}
               <MotiView {...enter.rise(2)} className="px-6 mt-9">
                 <View className="flex-row items-center justify-between">
                   <Eyebrow>Timeline</Eyebrow>
@@ -795,7 +729,7 @@ export default function ThreadScreen() {
                 {finding ? (
                   <View
                     className="flex-row items-center rounded-full px-4 h-11 mb-4"
-                    style={{ backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border }}
+                    style={surface}
                   >
                     <Icon name="search" size={15} color={colors.fgTertiary} />
                     <TextInput
@@ -884,7 +818,6 @@ export default function ThreadScreen() {
                   </View>
                 </View>
               )}
-              {/* ─── Related ─── */}
               {related.length > 0 && (
                 <View className="px-6 mt-9">
                   <Eyebrow>Related threads</Eyebrow>
@@ -896,7 +829,7 @@ export default function ThreadScreen() {
                         detail={reason}
                         index={i}
                         last={i === related.length - 1}
-                        onPress={() => router.push(`/(tabs)/context?id=${r.id}`)}
+                        onPress={() => router.push(threadHref(r.id))}
                       />
                     ))}
                   </ThreadList>
@@ -908,6 +841,6 @@ export default function ThreadScreen() {
 
         <ThreadMenu open={menuOpen && !isEditing} onClose={() => setMenuOpen(false)} items={menuItems} top={navBottom} />
       </View>
-    </KeyboardAvoidingView>
+    </KeyboardAvoid>
   );
 }

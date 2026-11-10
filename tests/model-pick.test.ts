@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
-import { aiErrorText, classifyAiError, dailyResetText } from '@/lib/api-key';
-import { DAILY_QUOTA_PAUSE_MS, isMissingModel, isOverloaded, pickEmbeddingModel, pickTextModels, nextDailyReset, pickTtsModel, quotaInfo, quotaPause, type ModelInfo } from '@/lib/model-pick';
+import { aiErrorText, classifyAiError, dailyResetText, DAILY_QUOTA_PAUSE_MS, isMissingModel, isOverloaded, nextDailyReset, quotaInfo, quotaPause } from '@/lib/ai-error';
+import { pickEmbeddingModel, pickTextModels, pickTtsModel, type ModelInfo } from '@/lib/model-pick';
 
 vi.mock('expo-secure-store', () => ({}));
 vi.mock('@google/genai', () => ({ GoogleGenAI: class {} }));

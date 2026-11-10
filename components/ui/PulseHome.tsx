@@ -6,7 +6,8 @@ import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Defs, RadialGradient, Rect, Stop } from 'react-native-svg';
 
-import { Card } from '@/components/ui/Card';
+import { Card, useSurfaceStyle } from '@/components/ui/Card';
+import { FocusPill } from '@/components/ui/FocusPill';
 import { ReminderSetupPrompt } from '@/components/ReminderSetupPrompt';
 import { PlaceReminderPrompt } from '@/components/PlaceReminderPrompt';
 import { BackupPrompt } from '@/components/BackupPrompt';
@@ -16,20 +17,22 @@ import { Eyebrow } from '@/components/ui/Eyebrow';
 import { ThreadList, ThreadRow } from '@/components/ui/ThreadRow';
 import { OpenRing } from '@/components/ui/ThreadRing';
 import { formatReminder, nextOccurrence, resumeOrder, resumeReason, type ResumeReason } from '@/lib/when';
-import { CONTENT_BOTTOM_CLEARANCE } from '@/components/ui/FloatingTabBar';
+import { NAV_CLEARANCE } from '@/components/ui/nav-layout';
 import { useMnemoStore } from '@/hooks/use-mnemo-store';
 import { useThemeColors } from '@/hooks/use-theme';
 import { useAiNotice, useAiProblem, useAiProblemDetail, type AiProblem } from '@/lib/ai-mode';
 import { usePreferences } from '@/lib/preferences';
 import { formatCompactDistance, DAY_MS } from '@/utils/time';
 import { sameWords } from '@/utils/text';
-import { CATEGORY_LIST, useCategories } from '@/utils/categories';
-import { useEnter } from '@/utils/motion';
+import { useCategories } from '@/hooks/use-categories';
+import { useEnter } from '@/hooks/use-enter';
 import { useReduceMotion } from '@/hooks/use-accessibility-motion';
 import { flightsEnabled, launchFlight } from '@/lib/card-flight';
 import { awayDigest, awayFor, shortWhen, type AwayRow } from '@/lib/away';
 import { useAwaySince } from '@/hooks/use-away';
-import type { MnemoItem } from '@/types/mnemo';
+import { CATEGORIES, type MnemoItem } from '@/types/mnemo';
+import { captureHref, dumpHref, libraryHref, reviewHref, settingsHref, welcomeHref } from '@/lib/routes';
+import { openThread } from '@/lib/navigation';
 
 /** How far ahead "Coming up" looks for due dates. */
 const COMING_UP_DAYS = 7;
@@ -41,8 +44,6 @@ const COMING_UP_LIMIT = 3;
 const NUMBER_WORDS = ['Zero', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine', 'Ten'];
 /** Small counts read better spelled out in a sentence. */
 const numberWord = (n: number) => NUMBER_WORDS[n] ?? String(n);
-
-const openItem = (id: string) => router.push(`/(tabs)/context?id=${id}`);
 
 /** What the resume card's chip says: why this thread is first. */
 function reasonChip(reason: NonNullable<ResumeReason>, repeats: boolean): { icon: IconName; label: string } {
@@ -81,7 +82,7 @@ function ResumeCard({ item, reason }: { item: MnemoItem; reason: ResumeReason })
   const open = () => {
     const card = cardRef.current;
     const title = titleRef.current;
-    if (reduceMotion || !flightsEnabled() || !card || !title) return openItem(item.id);
+    if (reduceMotion || !flightsEnabled() || !card || !title) return openThread(item.id);
     card.measureInWindow((x, y, width, height) => {
       title.measureInWindow((tx, ty, tw, th) => {
         launchFlight({
@@ -91,7 +92,7 @@ function ResumeCard({ item, reason }: { item: MnemoItem; reason: ResumeReason })
           title: item.title,
           chip: chip?.label,
         });
-        openItem(item.id);
+        openThread(item.id);
       });
     });
   };
@@ -240,6 +241,7 @@ export function PulseHome() {
   const { items, entries, getActiveItems, focusThreadId, setFocusThread } = useMnemoStore();
   const focusThread = focusThreadId ? items.find((i) => i.id === focusThreadId) : undefined;
   const colors = useThemeColors();
+  const surface = useSurfaceStyle();
   const categories = useCategories();
 
   const activeItems = resumeOrder(getActiveItems(), { focusId: focusThreadId });
@@ -257,7 +259,7 @@ export function PulseHome() {
   React.useEffect(() => {
     if (!hasAway || awayPresented) return;
     markPresented();
-    router.push('/welcome');
+    router.push(welcomeHref);
   }, [hasAway, awayPresented, markPresented]);
   // The next few of the same ranking, so the order is visible, not just its
   // winner. While "while you were away" lists what's waiting, it takes their place.
@@ -272,7 +274,7 @@ export function PulseHome() {
     .sort((a, b) => a.at - b.at);
   const dueSoon = (i: MnemoItem) => !!i.dueDate && i.dueDate < now + COMING_UP_DAYS * DAY_MS;
 
-  const categoryCounts = CATEGORY_LIST.map((key) => ({
+  const categoryCounts = CATEGORIES.map((key) => ({
     key,
     count: items.filter((i) => i.category === key && i.status !== 'archived').length,
   })).filter((c) => c.count > 0);
@@ -303,9 +305,8 @@ export function PulseHome() {
       className="flex-1"
       showsVerticalScrollIndicator={false}
       // Clear the edge-to-edge nav bar plus the FAB stack floating above it.
-      contentContainerStyle={{ paddingBottom: Math.max(insets.bottom, 16) + CONTENT_BOTTOM_CLEARANCE }}
+      contentContainerStyle={{ paddingBottom: Math.max(insets.bottom, 16) + NAV_CLEARANCE }}
     >
-      {/* Header */}
       <MotiView
         {...enter.rise(0)}
         className="px-6 mb-5"
@@ -315,7 +316,7 @@ export function PulseHome() {
           <Text className="font-sans-medium text-sm" style={{ color: colors.fgTertiary }}>
             {today}
           </Text>
-          <IconButton icon="settings" label="Open settings" variant="bare" onPress={() => router.push('/modal')} />
+          <IconButton icon="settings" label="Open settings" variant="bare" onPress={() => router.push(settingsHref)} />
         </View>
         <Text
           className="font-display leading-tight"
@@ -336,7 +337,7 @@ export function PulseHome() {
             </Text>
             {items.length > 0 ? (
               <Pressable
-                onPress={() => router.push('/review')}
+                onPress={() => router.push(reviewHref)}
                 accessibilityRole="button"
                 accessibilityLabel="Your week"
                 hitSlop={8}
@@ -350,36 +351,16 @@ export function PulseHome() {
             ) : null}
           </View>
         ) : null}
-        {/* Where quick captures are going, while a focus thread is set */}
         {focusThread ? (
-          <View
-            className="flex-row items-center self-start rounded-full pl-3 pr-1.5 h-10 mt-4"
-            style={{ backgroundColor: colors.accentSoft, maxWidth: '100%' }}
+          <FocusPill
+            className="mt-4"
+            onPress={() => openThread(focusThread.id)}
+            label={`Quick captures go to ${focusThread.title}. Open it.`}
+            onStop={() => setFocusThread(null)}
+            stopLabel="Stop sending quick captures there"
           >
-            <Pressable
-              onPress={() => router.push(`/(tabs)/context?id=${focusThread.id}`)}
-              accessibilityRole="button"
-              accessibilityLabel={`Quick captures go to ${focusThread.title}. Open it.`}
-              className="flex-row items-center shrink h-10 active:opacity-70"
-            >
-              <Icon name="pin" size={15} color={colors.accent} stroke={2.2} />
-              <Text className="font-sans-medium text-sm ml-2 mr-2 shrink" style={{ color: colors.fg }} numberOfLines={1}>
-                Capturing into <Text className="font-sans-semi">{focusThread.title}</Text>
-              </Text>
-            </Pressable>
-            <Pressable
-              onPress={() => setFocusThread(null)}
-              hitSlop={8}
-              accessibilityRole="button"
-              accessibilityLabel="Stop sending quick captures there"
-              className="rounded-full px-3 h-7 items-center justify-center active:opacity-70"
-              style={{ backgroundColor: colors.surfaceLowest }}
-            >
-              <Text className="font-sans-semi text-sm" style={{ color: colors.accent }}>
-                Stop
-              </Text>
-            </Pressable>
-          </View>
+            Capturing into <Text className="font-sans-semi">{focusThread.title}</Text>
+          </FocusPill>
         ) : null}
         {/* Strict phones: a one-time nudge to check reminders will arrive. */}
         <ReminderSetupPrompt />
@@ -390,11 +371,11 @@ export function PulseHome() {
         {/* Gemini stopped answering for a reason the person can fix. */}
         {aiProblem ? (
           <Pressable
-            onPress={() => router.push('/modal')}
+            onPress={() => router.push(settingsHref)}
             accessibilityRole="button"
             accessibilityLabel={`${aiProblemText} Open settings.`}
             className="flex-row items-center rounded-lg px-4 py-3 mt-4 active:opacity-80"
-            style={{ backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border }}
+            style={surface}
           >
             <Icon name="sparkles" size={16} color={colors.accentWarm} />
             <Text className="flex-1 font-sans text-sm leading-snug mx-3" style={{ color: colors.fgSecondary }}>
@@ -410,7 +391,7 @@ export function PulseHome() {
           <View
             accessibilityRole="alert"
             className="flex-row items-center rounded-lg px-4 py-3 mt-4"
-            style={{ backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border }}
+            style={surface}
           >
             <Icon name="sparkles" size={16} color={colors.accentWarm} />
             <Text className="flex-1 font-sans text-sm leading-snug ml-3" style={{ color: colors.fgSecondary }}>
@@ -421,7 +402,6 @@ export function PulseHome() {
       </MotiView>
 
       <View className="px-5">
-        {/* Hero */}
         {latestItem ? (
           <MotiView {...enter.rise(1)}>
             <ResumeCard item={latestItem} reason={reason} />
@@ -436,10 +416,10 @@ export function PulseHome() {
                 Capture a thought with the + button, or hold it to start recording straight away. It lands here, ready to pick back up.
               </Text>
               <View className="flex-row gap-2">
-                <Button variant="primary" icon="mic" className="flex-1" onPress={() => router.push('/dump')}>
+                <Button variant="primary" icon="mic" className="flex-1" onPress={() => router.push(dumpHref())}>
                   Record
                 </Button>
-                <Button variant="quiet" icon="pencil" className="flex-1" onPress={() => router.push('/capture')}>
+                <Button variant="quiet" icon="pencil" className="flex-1" onPress={() => router.push(captureHref())}>
                   Write
                 </Button>
               </View>
@@ -452,7 +432,7 @@ export function PulseHome() {
           <MotiView {...enter.rise(2)} {...enter.reflow()} className="mb-7">
             <Eyebrow
               action={away.total > away.rows.length ? `All ${away.total + (away.ideas > 0 ? away.ideas : 0)}` : 'See all'}
-              onAction={() => router.push('/welcome')}
+              onAction={() => router.push(welcomeHref)}
             >
               While you were away
             </Eyebrow>
@@ -465,7 +445,7 @@ export function PulseHome() {
                       key={row.item.id}
                       item={row.item}
                       index={i}
-                      onPress={() => openItem(row.item.id)}
+                      onPress={() => openThread(row.item.id)}
                       detail={row.text}
                       trailing={t.label}
                       trailingTone={t.tone === 'error' ? colors.error : t.tone === 'accent' ? colors.accent : undefined}
@@ -477,7 +457,7 @@ export function PulseHome() {
             ) : null}
             {away.ideas > 0 ? (
               <Pressable
-                onPress={() => router.push('/(tabs)/library?category=ideas')}
+                onPress={() => router.push(libraryHref('ideas'))}
                 accessibilityRole="button"
                 accessibilityLabel={`${away.ideas} ${away.ideas === 1 ? 'idea' : 'ideas'} kept. Open them.`}
                 className="flex-row items-center h-11 mt-2 active:opacity-70"
@@ -509,7 +489,7 @@ export function PulseHome() {
           <MotiView {...enter.rise(2)} {...enter.reflow()} className="mb-7">
             <Eyebrow
               action={openCount > 1 + upNext.length ? `See all ${openCount}` : undefined}
-              onAction={() => router.push('/(tabs)/library')}
+              onAction={() => router.push(libraryHref())}
             >
               Up next
             </Eyebrow>
@@ -519,7 +499,7 @@ export function PulseHome() {
                   key={item.id}
                   item={item}
                   index={i}
-                  onPress={() => openItem(item.id)}
+                  onPress={() => openThread(item.id)}
                   trailing={dueSoon(item) ? formatReminder(item.dueDate!) : undefined}
                   trailingTone={dueSoon(item) ? ((item.dueDate ?? 0) < now ? colors.error : colors.accent) : undefined}
                   last={i === shown.length - 1}
@@ -534,7 +514,7 @@ export function PulseHome() {
           <MotiView {...enter.rise(3)} {...enter.reflow()} className="mb-8">
             <Eyebrow
               action={comingUp.length > COMING_UP_LIMIT ? `All ${comingUp.length}` : undefined}
-              onAction={() => router.push('/(tabs)/library')}
+              onAction={() => router.push(libraryHref())}
             >
               Coming up
             </Eyebrow>
@@ -544,7 +524,7 @@ export function PulseHome() {
                   key={`${item.id}:${at}`}
                   item={item}
                   index={i}
-                  onPress={() => openItem(item.id)}
+                  onPress={() => openThread(item.id)}
                   detail={step}
                   trailing={formatReminder(at)}
                   trailingTone={at < now ? colors.error : colors.accent}
@@ -558,7 +538,7 @@ export function PulseHome() {
         {/* Browse — only categories that hold something */}
         {categoryCounts.length > 0 && (
           <MotiView {...enter.rise(4)} {...enter.reflow()}>
-            <Eyebrow action="Library" onAction={() => router.push('/(tabs)/library')}>
+            <Eyebrow action="Library" onAction={() => router.push(libraryHref())}>
               Browse
             </Eyebrow>
             <View className="flex-row flex-wrap gap-2">
@@ -568,11 +548,11 @@ export function PulseHome() {
                 return (
                   <Pressable
                     key={key}
-                    onPress={() => router.push(`/(tabs)/library?category=${key}`)}
+                    onPress={() => router.push(libraryHref(key))}
                     accessibilityRole="button"
                     accessibilityLabel={`${config.label}, ${count} ${count === 1 ? 'note' : 'notes'}`}
                     className="flex-row items-center rounded-full pl-2 pr-3.5 h-10 active:opacity-70"
-                    style={{ backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border }}
+                    style={surface}
                   >
                     <View className="w-6 h-6 rounded-full items-center justify-center mr-2" style={{ backgroundColor: config.bgTint }}>
                       <CategoryIcon size={12} color={config.color} strokeWidth={2.2} />

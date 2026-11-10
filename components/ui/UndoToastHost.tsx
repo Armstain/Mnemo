@@ -3,13 +3,13 @@ import { Pressable } from 'react-native';
 import { Text } from '@/components/ui/Text';
 import { AnimatePresence, MotiView } from 'moti';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { haptic } from '@/utils/haptics';
+import { haptic } from '@/lib/haptics';
 
 import { useUndoToast } from '@/hooks/use-undo-toast';
 import { useThemeColors } from '@/hooks/use-theme';
 import { useReduceMotion } from '@/hooks/use-accessibility-motion';
 import { EXIT_QUICK, SPRING_SHEET, motion } from '@/utils/motion';
-import { CENTER_BUTTON_RISE, NAV_BAR_HEIGHT, navBottom } from '@/components/ui/FloatingTabBar';
+import { CENTER_BUTTON_RISE, NAV_BAR_HEIGHT, navBottom } from '@/components/ui/nav-layout';
 
 /**
  * Mounted once at the app root. Floats just above the tab bar so it never

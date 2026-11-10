@@ -2,10 +2,11 @@ import React from 'react';
 import { Pressable, View } from 'react-native';
 import { MotiView } from 'moti';
 
+import { useSurfaceStyle } from '@/components/ui/Card';
 import { Icon, type IconName } from '@/components/ui/Icon';
 import { Text } from '@/components/ui/Text';
 import { useThemeColors } from '@/hooks/use-theme';
-import { useEnter } from '@/utils/motion';
+import { useEnter } from '@/hooks/use-enter';
 
 /**
  * A one-line notice on Home that leads somewhere (Settings, a check):
@@ -31,8 +32,9 @@ export function HomeBanner({
 }) {
   const colors = useThemeColors();
   const enter = useEnter();
+  const surface = useSurfaceStyle();
   return (
-    <MotiView {...enter.fade(1)} className="flex-row items-center rounded-lg mt-4" style={{ backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border }}>
+    <MotiView {...enter.fade(1)} className="flex-row items-center rounded-lg mt-4" style={surface}>
       <Pressable
         onPress={onPress}
         accessibilityRole="button"

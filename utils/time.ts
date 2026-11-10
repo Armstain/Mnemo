@@ -31,14 +31,16 @@ export function formatCompactDistance(date: Date | string | number, now = Date.n
 
 export const DAY_MS = 24 * 60 * 60 * 1000;
 
-/**
- * How "warm" a thread still is, from 1 (touched just now) down to 0 at
- * `horizonDays` — the same 14-day point where nudges stop treating a
- * thread as paused and start treating it as abandoned (lib/nudges.ts).
- */
-export function freshness(timestamp: number, horizonDays = 14, now = Date.now()): number {
+/** A reminder time that has passed and won't come round again. */
+export const isOverdue = (dueDate: number, repeat?: unknown, now = Date.now()) => dueDate < now && !repeat;
+
+/** How long a thread can sit untouched before it counts as abandoned rather than paused. */
+export const GIVE_UP_AFTER_MS = 14 * DAY_MS;
+
+/** How "warm" a thread still is, from 1 (touched just now) down to 0 once it counts as abandoned. */
+export function freshness(timestamp: number, now = Date.now()): number {
   const age = Math.max(0, now - timestamp);
-  return Math.max(0, 1 - age / (horizonDays * DAY_MS));
+  return Math.max(0, 1 - age / GIVE_UP_AFTER_MS);
 }
 
 /**
@@ -56,4 +58,22 @@ export function formatEntryTime(timestamp: number, now = new Date()): string {
     day: 'numeric',
     ...(date.getFullYear() !== now.getFullYear() ? { year: 'numeric' } : {}),
   });
+}
+
+export function startOfDay(ts: number | Date): Date {
+  const d = new Date(ts);
+  d.setHours(0, 0, 0, 0);
+  return d;
+}
+
+export function addDays(day: Date, n: number): Date {
+  const d = new Date(day);
+  d.setDate(d.getDate() + n);
+  return d;
+}
+
+export function atTime(day: Date, hour: number, minute = 0): Date {
+  const d = new Date(day);
+  d.setHours(hour, minute, 0, 0);
+  return d;
 }

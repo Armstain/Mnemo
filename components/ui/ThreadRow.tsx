@@ -2,17 +2,19 @@ import React from 'react';
 import { PanResponder, Pressable, StyleSheet, View } from 'react-native';
 import { Text } from '@/components/ui/Text';
 import { AnimatePresence, MotiView } from 'moti';
-import { haptic } from '@/utils/haptics';
+import { haptic } from '@/lib/haptics';
 import { Extrapolation, interpolate, useAnimatedStyle, useSharedValue, withSpring, withTiming } from 'react-native-reanimated';
 import { Animated, usePressScale } from '@/hooks/use-press-scale';
 import { Icon } from '@/components/ui/Icon';
 
+import { useSurfaceStyle } from '@/components/ui/Card';
 import { ThreadRing } from '@/components/ui/ThreadRing';
 import { useThemeColors } from '@/hooks/use-theme';
-import { useCategories, useStatusConfig } from '@/utils/categories';
+import { useCategories, useStatusConfig } from '@/hooks/use-categories';
 import { formatCompactDistance, freshness } from '@/utils/time';
 import { sameWords, withoutLead } from '@/utils/text';
-import { EASE_OUT, useEnter } from '@/utils/motion';
+import { useEnter } from '@/hooks/use-enter';
+import { EASE_OUT } from '@/utils/motion';
 import type { MnemoItem } from '@/types/mnemo';
 
 /**
@@ -20,7 +22,7 @@ import type { MnemoItem } from '@/types/mnemo';
  * progress. Never the title again: a next step that only repeats it is
  * skipped, and the note loses a leading copy of it.
  */
-export function threadPreview(item: MnemoItem): string {
+function threadPreview(item: MnemoItem): string {
   if (item.nextStep && !sameWords(item.nextStep, item.title)) return item.nextStep;
   // Notes are markdown; a one-line preview shows the words, not the markup.
   const text = item.content
@@ -253,13 +255,13 @@ const styles = StyleSheet.create({
  * plays its exit, and the rest slide up to close the gap.
  */
 export function ThreadList({ children }: { children: React.ReactNode }) {
-  const colors = useThemeColors();
+  const surface = useSurfaceStyle();
   const enter = useEnter();
   return (
     <MotiView
       {...enter.reflow()}
       className="rounded-lg overflow-hidden"
-      style={{ backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border }}
+      style={surface}
     >
       <AnimatePresence>{children}</AnimatePresence>
     </MotiView>

@@ -1,5 +1,3 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import { Directory, Paths } from 'expo-file-system';
 import {
   processAudioDump,
   processVoiceDump,
@@ -7,7 +5,9 @@ import {
   type ProcessedCapture,
 } from '@/lib/gemini';
 import { aiEnabled, setAiProblem } from '@/lib/ai-mode';
-import { aiErrorText, classifyAiError, isNoConnection, onApiKeyChanged } from '@/lib/api-key';
+import { onApiKeyChanged } from '@/lib/api-key';
+import { aiErrorText, classifyAiError, isNoConnection } from '@/lib/ai-error';
+import { readJson, writeJson } from '@/lib/storage';
 import { logError } from '@/lib/errors';
 import {
   embedText,
@@ -17,35 +17,34 @@ import {
   EMBEDDING_DIMS,
 } from '@/lib/embeddings';
 import { getVectors, upsertEmbedding } from '@/lib/db';
-import type { Block, Category, ChecklistItem, Entry, Filing, MnemoItem, PlaceReminder, ThreadKind } from '@/types/mnemo';
+import { CATEGORIES, type Block, type Category, type ChecklistItem, type Entry, type Filing, type MnemoItem, type PlaceReminder } from '@/types/mnemo';
+import type { CaptureStore } from '@/types/store';
 import { armedPlace, mayAutoFile, replacesPlaceReminder, samePlaceReminder, withReminders } from '@/lib/reminder-ownership';
-import type { CaptureStore } from '@/hooks/use-mnemo-store';
 import { buildBlocks } from '@/lib/threads';
 import { summarizeMeasures, trackedMetrics, verifyMeasures } from '@/lib/measures';
-import { understand, type KnownMetric } from '@/lib/understand';
-import { asKind } from '@/lib/kind';
-import { getPlaces } from '@/lib/place-store';
+import { MAX_TAGS, understand, type KnownMetric } from '@/lib/understand';
+import { asKind, ideaCategory } from '@/lib/kind';
+import { getPlaces, loadPlaces } from '@/lib/place-store';
 import { readPlaceReminder } from '@/lib/places';
 import { imageBase64, imagesOf } from '@/lib/images';
 import { fetchLinkPreview, type LinkPreview, type PageContext } from '@/lib/link-preview';
 import { languageOf } from '@/lib/language';
 import { getPreferences, setPreferences } from '@/lib/preferences';
-import { deleteAllAudio, deleteAudio, joinAudio, loadAudio, splitAudio } from '@/lib/voice-audio';
+import { deleteAudio, joinAudio, loadAudio, splitAudio } from '@/lib/voice-audio';
 import { hasGroq, transcribeAudio } from '@/lib/groq';
 import {
   ATTACH_CONFIDENCE,
   decideFiling,
   emitFiling,
+  emitReminderSet,
   gatherCandidates,
   keywordMatch,
   similarityTo,
   type FilingDecision,
 } from '@/lib/filing';
 
-const CATEGORIES: Category[] = ['work', 'personal', 'study', 'shopping', 'health', 'ideas', 'errands', 'general'];
-
 function asCategory(value: unknown): Category | undefined {
-  return CATEGORIES.includes(value as Category) ? (value as Category) : undefined;
+  return (CATEGORIES as readonly unknown[]).includes(value) ? (value as Category) : undefined;
 }
 
 /** Best-effort: a failure must never throw out of `structurePendingEntry` or leave the entry `pending`. */
@@ -71,7 +70,9 @@ async function embedAndStore(item: {
   }
 }
 
-interface NoteInput {
+void loadPlaces();
+
+export interface NoteInput {
   text: string;
   category: Category;
   threadId?: string;
@@ -94,20 +95,15 @@ function knownMetrics(store: CaptureStore, threadId?: string): KnownMetric[] {
   return summarizeMeasures(entries).map((m) => ({ metric: m.metric, unit: m.unit }));
 }
 
-// Shown by components/FilingNotifier.tsx.
-export interface ReminderSetEvent {
-  threadId: string;
-  at: number;
-  previous?: number;
+function mergeTags(have: string[], add: string[]): string[] {
+  return [...new Set([...have, ...add])].slice(0, MAX_TAGS);
 }
-const reminderListeners = new Set<(event: ReminderSetEvent) => void>();
-export function onReminderSet(listener: (event: ReminderSetEvent) => void): () => void {
-  reminderListeners.add(listener);
-  return () => reminderListeners.delete(listener);
-}
-const reminderSet = (event: ReminderSetEvent) => reminderListeners.forEach((l) => l(event));
 
-function saveNote(source: Entry['source'], params: NoteInput): { threadId: string; entry: Entry } {
+function readWords(words: string, extra: { known?: KnownMetric[]; now?: number } = {}) {
+  return understand(words, { ...extra, monthFirst: monthFirst(), currency: localCurrency() });
+}
+
+export function saveNote(source: Entry['source'], params: NoteInput): { threadId: string; entry: Entry } {
   const { category, store } = params;
   const words = params.text.trim();
   const images = params.images ?? [];
@@ -115,7 +111,7 @@ function saveNote(source: Entry['source'], params: NoteInput): { threadId: strin
   const ai = aiEnabled() && (words.length > 0 || images.length > 0 || recorded.length > 0 || (params.links?.length ?? 0) > 0);
   const audio = ai ? recorded : [];
   if (!ai) deleteAudio(recorded);
-  const reading = understand(words, { known: knownMetrics(store, params.threadId), monthFirst: monthFirst(), currency: localCurrency() });
+  const reading = readWords(words, { known: knownMetrics(store, params.threadId) });
 
   // With AI on the text stays as said, so an edit made meanwhile is detected against it.
   const later = params.dueDate ? [] : reading.later;
@@ -161,10 +157,10 @@ function saveNote(source: Entry['source'], params: NoteInput): { threadId: strin
             force: !!params.dueDate,
           })
         : {};
-      if (reading.tags.some((t) => !thread.tags.includes(t))) updates.tags = [...new Set([...thread.tags, ...reading.tags])].slice(0, 8);
+      if (reading.tags.some((t) => !thread.tags.includes(t))) updates.tags = mergeTags(thread.tags, reading.tags);
       if (place) updates.place = place;
       if (Object.keys(updates).length > 0) store.updateItem(threadId, updates);
-      if (updates.dueDate) reminderSet({ threadId, at: updates.dueDate, previous: thread.dueDate });
+      if (updates.dueDate) emitReminderSet({ threadId, at: updates.dueDate, previous: thread.dueDate });
     }
   } else {
     const fallback =
@@ -174,7 +170,7 @@ function saveNote(source: Entry['source'], params: NoteInput): { threadId: strin
         title: (reading.title || params.title?.trim() || fallback).slice(0, 80),
         category:
           category === 'general' && !ai
-            ? reading.category ?? (words || !params.title ? undefined : understand(params.title, { monthFirst: monthFirst() }).category) ?? 'general'
+            ? reading.category ?? (words || !params.title ? undefined : readWords(params.title).category) ?? 'general'
             : category,
         // Replaced by Gemini's in resolvePendingEntry.
         kind: reading.kind,
@@ -189,7 +185,7 @@ function saveNote(source: Entry['source'], params: NoteInput): { threadId: strin
       entryInput,
     );
     saved = { threadId: created.thread.id, entry: created.entry };
-    if (due) reminderSet({ threadId: saved.threadId, at: due });
+    if (due) emitReminderSet({ threadId: saved.threadId, at: due });
     if (!ai) suggestByKeywords(saved, words, store);
   }
   if (ai) resolvePendingEntry(saved.entry, store);
@@ -222,7 +218,7 @@ async function pagesOf(entry: Pick<Entry, 'blocks'>): Promise<PageContext[]> {
 }
 
 /** Fire-and-forget; each link is tried once. */
-export async function enrichLinks(entryId: string, store: CaptureStore): Promise<void> {
+async function enrichLinks(entryId: string, store: CaptureStore): Promise<void> {
   const entry = store.snapshot().entries.find((e) => e.id === entryId);
   if (!entry) return;
   const todo = entry.blocks.flatMap((b) => (b.kind === 'link' && !b.title && !previewed.has(b.url) ? [b.url] : []));
@@ -280,28 +276,11 @@ function monthFirst(): boolean {
   }
 }
 
-export function saveVoiceNote(params: Omit<NoteInput, 'checklistItems' | 'leftOff' | 'nextStep' | 'dueDate'>) {
-  return saveNote('voice', params);
-}
-
-export function saveTextNote(params: NoteInput) {
-  return saveNote('text', params);
-}
-
-export function saveSharedNote(params: NoteInput) {
-  return saveNote('share', params);
-}
-
 /** For a pending note whose AI won't come (switched offline). */
-/** An idea is filed under Ideas: one place for them, not a kind and a category that disagree. */
-function ideaCategory(category: Category | undefined, kind: ThreadKind | undefined): Category | undefined {
-  return kind === 'idea' && (!category || category === 'general') ? 'ideas' : category;
-}
-
 export function finishOnDevice(entry: Entry, store: CaptureStore): void {
   deleteAudio(entry.pendingAudioUri);
   const words = (entry.pendingRawText ?? textOf(entry)).trim();
-  const reading = understand(words, { known: knownMetrics(store, entry.threadId), monthFirst: monthFirst(), currency: localCurrency() });
+  const reading = readWords(words, { known: knownMetrics(store, entry.threadId) });
   const hasMeasures = entry.blocks.some((b) => b.kind === 'measures');
   const links = entry.blocks.flatMap((b) => (b.kind === 'link' ? [b.url] : []));
   const newLinks = reading.links.filter((l) => !links.includes(l));
@@ -328,22 +307,13 @@ export function finishOnDevice(entry: Entry, store: CaptureStore): void {
   }
 }
 
-export function deleteAllRecordings(): void {
-  try {
-    new Directory(Paths.document, 'recordings').delete();
-  } catch {
-    // Already gone.
-  }
-  deleteAllAudio();
-}
-
 type PendingEntry = Pick<
   Entry,
   'id' | 'threadId' | 'blocks' | 'leftOff' | 'nextStep' | 'transcript' | 'pendingAudioUri' | 'pendingRawText'
 >;
 
 /** Throws on failure: for callers with their own error feedback (manual Retry). Background callers use `resolvePendingEntry`. */
-export async function structurePendingEntry(
+async function structurePendingEntry(
   entry: PendingEntry,
   store: CaptureStore,
 ): Promise<void> {
@@ -360,19 +330,20 @@ export async function structurePendingEntry(
 const inFlight = new Set<string>();
 
 /** For a Groq-written voice note while Gemini can't tidy it: titles the thread and sets a spoken reminder. */
-function nameFromWords(store: CaptureStore, threadId: string, words: string): void {
+async function nameFromWords(store: CaptureStore, threadId: string, words: string): Promise<void> {
+  const places = await loadPlaces();
   const thread = store.getThread(threadId);
   if (!thread) return;
-  const reading = understand(words, { monthFirst: monthFirst(), currency: localCurrency() });
+  const reading = readWords(words);
   const updates: Partial<MnemoItem> = {};
   if (thread.pending && !thread.pinned?.title && reading.title) updates.title = reading.title.slice(0, 80);
-  const placeRepeats = !!reading.repeat && !!readPlaceReminder(words, getPlaces())?.repeat;
+  const placeRepeats = !!reading.repeat && !!readPlaceReminder(words, places)?.repeat;
   if (reading.due && !placeRepeats && reading.due > Date.now() && !(thread.dueDate && thread.dueDate > Date.now())) {
     updates.dueDate = reading.due;
     updates.repeat = reading.repeat;
   }
   if (Object.keys(updates).length > 0) store.updateItem(threadId, updates);
-  if (updates.dueDate) reminderSet({ threadId, at: updates.dueDate, previous: thread.dueDate });
+  if (updates.dueDate) emitReminderSet({ threadId, at: updates.dueDate, previous: thread.dueDate });
 }
 /** More photos would be slow and costly. */
 const MAX_PHOTOS_TO_AI = 3;
@@ -443,7 +414,7 @@ async function structure(entry: PendingEntry, store: CaptureStore): Promise<void
       }
       store.updateEntry(entry.id, { pendingRawText: words, pendingAudioUri: undefined });
       deleteAudio(recordings);
-      nameFromWords(store, nowEntry.threadId, words);
+      await nameFromWords(store, nowEntry.threadId, words);
       processed = await processVoiceDump(words, ctx, [], pages);
     }
     deleteAudio(recordings);
@@ -518,9 +489,9 @@ async function structure(entry: PendingEntry, store: CaptureStore): Promise<void
   // A recording had no words to find a reminder in at save time; the written-out words do.
   const heard =
     said && !editedMeanwhile
-      ? understand(said, { now: now.createdAt, monthFirst: monthFirst(), currency: localCurrency() })
+      ? readWords(said, { now: now.createdAt })
       : undefined;
-  const heardPlace = said && !editedMeanwhile && getPreferences().places ? readPlaceReminder(said, getPlaces()) : undefined;
+  const heardPlace = said && !editedMeanwhile && getPreferences().places ? readPlaceReminder(said, await loadPlaces()) : undefined;
   const remindFromSound = (threadId: string) => {
     let t = store.getThread(threadId);
     if (!t) return;
@@ -540,10 +511,9 @@ async function structure(entry: PendingEntry, store: CaptureStore): Promise<void
     if (heardPlace?.repeat && heard?.repeat) return;
     if (!heard?.due || heard.due < Date.now() || (t.dueDate && t.dueDate > Date.now())) return;
     store.updateItem(threadId, { dueDate: heard.due, repeat: heard.repeat });
-    reminderSet({ threadId, at: heard.due, previous: t.dueDate });
+    emitReminderSet({ threadId, at: heard.due, previous: t.dueDate });
   };
 
-  // ─── Filing ───
   let decision: FilingDecision = { action: 'stay' };
   if (matching && processed.thread) {
     let similarity: Map<string, number> | undefined;
@@ -579,10 +549,8 @@ async function structure(entry: PendingEntry, store: CaptureStore): Promise<void
     if (filed.moved) {
       const target = store.getThread(decision.threadId);
       if (!target) return;
-      if (filed.carried?.dueDate) reminderSet({ threadId: target.id, at: filed.carried.dueDate, previous: before?.dueDate });
-      if (tags.length > 0) {
-      store.updateItem(target.id, { tags: [...new Set([...target.tags, ...tags])].slice(0, 8) });
-    }
+      if (filed.carried?.dueDate) emitReminderSet({ threadId: target.id, at: filed.carried.dueDate, previous: before?.dueDate });
+      if (tags.length > 0) store.updateItem(target.id, { tags: mergeTags(target.tags, tags) });
       remindFromSound(target.id);
       emitFiling({
         type: 'attached',
@@ -626,7 +594,7 @@ async function structure(entry: PendingEntry, store: CaptureStore): Promise<void
   if (thread.pending) {
     store.updateItem(thread.id, {
       title: thread.pinned?.title ? thread.title : processed.title,
-      tags: [...new Set([...thread.tags, ...tags])].slice(0, 8),
+      tags: mergeTags(thread.tags, tags),
       ...(thread.category === 'general' && aiCategory ? { category: aiCategory } : {}),
       ...(thread.pinned?.kind || processed.kind === undefined ? {} : { kind: aiKind }),
       aiSummary: processed.summary,
@@ -636,7 +604,7 @@ async function structure(entry: PendingEntry, store: CaptureStore): Promise<void
       status: 'active',
     });
   } else if (tags.length > 0) {
-    store.updateItem(thread.id, { tags: [...new Set([...thread.tags, ...tags])].slice(0, 8) });
+    store.updateItem(thread.id, { tags: mergeTags(thread.tags, tags) });
   }
   remindFromSound(thread.id);
 
@@ -669,21 +637,19 @@ async function embedThread(store: CaptureStore, threadId: string): Promise<void>
 const BACKOFF_MS = [30_000, 60_000, 2 * 60_000, 5 * 60_000, 10 * 60_000, 30 * 60_000];
 const attempts = new Map<string, { count: number; nextAt: number }>();
 
-// ─── Safety-blocked notes ───
 // Same content gets the same block, so the sweep skips it. Kept apart from `attempts`
 // (which "try everything now" clears) and persisted. Keyed on content: an edit lets it through.
 
 const BLOCKED_KEY = 'mnemo-ai-blocked';
 let blocked = new Map<string, string>();
-const blockedLoaded: Promise<void> = AsyncStorage.getItem(BLOCKED_KEY)
-  .then((raw) => {
-    const saved = raw ? JSON.parse(raw) : null;
+const blockedLoaded: Promise<void> = readJson(BLOCKED_KEY)
+  .then((saved) => {
     if (saved && typeof saved === 'object') blocked = new Map(Object.entries(saved).filter((e): e is [string, string] => typeof e[1] === 'string'));
   })
   .catch(() => undefined);
 
 function saveBlocked(): void {
-  AsyncStorage.setItem(BLOCKED_KEY, JSON.stringify(Object.fromEntries(blocked))).catch(() => {
+  writeJson(BLOCKED_KEY, Object.fromEntries(blocked)).catch(() => {
     // Retried on the next change.
   });
 }
@@ -692,7 +658,7 @@ function sentContent(e: Pick<Entry, 'pendingRawText' | 'pendingAudioUri' | 'bloc
   return `${(e.pendingRawText ?? textOf(e)).trim()}|${e.pendingAudioUri ?? ''}`;
 }
 
-export function isBlockedNote(e: Pick<Entry, 'id' | 'pendingRawText' | 'pendingAudioUri' | 'blocks'>): boolean {
+function isBlockedNote(e: Pick<Entry, 'id' | 'pendingRawText' | 'pendingAudioUri' | 'blocks'>): boolean {
   const declined = blocked.get(e.id);
   return declined !== undefined && declined === sentContent(e);
 }

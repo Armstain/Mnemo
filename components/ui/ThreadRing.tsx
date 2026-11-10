@@ -9,7 +9,6 @@ import { EASE_OUT } from '@/utils/motion';
 const AnimatedPath = Animated.createAnimatedComponent(Path);
 const AnimatedCircle = Animated.createAnimatedComponent(Circle);
 
-// ─── Geometry ───────────────────────────────────────────────────
 // Angles are in degrees, 0 = 3 o'clock, increasing clockwise (SVG's y
 // axis points down).
 
@@ -29,7 +28,6 @@ function arcPath(cx: number, cy: number, r: number, startDeg: number, sweepDeg: 
   return `M ${a.x} ${a.y} A ${r} ${r} 0 ${largeArc} 1 ${b.x} ${b.y}`;
 }
 
-// ─── ThreadRing ─────────────────────────────────────────────────
 
 interface ThreadRingProps {
   /** Outer box size in px. */
@@ -106,7 +104,6 @@ export function ThreadRing({
   );
 }
 
-// ─── OpenRing (brand mark) ──────────────────────────────────────
 
 interface OpenRingProps {
   size: number;

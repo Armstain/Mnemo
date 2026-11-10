@@ -1,19 +1,17 @@
 import { StatusBar } from 'expo-status-bar';
-import { Pressable, ScrollView, View } from 'react-native';
+import { ScrollView, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
-import * as Clipboard from 'expo-clipboard';
-import { haptic } from '@/utils/haptics';
 import { MotiView } from 'moti';
-import { useState } from 'react';
 
 import { Eyebrow } from '@/components/ui/Eyebrow';
-import { Icon, type IconName } from '@/components/ui/Icon';
-import { IconButton } from '@/components/ui/Button';
+import { Surface } from '@/components/ui/Card';
+import { LinkRow } from '@/components/settings/LinkRow';
+import { ScreenHeader, useSafeBottom } from '@/components/ui/Screen';
 import { Text } from '@/components/ui/Text';
 import { useThemeColors, useThemeName } from '@/hooks/use-theme';
-import { clearErrors, problemReport } from '@/lib/errors';
-import { useEnter } from '@/utils/motion';
+import { useProblemReport } from '@/hooks/use-problem-report';
+import { useEnter } from '@/hooks/use-enter';
 
 // The explanations Settings used to carry under every switch. Settings keeps the switches;
 // this says what they do, so the person can read it once instead of scrolling past it each time.
@@ -73,30 +71,13 @@ const TOPICS: { title: string; body: string[] }[] = [
   },
 ];
 
-function Row({ icon, title, detail, onPress }: { icon: IconName; title: string; detail: string; onPress: () => void }) {
-  const colors = useThemeColors();
-  return (
-    <Pressable
-      onPress={onPress}
-      accessibilityRole="button"
-      className="bg-surface rounded-lg p-5 border border-border/50 flex-row items-center active:opacity-80"
-    >
-      <Icon name={icon} size={15} color={colors.accent} />
-      <View className="ml-2 flex-1">
-        <Text className="font-sans-semi text-sm text-fg">{title}</Text>
-        <Text className="font-sans text-sm text-fg-tertiary mt-0.5">{detail}</Text>
-      </View>
-    </Pressable>
-  );
-}
-
 export default function HelpScreen() {
   const enter = useEnter();
   const insets = useSafeAreaInsets();
+  const bottom = useSafeBottom();
   const colors = useThemeColors();
   const theme = useThemeName();
-  const [reportCopied, setReportCopied] = useState(false);
-  const [logCleared, setLogCleared] = useState(false);
+  const report = useProblemReport();
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.bg }}>
@@ -105,13 +86,11 @@ export default function HelpScreen() {
         contentContainerStyle={{
           paddingHorizontal: 24,
           paddingTop: insets.top + 16,
-          paddingBottom: Math.max(insets.bottom, 24) + 48,
+          paddingBottom: bottom + 48,
         }}
         showsVerticalScrollIndicator={false}
       >
-        <View className="flex-row mb-4">
-          <IconButton icon="chevronLeft" label="Back" variant="bare" onPress={() => router.back()} />
-        </View>
+        <ScreenHeader icon="chevronLeft" label="Back" onClose={() => router.back()} className="mb-4" />
 
         <MotiView {...enter.rise(0)} className="mb-8">
           <Text className="text-display font-display text-fg">How Mnemo works</Text>
@@ -119,40 +98,36 @@ export default function HelpScreen() {
 
         <MotiView {...enter.rise(1)} className="gap-3 mb-10">
           {TOPICS.map((t) => (
-            <View key={t.title} className="bg-surface rounded-lg p-5 border border-border/50 gap-2">
+            <Surface key={t.title} tone="soft" className="rounded-lg p-5 gap-2">
               <Text className="font-sans-semi text-sm text-fg">{t.title}</Text>
               {t.body.map((p) => (
                 <Text key={p} className="font-sans text-sm text-fg-secondary leading-relaxed">
                   {p}
                 </Text>
               ))}
-            </View>
+            </Surface>
           ))}
         </MotiView>
 
         <MotiView {...enter.rise(2)} className="gap-3">
           <Eyebrow className="mb-1">Something not working?</Eyebrow>
-          <Row
+          <LinkRow
             icon="copy"
-            title={reportCopied ? 'Problem report copied' : 'Copy problem report'}
+            title={report.reportTitle}
             detail="The app version and its recent error messages, to paste into a message. No notes."
-            onPress={async () => {
-              await Clipboard.setStringAsync(await problemReport());
-              haptic.success();
-              setReportCopied(true);
-              setLogCleared(false);
-            }}
+            onPress={report.copyReport}
+            silent
+            chevron={false}
+            className="p-5"
           />
-          <Row
+          <LinkRow
             icon="trash"
-            title={logCleared ? 'Error log cleared' : 'Clear error log'}
+            title={report.clearTitle}
             detail="So the next report starts fresh."
-            onPress={async () => {
-              await clearErrors();
-              haptic.success();
-              setLogCleared(true);
-              setReportCopied(false);
-            }}
+            onPress={report.clearLog}
+            silent
+            chevron={false}
+            className="p-5"
           />
         </MotiView>
       </ScrollView>

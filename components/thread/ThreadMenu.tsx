@@ -1,7 +1,7 @@
 import React from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 import { AnimatePresence, MotiView } from 'moti';
-import { haptic } from '@/utils/haptics';
+import { haptic } from '@/lib/haptics';
 
 import { Icon, type IconName } from '@/components/ui/Icon';
 import { Text } from '@/components/ui/Text';

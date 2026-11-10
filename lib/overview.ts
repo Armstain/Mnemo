@@ -1,5 +1,6 @@
 import type { Entry, ThreadOverview } from '@/types/mnemo';
 import { entryText } from '@/lib/threads';
+import { DAY_MS } from '@/utils/time';
 
 // "Organise these notes": a thread's loose notes grouped by theme, made only
 // when the person asks, and only once there's enough to be worth it. The
@@ -15,17 +16,14 @@ const MAX_THEMES = 8;
 const MAX_POINTS = 6;
 const MAX_OPEN = 5;
 
-/** Whether to offer organising: AI on, no overview yet, enough notes. */
 export function canOrganise(entries: Pick<Entry, 'id'>[], overview?: ThreadOverview): boolean {
   return !overview && entries.length >= ORGANISE_MIN_NOTES;
 }
 
-/** Notes added since the overview was made. */
 export function notesSince(overview: ThreadOverview, entries: Pick<Entry, 'createdAt'>[]): number {
   return entries.filter((e) => e.createdAt > overview.at).length;
 }
 
-/** What's sent to be organised: each note's text, oldest first. */
 export function notesToOrganise(entries: Pick<Entry, 'blocks' | 'transcript' | 'createdAt'>[]): { text: string; at: number }[] {
   return [...entries]
     .sort((a, b) => a.createdAt - b.createdAt)
@@ -56,9 +54,15 @@ export function cleanOverview(raw: unknown, notes: number, at: number): ThreadOv
   return { at, notes, themes, open: strings(data.open, MAX_OPEN) };
 }
 
-/** The overview as plain text, for sharing. */
 export function overviewText(title: string, overview: ThreadOverview): string {
   const sections = overview.themes.map((t) => [t.title, ...t.points.map((p) => `• ${p}`)].join('\n'));
   if (overview.open.length > 0) sections.push(['Still open', ...overview.open.map((q) => `• ${q}`)].join('\n'));
   return [title, ...sections].join('\n\n');
+}
+
+/** Whole days between the first and last note. */
+export function spanDays(entries: { createdAt: number }[]): number {
+  if (entries.length === 0) return 0;
+  const times = entries.map((e) => e.createdAt);
+  return Math.round((Math.max(...times) - Math.min(...times)) / DAY_MS);
 }

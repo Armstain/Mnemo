@@ -1,20 +1,55 @@
 import React from 'react';
-import { Pressable, StyleSheet, View } from 'react-native';
+import { StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
 import { MotiView } from 'moti';
 
 import { useReduceMotion } from '@/hooks/use-accessibility-motion';
 import { useThemeColors, useThemeName } from '@/hooks/use-theme';
 import { DUR_BASE, EASE_OUT, motion } from '@/utils/motion';
 
+export type SurfaceTone = 'default' | 'soft' | 'lowest';
+
+export type SurfaceStyle = {
+  backgroundColor: string;
+  borderWidth: number;
+  borderColor: string;
+};
+
+/** The bordered surface every card, row group and field box sits on; spread it into any `style`. `soft` has a fainter border (settings), `lowest` the lightest fill. */
+export function useSurfaceStyle(tone: SurfaceTone = 'default'): SurfaceStyle {
+  const colors = useThemeColors();
+  return {
+    backgroundColor: tone === 'lowest' ? colors.surfaceLowest : colors.surface,
+    borderWidth: 1,
+    borderColor: tone === 'soft' ? `${colors.border}80` : colors.border,
+  };
+}
+
+/** A plain bordered surface box. Size, padding and radius come from `className`. */
+export function Surface({
+  children,
+  className = '',
+  style,
+  tone,
+}: {
+  children?: React.ReactNode;
+  className?: string;
+  style?: StyleProp<ViewStyle>;
+  tone?: SurfaceTone;
+}) {
+  const surface = useSurfaceStyle(tone);
+  return (
+    <View className={className} style={[surface, style]}>
+      {children}
+    </View>
+  );
+}
+
 interface CardProps {
   children: React.ReactNode;
-  variant?: 'surface' | 'raised' | 'flat' | 'tinted' | 'dashed';
+  variant?: 'surface' | 'raised';
   pad?: 'none' | 'sm' | 'md' | 'lg';
-  interactive?: boolean;
-  onPress?: () => void;
   className?: string;
   animated?: boolean;
-  delay?: number;
 }
 
 const PAD_CLASSES: Record<NonNullable<CardProps['pad']>, string> = {
@@ -24,80 +59,35 @@ const PAD_CLASSES: Record<NonNullable<CardProps['pad']>, string> = {
   lg: 'p-6',
 };
 
-export function Card({
-  children,
-  variant = 'surface',
-  pad = 'md',
-  interactive = false,
-  onPress,
-  className = '',
-  animated = true,
-  delay = 0,
-}: CardProps) {
+export function Card({ children, variant = 'surface', pad = 'md', className = '', animated = true }: CardProps) {
   const colors = useThemeColors();
   const themeName = useThemeName();
   const reduceMotion = useReduceMotion();
+  const surface = useSurfaceStyle();
 
-  // Variant color/border is conditional at runtime — uniwind's className
+  // Variant color/border is conditional at runtime: uniwind's className
   // pipeline only resolves *static* class strings (see useThemeColors), so
   // it has to go through inline `style`, like the other surfaces.
-  const variantStyle = (() => {
-    switch (variant) {
-      case 'raised':
-        return {
+  const variantStyle =
+    variant === 'raised'
+      ? {
           backgroundColor: colors.surfaceRaised,
           ...(themeName === 'dark' ? styles.raisedShadowDark : styles.raisedShadowLight),
-        };
-      case 'flat':
-        return {
-          backgroundColor: 'transparent',
-          borderWidth: 1,
-          borderColor: colors.border,
-        };
-      case 'tinted':
-        return {
-          backgroundColor: colors.accentSoft,
-        };
-      case 'dashed':
-        return {
-          backgroundColor: 'transparent',
-          borderWidth: 1,
-          borderStyle: 'dashed' as const,
-          borderColor: colors.outline,
-        };
-      case 'surface':
-      default:
-        return {
-          backgroundColor: colors.surface,
-          borderWidth: 1,
-          borderColor: colors.border,
-        };
-    }
-  })();
+        }
+      : surface;
 
-  const isInteractive = interactive || !!onPress;
-  const cardClassName = `rounded-lg ${PAD_CLASSES[pad]} ${isInteractive ? 'active:opacity-90' : ''} ${className}`;
-
-  const cardContent = isInteractive ? (
-    <Pressable onPress={onPress} className={cardClassName} style={variantStyle}>
-      {children}
-    </Pressable>
-  ) : (
-    <View className={cardClassName} style={variantStyle}>
+  const cardContent = (
+    <View className={`rounded-lg ${PAD_CLASSES[pad]} ${className}`} style={variantStyle}>
       {children}
     </View>
   );
 
   if (!animated) return cardContent;
 
-  // Reduce Motion: fade only, no travel — matches Glass.tsx's accessibility
-  // gating (opacity-only entrance, shorter duration via the REDUCED preset).
+  // Reduce Motion: fade only, no travel.
   const from = reduceMotion ? { opacity: 0 } : { opacity: 0, translateY: 12 };
   const animateTo = reduceMotion ? { opacity: 1 } : { opacity: 1, translateY: 0 };
-  const transition = {
-    ...motion({ type: 'timing' as const, duration: DUR_BASE, easing: EASE_OUT }, reduceMotion),
-    delay,
-  };
+  const transition = motion({ type: 'timing' as const, duration: DUR_BASE, easing: EASE_OUT }, reduceMotion);
 
   return (
     <MotiView from={from} animate={animateTo} transition={transition}>

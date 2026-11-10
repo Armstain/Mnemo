@@ -3,7 +3,7 @@ import { useCallback } from 'react';
 import { useMnemoStore } from '@/hooks/use-mnemo-store';
 import { useUndoToast } from '@/hooks/use-undo-toast';
 import { celebrate, completionFeedback, finishModel } from '@/lib/done';
-import { haptic } from '@/utils/haptics';
+import { haptic } from '@/lib/haptics';
 
 /**
  * Finishing a thread: the one implementation behind every "Done" that finishes one (the thread
@@ -26,7 +26,6 @@ export function useCompleteThread(): (threadId: string) => boolean {
       else haptic.success();
       showToast({
         message: feedback.toast,
-        actionLabel: 'Undo',
         onAction: () => {
           done.undo();
           if (wasFocus) setFocusThread(threadId);

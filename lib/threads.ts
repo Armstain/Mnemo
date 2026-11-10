@@ -1,15 +1,10 @@
 import type { Block, ChecklistItem, Entry, MnemoItem } from '@/types/mnemo';
 import { formatValue } from '@/lib/measures';
 
-// Pure helpers for threads and their entries. No storage, no React — the
-// store (hooks/use-mnemo-store.tsx) and the database migration both build
-// on these, so the rules for "what a thread's text is" live in one place.
+// Pure helpers for threads and their entries. No storage, no React: the
+// store and the database migration both build on these, so the rules for
+// "what a thread's text is" live in one place.
 
-export function generateEntryId(): string {
-  return `e-${Date.now().toString(36)}-${Math.random().toString(36).substring(2, 8)}`;
-}
-
-/** Newest first — the order threads show their timeline in. */
 export function newestFirst(entries: Entry[]): Entry[] {
   return [...entries].sort((a, b) => b.createdAt - a.createdAt);
 }

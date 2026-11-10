@@ -12,21 +12,10 @@ import { noFocusRing } from '@/utils/web';
 interface SearchBarProps {
   value: string;
   onChangeText: (text: string) => void;
-  onClear?: () => void;
   placeholder?: string;
-  className?: string;
-  autoFocus?: boolean;
 }
 
-/** Theme-aware solid pill search input. */
-export const SearchBar = ({
-  value,
-  onChangeText,
-  onClear,
-  placeholder = 'Search your thoughts...',
-  className = '',
-  autoFocus = false,
-}: SearchBarProps) => {
+export const SearchBar = ({ value, onChangeText, placeholder = 'Search your thoughts...' }: SearchBarProps) => {
   const colors = useThemeColors();
   const reduceMotion = useReduceMotion();
   const [isFocused, setIsFocused] = useState(false);
@@ -45,7 +34,7 @@ export const SearchBar = ({
         { type: 'timing' as const, duration: DUR_TOGGLE, easing: EASE_OUT },
         reduceMotion,
       )}
-      className={`flex-row items-center rounded-full ${className}`}
+      className="flex-row items-center rounded-full"
       style={{
         gap: 10,
         height: 48,
@@ -64,10 +53,9 @@ export const SearchBar = ({
         className="flex-1 font-sans text-body"
         style={[{ color: colors.fg }, noFocusRing]}
         selectionColor={colors.accent}
-        autoFocus={autoFocus}
       />
       {value.length > 0 && (
-        <Pressable onPress={onClear || (() => onChangeText(''))} hitSlop={8}>
+        <Pressable onPress={() => onChangeText('')} hitSlop={8}>
           <Icon name="x" size={16} color={colors.fgSecondary} />
         </Pressable>
       )}

@@ -1,9 +1,10 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import { Notifications } from '@/lib/notifications';
 import { Platform } from 'react-native';
-import type { MnemoItem } from '@/types/mnemo';
+import { askNotificationPermission, CHANNELS, ensureChannel, hasNotificationPermission, Notifications, type NotificationData } from '@/lib/notifications';
+import { hasLiveTime } from '@/lib/reminder-ownership';
 import { ensureReminderCategory, REMINDER_CATEGORY } from '@/lib/reminders';
-import { DAY_MS } from '@/utils/time';
+import { readJson, writeJson } from '@/lib/storage';
+import { isOpenStatus, type MnemoItem } from '@/types/mnemo';
+import { DAY_MS, GIVE_UP_AFTER_MS } from '@/utils/time';
 
 // No server: the next PLAN_DAYS of nudges are scheduled locally up front and re-planned on item change or foreground.
 // Items only change while the app is open, so the last plan stays accurate until then.
@@ -28,18 +29,14 @@ const DEFAULT_PREFS: NudgePrefs = { enabled: true, time: 'morning', weekly: true
 const PREFS_KEY = 'mnemo-nudge-prefs';
 const STATE_KEY = 'mnemo-nudge-state';
 const ID_PREFIX = 'nudge-';
-/** Shared with the weekly review: one switch in system settings. */
-export const ANDROID_CHANNEL_ID = 'nudges';
 
 const PLAN_DAYS = 7;
 const QUIET_AFTER_MS = 2 * DAY_MS;
-/** Past this a thread is probably abandoned, not paused. */
-const GIVE_UP_AFTER_MS = 14 * DAY_MS;
 const RENUDGE_AFTER_MS = 4 * DAY_MS;
 
 type NudgeItem = Pick<
   MnemoItem,
-  'id' | 'title' | 'status' | 'pending' | 'nextStep' | 'whereLeftOff' | 'dueDate' | 'updatedAt' | 'lastResumedAt'
+  'id' | 'title' | 'status' | 'pending' | 'nextStep' | 'whereLeftOff' | 'dueDate' | 'repeat' | 'laterSteps' | 'updatedAt' | 'lastResumedAt'
 >;
 
 interface NudgeSlot {
@@ -48,16 +45,14 @@ interface NudgeSlot {
 }
 
 interface NudgeState {
-  /** Slots whose time has passed were delivered. */
   planned: NudgeSlot[];
   delivered: Record<string, number>;
 }
 
 export async function loadNudgePrefs(): Promise<NudgePrefs> {
   try {
-    const raw = await AsyncStorage.getItem(PREFS_KEY);
-    if (raw) {
-      const parsed = JSON.parse(raw);
+    const parsed = (await readJson(PREFS_KEY)) as any;
+    if (parsed) {
       return {
         enabled: parsed.enabled !== false,
         weekly: parsed.weekly !== false,
@@ -71,15 +66,14 @@ export async function loadNudgePrefs(): Promise<NudgePrefs> {
 
 export async function saveNudgePrefs(prefs: NudgePrefs): Promise<void> {
   try {
-    await AsyncStorage.setItem(PREFS_KEY, JSON.stringify(prefs));
+    await writeJson(PREFS_KEY, prefs);
   } catch {}
 }
 
 async function loadState(): Promise<NudgeState> {
   try {
-    const raw = await AsyncStorage.getItem(STATE_KEY);
-    if (raw) {
-      const parsed = JSON.parse(raw);
+    const parsed = (await readJson(STATE_KEY)) as any;
+    if (parsed) {
       return {
         planned: Array.isArray(parsed.planned) ? parsed.planned : [],
         delivered: parsed.delivered && typeof parsed.delivered === 'object' ? parsed.delivered : {},
@@ -89,34 +83,13 @@ async function loadState(): Promise<NudgeState> {
   return { planned: [], delivered: {} };
 }
 
-export async function ensureAndroidChannel(): Promise<void> {
-  if (Platform.OS !== 'android') return;
-  await Notifications.setNotificationChannelAsync(ANDROID_CHANNEL_ID, {
-    name: 'Gentle nudges',
-    description: 'A reminder when a thread has gone quiet for a few days',
-    importance: Notifications.AndroidImportance.DEFAULT,
-  });
-}
-
-export async function hasNudgePermission(): Promise<boolean> {
-  if (Platform.OS === 'web') return false;
-  try {
-    return (await Notifications.getPermissionsAsync()).granted;
-  } catch {
-    return false;
-  }
-}
-
 /** Only call from an explicit user action, never on mount. */
 export async function requestNudgePermission(): Promise<boolean> {
   if (Platform.OS === 'web') return false;
   try {
     // Android 13+ only shows the permission prompt once a channel exists.
-    await ensureAndroidChannel();
-    const current = await Notifications.getPermissionsAsync();
-    if (current.granted) return true;
-    if (!current.canAskAgain) return false;
-    return (await Notifications.requestPermissionsAsync()).granted;
+    await ensureChannel('nudges');
+    return await askNotificationPermission();
   } catch {
     return false;
   }
@@ -129,7 +102,7 @@ export async function sendTestNudge(): Promise<boolean> {
       // Outside ID_PREFIX, so a replan in the next few seconds can't cancel it.
       identifier: 'mnemo-test-nudge',
       content: { title: 'Mnemo', body: 'Nudges work. This is how one will look.' },
-      trigger: { type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL, seconds: 5, channelId: ANDROID_CHANNEL_ID },
+      trigger: { type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL, seconds: 5, channelId: CHANNELS.nudges },
     });
     return true;
   } catch {
@@ -137,7 +110,7 @@ export async function sendTestNudge(): Promise<boolean> {
   }
 }
 
-export function nudgeClock(prefs: NudgePrefs): { hour: number; minute: number } {
+function nudgeClock(prefs: NudgePrefs): { hour: number; minute: number } {
   return prefs.time === 'custom' && prefs.custom ? prefs.custom : NUDGE_TIMES[prefs.time === 'custom' ? 'morning' : prefs.time];
 }
 
@@ -155,10 +128,10 @@ function planSlots(
   const candidates = items
     .filter(
       (item) =>
-        (item.status === 'active' || item.status === 'paused') &&
+        isOpenStatus(item.status) &&
         !item.pending &&
-        // A future due date already has its own reminder (lib/reminders.ts).
-        !(item.dueDate && item.dueDate > now),
+        // A live time reminder already has its own notification (lib/reminders.ts).
+        !hasLiveTime(item, now),
     )
     // Next step first, then freshest: the nudge can say what to do, and recent threads are most likely still wanted.
     .sort((a, b) => {
@@ -224,26 +197,27 @@ async function replan(items: NudgeItem[]): Promise<void> {
   await cancelScheduledNudges();
 
   const planned: NudgeSlot[] = [];
-  if (prefs.enabled && (await hasNudgePermission())) {
-    await ensureAndroidChannel();
+  if (prefs.enabled && (await hasNotificationPermission())) {
+    await ensureChannel('nudges');
     await ensureReminderCategory();
     const byId = new Map(items.map((item) => [item.id, item]));
     const slots = planSlots(items, nudgeClock(prefs), delivered, now);
     for (const [index, slot] of slots.entries()) {
       const item = byId.get(slot.itemId)!;
+      const data: NotificationData = { itemId: item.id };
       await Notifications.scheduleNotificationAsync({
         identifier: `${ID_PREFIX}${index}`,
         content: {
           title: item.title,
           body: nudgeBody(item, slot.fireAt),
           // The identifier is a slot, not an item id, so routing reads itemId from here.
-          data: { itemId: item.id },
+          data,
           categoryIdentifier: REMINDER_CATEGORY,
         },
         trigger: {
           type: Notifications.SchedulableTriggerInputTypes.DATE,
           date: new Date(slot.fireAt),
-          channelId: ANDROID_CHANNEL_ID,
+          channelId: CHANNELS.nudges,
         },
       });
       planned.push(slot);
@@ -256,13 +230,12 @@ async function replan(items: NudgeItem[]): Promise<void> {
     if (liveIds.has(id) && now - at < GIVE_UP_AFTER_MS + RENUDGE_AFTER_MS) pruned[id] = at;
   }
 
-  await AsyncStorage.setItem(STATE_KEY, JSON.stringify({ planned, delivered: pruned }));
+  await writeJson(STATE_KEY, { planned, delivered: pruned });
 }
 
 // Serialized: interleaved cancel/schedule passes could leave a slot from the older plan behind.
 let replanChain: Promise<void> = Promise.resolve();
 
-/** Failures are absorbed, never thrown. */
 export function scheduleNudges(items: NudgeItem[]): Promise<void> {
   if (Platform.OS === 'web') return Promise.resolve();
   replanChain = replanChain.then(() => replan(items)).catch(() => {});

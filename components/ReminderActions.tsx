@@ -3,23 +3,17 @@ import { router } from 'expo-router';
 
 import { useMnemoStore } from '@/hooks/use-mnemo-store';
 import { useUndoToast } from '@/hooks/use-undo-toast';
-import { Notifications, notificationsAvailable } from '@/lib/notifications';
-import { remindOnce } from '@/lib/reminders';
+import { ACTIONS, notificationData, Notifications, notificationsAvailable } from '@/lib/notifications';
+import { HOUR_MS, remindOnce } from '@/lib/reminders';
 import { afterReminder, formatReminder, queueSteps, rescheduled } from '@/lib/when';
-import { saveTextNote } from '@/lib/capture';
-import { markTestArrived, TEST_ROUTE } from '@/lib/reliability';
+import { saveNote } from '@/lib/capture';
+import { markTestArrived } from '@/lib/reliability';
 import { PLACE_NOTIFICATION } from '@/lib/places';
 import { finishModel } from '@/lib/done';
 import { useCompleteThread } from '@/hooks/use-complete-thread';
+import { remindersCheckHref, reviewHref, threadHref } from '@/lib/routes';
 
 type Response = import('expo-notifications').NotificationResponse;
-
-function tomorrowMorning(): number {
-  const d = new Date();
-  d.setDate(d.getDate() + 1);
-  d.setHours(9, 0, 0, 0);
-  return d.getTime();
-}
 
 /**
  * What tapping a reminder (or one of its buttons) does. Mounted inside the
@@ -51,65 +45,59 @@ export function ReminderActions() {
       // for a reply would add the same note twice.
       Notifications.clearLastNotificationResponseAsync?.().catch(() => {});
 
-      // The test reminder came and was tapped: the check passed.
-      if (content.data?.test) {
-        markTestArrived().finally(() => router.navigate(TEST_ROUTE));
+      const data = notificationData(content.data);
+      if (data.test) {
+        markTestArrived().finally(() => router.navigate(remindersCheckHref));
         return;
       }
 
-      // The weekly review notification opens the review (once, if it's already open).
-      if (content.data?.route === '/review') {
-        router.navigate('/review');
+      if (data.route === reviewHref) {
+        router.navigate(reviewHref);
         return;
       }
 
-      const itemId = typeof content.data?.itemId === 'string' ? content.data.itemId : identifier;
       const s = storeRef.current;
-      const item = s.getThread(itemId);
-      const text = response.actionIdentifier === 'reply' ? response.userText?.trim() : undefined;
+      const item = s.getThread(data.itemId ?? identifier);
+      const text = response.actionIdentifier === ACTIONS.reply ? response.userText?.trim() : undefined;
       Notifications.dismissNotificationAsync(identifier).catch(() => {});
       if (!item) {
         // The thread was deleted after the notification went out. Whatever
         // was typed is still kept, as a note of its own.
         if (text) {
-          const saved = saveTextNote({ text, category: 'general', store: s });
+          const saved = saveNote('text', { text, category: 'general', store: s });
           showToast({ message: "That thread is gone, so it's saved as a new note" });
-          router.push(`/(tabs)/context?id=${saved.threadId}`);
+          router.push(threadHref(saved.threadId));
         }
         return;
       }
 
       // A place reminder's buttons act on that reminder only, never on the thread's time reminder
       // or its next step (lib/geofence.ts tags them).
-      if (content.data?.kind === PLACE_NOTIFICATION && response.actionIdentifier !== 'reply') {
-        if (response.actionIdentifier === 'done' && !item.place?.repeat && finishModel(item, s.getEntries(item.id)) === 'single') {
-          // A one-off place reminder on one thing to do: that thing is done.
+      if (data.kind === PLACE_NOTIFICATION && response.actionIdentifier !== ACTIONS.reply) {
+        if (response.actionIdentifier === ACTIONS.done && !item.place?.repeat && finishModel(item, s.getEntries(item.id)) === 'single') {
           completeRef.current(item.id);
-        } else if (response.actionIdentifier === 'done') {
+        } else if (response.actionIdentifier === ACTIONS.done) {
           const undo = s.completePlaceOccurrence(item.id);
           if (undo) showToast({ message: item.place?.repeat ? `Done for today: ${item.title}` : `Done: ${item.title}`, actionLabel: 'Undo', onAction: undo });
-        } else if (response.actionIdentifier === 'hour') {
+        } else if (response.actionIdentifier === ACTIONS.hour) {
           // One more nudge on top; the thread's own time reminder (if any) is left as it is.
-          const at = Date.now() + 60 * 60 * 1000;
+          const at = Date.now() + HOUR_MS;
           remindOnce(item, at);
           showToast({ message: `Reminding you ${formatReminder(at).toLowerCase()}` });
         }
-        router.push(`/(tabs)/context?id=${item.id}`);
+        router.push(threadHref(item.id));
         return;
       }
 
-      const stepAt = typeof content.data?.at === 'number' ? content.data.at : undefined;
-      const later = stepAt === undefined ? undefined : item.laterSteps?.find((l) => l.at === stepAt);
+      const later = data.at === undefined ? undefined : item.laterSteps?.find((l) => l.at === data.at);
       const otherSteps = item.laterSteps?.filter((l) => l !== later) ?? [];
 
-      if (response.actionIdentifier === 'reply') {
-        // What was typed into the notification goes into the thread; with
-        // nothing typed, it just opens it.
+      if (response.actionIdentifier === ACTIONS.reply) {
         if (text) {
-          saveTextNote({ text, category: item.category, threadId: item.id, filing: { by: 'user' }, store: s });
+          saveNote('text', { text, category: item.category, threadId: item.id, filing: { by: 'user' }, store: s });
           showToast({ message: `Added to ${item.title}` });
         }
-      } else if (response.actionIdentifier === 'done') {
+      } else if (response.actionIdentifier === ACTIONS.done) {
         const model = finishModel(item, s.getEntries(item.id));
         if (item.repeat && !later) {
           // One occurrence of a repeating reminder: the notification is gone, and the schedule and
@@ -120,7 +108,6 @@ export function ReminderActions() {
           s.updateItem(item.id, { laterSteps: otherSteps.length > 0 ? otherSteps : undefined });
           showToast({ message: `Done: ${later.step ?? item.title}`, actionLabel: 'Undo', onAction: () => s.updateItem(item.id, { laterSteps: before }) });
         } else if (model === 'single') {
-          // One thing to do: Done on its reminder finishes it, with Undo (the step is ticked with it).
           completeRef.current(item.id);
         } else if (item.nextStep) {
           const step = item.nextStep;
@@ -129,15 +116,15 @@ export function ReminderActions() {
         } else if (!item.repeat) {
           s.updateItem(item.id, afterReminder(item));
         }
-      } else if (response.actionIdentifier === 'hour' || response.actionIdentifier === 'tomorrow') {
-        const at = response.actionIdentifier === 'hour' ? Date.now() + 60 * 60 * 1000 : tomorrowMorning();
+      } else if (response.actionIdentifier === ACTIONS.hour) {
+        const at = Date.now() + HOUR_MS;
         if (later) s.updateItem(item.id, { laterSteps: queueSteps(otherSteps, [{ ...later, at }]) });
         // A repeating reminder keeps its schedule; this is one more on top.
         else if (item.repeat) remindOnce(item, at);
         else s.updateItem(item.id, rescheduled(item, at));
         showToast({ message: `Reminding you ${formatReminder(at).toLowerCase()}` });
       }
-      router.push(`/(tabs)/context?id=${item.id}`);
+      router.push(threadHref(item.id));
     };
 
     // The tap that opened the app, then any while it's open.

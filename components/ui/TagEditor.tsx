@@ -1,6 +1,6 @@
 import React from 'react';
 import { Pressable, View } from 'react-native';
-import { haptic } from '@/utils/haptics';
+import { haptic } from '@/lib/haptics';
 
 import { Icon } from '@/components/ui/Icon';
 import { Text } from '@/components/ui/Text';

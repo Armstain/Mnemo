@@ -6,6 +6,7 @@ import { useMnemoStore } from '@/hooks/use-mnemo-store';
 import { useThemeColors } from '@/hooks/use-theme';
 import { placeHealth, placeProblems, type PlaceProblem } from '@/lib/geofence';
 import { usePlaces } from '@/lib/place-store';
+import { placeHref, settingsHref } from '@/lib/routes';
 import { isArmed, overlaps } from '@/lib/places';
 import { usePreferences } from '@/lib/preferences';
 
@@ -50,7 +51,7 @@ export function PlaceReminderPrompt() {
       iconColor={colors.accentWarm}
       title={title}
       body={body}
-      onPress={() => (first?.fix && first.key !== 'late' ? first.fix() : tangled ? router.push(`/place?id=${tangled.id}`) : router.push('/modal'))}
+      onPress={() => (first?.fix && first.key !== 'late' ? first.fix() : tangled ? router.push(placeHref(tangled.id)) : router.push(settingsHref))}
       // A real problem stays until it's fixed; this only hides it until the app opens again.
       onDismiss={() => setHidden(true)}
     />

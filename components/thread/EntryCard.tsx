@@ -5,6 +5,7 @@ import { Text } from '@/components/ui/Text';
 import Markdown from 'react-native-markdown-display';
 
 import { Button, IconButton } from '@/components/ui/Button';
+import { useSurfaceStyle } from '@/components/ui/Card';
 import { ChecklistEditor } from '@/components/ui/ChecklistEditor';
 import { Icon, type IconName } from '@/components/ui/Icon';
 import { ExternalLink } from '@/components/ExternalLink';
@@ -17,7 +18,8 @@ import { useUndoToast } from '@/hooks/use-undo-toast';
 import { isStructuring } from '@/lib/capture';
 import { useAiProblem } from '@/lib/ai-mode';
 import { entryText } from '@/lib/threads';
-import { useThemeColors, type ThemeColors } from '@/hooks/use-theme';
+import { useThemeColors } from '@/hooks/use-theme';
+import type { ThemeColors } from '@/utils/palette';
 import { formatEntryTime } from '@/utils/time';
 import { noFocusRing } from '@/utils/web';
 import type { Block, Entry } from '@/types/mnemo';
@@ -30,7 +32,7 @@ const SOURCE: Record<Entry['source'], { label: string; icon: IconName }> = {
 };
 
 /** Markdown styles matched to the app's type scale and palette. */
-export function useMarkdownStyles(bangla = false) {
+function useMarkdownStyles(bangla = false) {
   const colors = useThemeColors();
   return React.useMemo(() => markdownStyles(colors, bangla), [colors, bangla]);
 }
@@ -159,6 +161,7 @@ export function EntryCard({
   onDeleted?: (threadRemoved: boolean) => void;
 }) {
   const colors = useThemeColors();
+  const surface = useSurfaceStyle();
   const md = useMarkdownStyles(/[\u0980-\u09FF]/.test(entryText(entry)));
   const { updateEntry, deleteEntry, undoDeleteEntry, getThread, entries: allEntries } = useMnemoStore();
   const { showUndoToast } = useUndoToast();
@@ -249,8 +252,7 @@ export function EntryCard({
   };
 
   return (
-    <View className="rounded-lg px-5 py-4" style={{ backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border }}>
-      {/* When and how it arrived */}
+    <View className="rounded-lg px-5 py-4" style={surface}>
       <View className="flex-row items-center">
         <Icon name={source.icon} size={14} color={colors.fgTertiary} />
         <Text className="font-sans-medium text-sm ml-1.5 flex-1" style={{ color: colors.fgTertiary }}>

@@ -1,5 +1,5 @@
 import { kindOf } from '@/lib/kind';
-import { lastActivity, quietDays } from '@/lib/review';
+import { lastActivity, MISSED_DAYS, quietDays } from '@/lib/review';
 import { nextOccurrence } from '@/lib/when';
 import type { Entry, MnemoItem, ThreadKind } from '@/types/mnemo';
 import { DAY_MS } from '@/utils/time';
@@ -15,16 +15,13 @@ export const AWAY_DAYS = 3;
 /** Once back, the card stays (unless dismissed) for this long, across reopens. */
 export const KEEP_SHOWING_MS = 12 * 60 * 60 * 1000;
 /** Rows the card lists before handing over to "Your week". */
-export const AWAY_ROWS = 4;
-/** A missed reminder older than this is old news, not something waiting. */
-const MISSED_DAYS = 30;
+const AWAY_ROWS = 4;
 /** "Coming up" on the card: the next few days. */
 const SOON_DAYS = 3;
 
 // ─── When it shows ──────────────────────────────────────────────
 
 export interface AwayState {
-  /** When the app was last open (in front of the person). */
   lastSeenAt?: number;
   /** Set while the card shows: when they left, before this return. */
   since?: number;
@@ -64,7 +61,6 @@ export type AwayRowReason =
 
 export interface AwayRow {
   item: MnemoItem;
-  /** What to do, or where it was left. */
   text: string;
   reason: AwayRowReason;
   kind?: ThreadKind;
@@ -72,15 +68,12 @@ export interface AwayRow {
 
 export interface AwayDigest {
   since: number;
-  /** Whole days away. */
   days: number;
   /** Reminders that came and went (not repeating), most recent first. */
   missed: number;
-  /** Open tasks and projects with something to do. */
   toDo: number;
   /** Projects that have gone quiet (a week or more untouched). */
   quietProjects: number;
-  /** Ideas kept, so they aren't forgotten either. */
   ideas: number;
   /** Notes that arrived while away (share, widget). */
   added: number;
@@ -100,7 +93,7 @@ export interface AwayDigest {
   line: string;
 }
 
-const isOpen = (t: MnemoItem) => t.status === 'active' && !t.pending;
+const isActiveThread = (t: MnemoItem) => t.status === 'active' && !t.pending;
 
 function count(n: number, one: string, many: string): string {
   const words = ['no', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten'];
@@ -133,7 +126,7 @@ export function awayDigest(
     else byThread.set(e.threadId, [e]);
   }
   const of = (t: MnemoItem) => byThread.get(t.id) ?? [];
-  const open = items.filter(isOpen);
+  const open = items.filter(isActiveThread);
   const kinds = new Map(open.map((t) => [t.id, kindOf(t, of(t).length)]));
 
   const missed: AwayRow[] = [];

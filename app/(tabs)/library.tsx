@@ -1,49 +1,34 @@
-import React, { useState, useMemo, useEffect, useDeferredValue, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { FlatList, Pressable, View } from 'react-native';
 import { Text } from '@/components/ui/Text';
-import { router, useLocalSearchParams } from 'expo-router';
+import { useLocalSearchParams } from 'expo-router';
 import { MotiView } from 'moti';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { Surface } from '@/components/ui/Card';
 import { ThreadRow } from '@/components/ui/ThreadRow';
 import { CategoryPicker } from '@/components/ui/CategoryPicker';
 import { NoteListSkeleton } from '@/components/ui/NoteListSkeleton';
 import { SearchBar } from '@/components/SearchBar';
 import { Icon } from '@/components/ui/Icon';
-import { NAV_CLEARANCE } from '@/components/ui/FloatingTabBar';
+import { NAV_CLEARANCE } from '@/components/ui/nav-layout';
 import { useMnemoStore } from '@/hooks/use-mnemo-store';
-import { useUndoToast } from '@/hooks/use-undo-toast';
+import { useDeleteThread } from '@/hooks/use-thread-actions';
+import { STATUS_FILTERS, useLibrarySearch, type FilterStatus } from '@/hooks/use-library-search';
 import { useThemeColors } from '@/hooks/use-theme';
-import { bm25Search } from '@/lib/bm25';
-import { hybridSearch } from '@/lib/search';
-import { readPeriod, threadsInPeriod, totalsFor } from '@/lib/find';
 import { formatValue } from '@/lib/measures';
 import { aiEnabled } from '@/lib/ai-mode';
 import { usePreferences } from '@/lib/preferences';
 import { AskCard, isQuestion } from '@/components/AskCard';
-import { CATEGORY_LIST } from '@/utils/categories';
-import { useEnter } from '@/utils/motion';
-import type { Category, ItemStatus, MnemoItem } from '@/types/mnemo';
-
-// Debounce before the semantic (network) half of search fires.
-const SEMANTIC_DEBOUNCE_MS = 300;
-
-/** Open is active and paused together (a paused thread says so on its row). */
-type FilterStatus = 'open' | 'completed' | 'archived';
-
-const STATUS_FILTERS: { key: FilterStatus; label: string }[] = [
-  { key: 'open', label: 'Open' },
-  { key: 'completed', label: 'Done' },
-  { key: 'archived', label: 'Archived' },
-];
-
-const inStatus = (status: ItemStatus, filter: FilterStatus) =>
-  filter === 'open' ? status === 'active' || status === 'paused' : status === filter;
+import { useEnter } from '@/hooks/use-enter';
+import { CATEGORIES, type Category, type MnemoItem } from '@/types/mnemo';
+import { openThread } from '@/lib/navigation';
+import { capitalize } from '@/utils/text';
 
 export default function LibraryScreen() {
   const enter = useEnter();
-  const { items, entries, isLoaded, deleteItem, undoDelete } = useMnemoStore();
-  const { showUndoToast } = useUndoToast();
+  const { items, entries, isLoaded } = useMnemoStore();
+  const deleteThread = useDeleteThread();
   // AI on or off, and search by meaning, change what's offered.
   const { meaningSearch } = usePreferences();
   const ai = aiEnabled() && meaningSearch === true;
@@ -57,74 +42,19 @@ export default function LibraryScreen() {
   const { category: categoryParam } = useLocalSearchParams<{ category?: string }>();
   useEffect(() => {
     const cat = Array.isArray(categoryParam) ? categoryParam[0] : categoryParam;
-    if (cat && CATEGORY_LIST.includes(cat as Category)) {
+    if (cat && (CATEGORIES as readonly string[]).includes(cat)) {
       setSelectedCategory(cat as Category);
     }
   }, [categoryParam]);
 
-  // Category/status filters first; search (if any) ranks within them.
-  const scopedItems = useMemo(
-    () =>
-      items.filter(
-        (i) =>
-          (selectedCategory === 'all' || i.category === selectedCategory) &&
-          inStatus(i.status, selectedStatus),
-      ),
-    [items, selectedCategory, selectedStatus],
-  );
-
-  // Instant keyword results on every keystroke, so search never feels
-  // network-gated...
-  // Ranked from a deferred copy of the query: the field updates on every
-  // key at once, the list catches up when there's a moment.
-  const deferredQuery = useDeferredValue(searchQuery);
-  // A time said in the search ("cng last week") narrows to threads with
-  // something added then; the rest of the words rank them.
-  const { period, rest: words } = useMemo(() => readPeriod(deferredQuery), [deferredQuery]);
-  const periodKey = period ? `${period.from}-${period.to}` : '';
-  const inPeriod = useMemo(
-    () => {
-      if (!period) return scopedItems;
-      // Once, not once per thread (that was items × entries on every keystroke).
-      const ids = threadsInPeriod(scopedItems, entries, period);
-      return scopedItems.filter((i) => ids.has(i.id));
-    },
-    [periodKey, scopedItems, entries], // eslint-disable-line react-hooks/exhaustive-deps
-  );
-  const keywordResults = useMemo(
-    () => (words ? bm25Search(words, inPeriod) : [...inPeriod].sort((a, b) => b.updatedAt - a.updatedAt)),
-    [words, inPeriod],
-  );
-  // The matching numbers, added up across every thread.
-  const totals = useMemo(() => (words ? totalsFor(words, entries, period) : []), [words, entries, periodKey]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // ...upgraded to the hybrid keyword + meaning ranking once it resolves,
-  // so "travel documents" still finds the passport note. null = not ready
-  // for this query yet.
-  const [hybridResults, setHybridResults] = useState<MnemoItem[] | null>(null);
-  // Keyed on which threads are in scope, not the array: any background save made a new array,
-  // which cleared the results (the list jumped) and sent the search to Google again.
-  const scopeKey = useMemo(() => inPeriod.map((i) => i.id).join(','), [inPeriod]);
-  const inPeriodRef = useRef(inPeriod);
-  useEffect(() => {
-    inPeriodRef.current = inPeriod;
-  }, [inPeriod]);
-  useEffect(() => {
-    const trimmed = words.trim();
-    // Clear immediately so a new query never shows the last one's results.
-    setHybridResults(null);
-    if (!trimmed || !ai) return;
-
-    let cancelled = false;
-    const handle = setTimeout(async () => {
-      const fused = await hybridSearch(trimmed, inPeriodRef.current);
-      if (!cancelled) setHybridResults(fused);
-    }, SEMANTIC_DEBOUNCE_MS);
-    return () => {
-      cancelled = true;
-      clearTimeout(handle);
-    };
-  }, [words, scopeKey, ai]);
+  const { deferredQuery, period, words, totals, inPeriod, ranked, filteredItems } = useLibrarySearch({
+    items,
+    entries,
+    query: searchQuery,
+    category: selectedCategory,
+    status: selectedStatus,
+    ai,
+  });
 
   // Rows play their entrance when the screen first appears, not again on every filter tap
   // (ten animated rings redrawing at once was most of the lag).
@@ -134,16 +64,6 @@ export default function LibraryScreen() {
     return () => clearTimeout(t);
   }, []);
 
-  // A thread behind a total is a result even when its words don't match
-  // ("spent" adds up amounts whose label is "lunch").
-  const filteredItems = useMemo(() => {
-    const ranked = hybridResults ?? keywordResults;
-    const fromTotals = new Set(totals.flatMap((t) => t.threadIds));
-    if (fromTotals.size === 0) return ranked;
-    const shown = new Set(ranked.map((i) => i.id));
-    return [...ranked, ...inPeriod.filter((i) => fromTotals.has(i.id) && !shown.has(i.id))];
-  }, [hybridResults, keywordResults, totals, inPeriod]);
-
   const renderRow = useCallback(
     ({ item, index }: { item: MnemoItem; index: number }) => (
       <ThreadRow
@@ -152,14 +72,11 @@ export default function LibraryScreen() {
         last={index === filteredItems.length - 1}
         // Only the first screenful plays the entrance; rows scrolled in just appear.
         cell={{ first: index === 0, animate: !entered && index < 10 }}
-        onPress={() => router.push(`/(tabs)/context?id=${item.id}`)}
-        onSwipeDelete={() => {
-          deleteItem(item.id);
-          showUndoToast(`"${item.title}" deleted`, () => undoDelete(item.id));
-        }}
+        onPress={() => openThread(item.id)}
+        onSwipeDelete={() => deleteThread(item)}
       />
     ),
-    [filteredItems.length, entered, deleteItem, undoDelete, showUndoToast],
+    [filteredItems.length, entered, deleteThread],
   );
 
   if (!isLoaded) {
@@ -172,7 +89,6 @@ export default function LibraryScreen() {
 
   return (
     <View className="flex-1 px-5" style={{ paddingTop: insets.top + 16 }}>
-      {/* Header */}
       <MotiView {...enter.rise(0)}
         className="mb-4 flex-row items-end justify-between"
       >
@@ -182,7 +98,6 @@ export default function LibraryScreen() {
         </Text>
       </MotiView>
 
-      {/* Search */}
       <MotiView {...enter.pop(1)}
         className="mb-4"
       >
@@ -193,7 +108,6 @@ export default function LibraryScreen() {
         />
       </MotiView>
 
-      {/* What the search found besides threads: its time span, and totals. */}
       {period || totals.length > 0 || isQuestion(deferredQuery) ? (
         <View className="mb-3">
           {period ? (
@@ -214,14 +128,10 @@ export default function LibraryScreen() {
             </View>
           ) : null}
           {totals.map((t) => (
-            <View
-              key={`${t.label}|${t.unit}`}
-              className="flex-row items-center rounded-lg px-4 py-3 mb-2"
-              style={{ backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border }}
-            >
+            <Surface key={`${t.label}|${t.unit}`} className="flex-row items-center rounded-lg px-4 py-3 mb-2">
               <View className="flex-1">
                 <Text className="font-sans-semi text-body" style={{ color: colors.fg }}>
-                  {t.label.charAt(0).toUpperCase() + t.label.slice(1)}
+                  {capitalize(t.label)}
                   {period ? ` · ${period.label.toLowerCase()}` : ''}
                 </Text>
                 <Text className="font-sans text-sm" style={{ color: colors.fgTertiary }}>
@@ -232,20 +142,16 @@ export default function LibraryScreen() {
               <Text className="font-display" style={{ color: colors.fg, fontSize: 22, fontVariant: ['tabular-nums'] }}>
                 {formatValue(t.total, t.unit)}
               </Text>
-            </View>
+            </Surface>
           ))}
           {isQuestion(deferredQuery) ? (
-            <AskCard question={deferredQuery} ranked={hybridResults ?? keywordResults} scope={inPeriod} canAsk={ai} />
+            <AskCard question={deferredQuery} ranked={ranked} scope={inPeriod} canAsk={ai} />
           ) : null}
         </View>
       ) : null}
 
-      {/* Status — a segmented control, since exactly one is always on */}
       <MotiView {...enter.fade(2)} className="mb-3">
-        <View
-          className="flex-row rounded-full p-1"
-          style={{ backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border }}
-        >
+        <Surface className="flex-row rounded-full p-1">
           {STATUS_FILTERS.map(({ key, label }) => {
             const selected = selectedStatus === key;
             return (
@@ -267,10 +173,9 @@ export default function LibraryScreen() {
               </Pressable>
             );
           })}
-        </View>
+        </Surface>
       </MotiView>
 
-      {/* Category */}
       <MotiView {...enter.fade(2)} className="mb-4">
         <CategoryPicker
           value={selectedCategory}
@@ -280,7 +185,6 @@ export default function LibraryScreen() {
         />
       </MotiView>
 
-      {/* Results: virtualized, so a big library scrolls as lightly as a small one. */}
       <FlatList
         className="flex-1"
         data={filteredItems}

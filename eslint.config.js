@@ -5,7 +5,7 @@ const expoConfig = require('eslint-config-expo/flat');
 module.exports = defineConfig([
   expoConfig,
   {
-    ignores: ['dist/*', 'android/*', 'ios/*', '.expo/*'],
+    ignores: ['dist/*', 'android/*', 'ios/*', '.expo/*', 'brag-output*/**'],
   },
   {
     rules: {
@@ -19,12 +19,13 @@ module.exports = defineConfig([
       'react-hooks/set-state-in-effect': 'warn',
       'react-hooks/immutability': 'warn',
       'react-hooks/purity': 'warn',
+      'react-hooks/preserve-manual-memoization': 'warn',
     },
   },
   {
     // Native modules loaded only where they exist (not in Expo Go, not on
     // the web): a static import would throw before the check could run.
-    files: ['index.ts', 'components/ShareIntake.native.tsx', 'components/WidgetSync.android.tsx', 'lib/notifications.ts'],
+    files: ['index.ts', 'components/ShareIntake.native.tsx', 'components/WidgetSync.android.tsx', 'lib/notifications.ts', 'lib/storage.ts'],
     rules: { '@typescript-eslint/no-require-imports': 'off' },
   },
 ]);

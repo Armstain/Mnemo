@@ -1,6 +1,7 @@
 import { Platform } from 'react-native';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import Constants from 'expo-constants';
+
+import { readJson, storage, writeJson } from '@/lib/storage';
 
 // A short local log of what went wrong, for a bug report the person
 // chooses to send (Settings → "Copy problem report"). Nothing is sent
@@ -30,7 +31,7 @@ export function logError(where: string, error: unknown): void {
   queue = queue.then(async () => {
     try {
       const log = await readErrors();
-      await AsyncStorage.setItem(KEY, JSON.stringify([...log, entry].slice(-MAX)));
+      await writeJson(KEY, [...log, entry].slice(-MAX));
     } catch {
       // Logging must never be the next problem.
     }
@@ -41,7 +42,7 @@ export function logError(where: string, error: unknown): void {
 export async function clearErrors(): Promise<void> {
   queue = queue.then(async () => {
     try {
-      await AsyncStorage.removeItem(KEY);
+      await storage.remove(KEY);
     } catch {
       // Logging must never be the next problem.
     }
@@ -51,38 +52,18 @@ export async function clearErrors(): Promise<void> {
 
 export async function readErrors(): Promise<LoggedError[]> {
   try {
-    const raw = await AsyncStorage.getItem(KEY);
-    return raw ? (JSON.parse(raw) as LoggedError[]) : [];
+    return ((await readJson(KEY)) as LoggedError[] | null) ?? [];
   } catch {
     return [];
   }
 }
 
-/** Place reminders: how many places the phone watches since when, and the last event it sent. No coordinates. */
-async function placeLine(): Promise<string> {
-  try {
-    const [w, e] = await Promise.all([AsyncStorage.getItem('mnemo-geofence-watch'), AsyncStorage.getItem('mnemo-geofence-event')]);
-    const watch = w ? JSON.parse(w) : null;
-    const event = e ? JSON.parse(e) : null;
-    const count = watch?.signature ? String(watch.signature).split('|').length : 0;
-    const when = (at: unknown) => (Number(at) ? new Date(Number(at)).toISOString() : 'never');
-    // What Android itself answered (Android builds with the native registration). Loaded here
-    // only, so everything else that logs errors doesn't load the native module.
-    const { nativeGeofencing } = await import('@/lib/geofence-native');
-    const { outcomeReport } = await import('@/lib/geofence-outcome');
-    const android = nativeGeofencing ? `\n${outcomeReport(nativeGeofencing.outcome())}` : '';
-    return `Places watched: ${count}${count ? ` since ${when(watch.since)}` : ''} · last place event: ${event ? `${event.event} ${when(event.at)}` : 'never'}${android}`;
-  } catch {
-    return 'Places: unreadable';
-  }
-}
-
-/** The report a person can paste into an email or issue: versions and recent errors. */
-export async function problemReport(): Promise<string> {
+/** The report a person can paste into an email or issue: versions, the caller's own lines, and recent errors. */
+export async function problemReport(extraLines: string[] = []): Promise<string> {
   const errors = await readErrors();
   const lines = [
     `Mnemo ${Constants.expoConfig?.version ?? '?'} · ${Platform.OS} ${String(Platform.Version)}`,
-    await placeLine(),
+    ...extraLines,
     `Errors logged: ${errors.length}`,
     ...errors
       .slice(-10)

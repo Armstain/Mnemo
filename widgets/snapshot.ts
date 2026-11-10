@@ -1,4 +1,4 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { readJson, writeJson } from '@/lib/storage';
 
 import type { WidgetSnapshot } from './CaptureWidget';
 
@@ -9,8 +9,7 @@ const KEY = 'mnemo-widget';
 
 export async function readWidgetSnapshot(): Promise<WidgetSnapshot> {
   try {
-    const raw = await AsyncStorage.getItem(KEY);
-    return raw ? (JSON.parse(raw) as WidgetSnapshot) : {};
+    return ((await readJson(KEY)) as WidgetSnapshot | null) ?? {};
   } catch {
     return {};
   }
@@ -18,7 +17,7 @@ export async function readWidgetSnapshot(): Promise<WidgetSnapshot> {
 
 export async function writeWidgetSnapshot(snapshot: WidgetSnapshot): Promise<void> {
   try {
-    await AsyncStorage.setItem(KEY, JSON.stringify(snapshot));
+    await writeJson(KEY, snapshot);
   } catch {
     // The widget keeps what it had.
   }

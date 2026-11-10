@@ -2,10 +2,11 @@ import React from 'react';
 import { AppState, Platform, ScrollView, View } from 'react-native';
 import { router, useFocusEffect } from 'expo-router';
 import { MotiView } from 'moti';
-import { haptic } from '@/utils/haptics';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { haptic } from '@/lib/haptics';
 
-import { Button, IconButton } from '@/components/ui/Button';
+import { Button } from '@/components/ui/Button';
+import { Surface } from '@/components/ui/Card';
+import { ScreenHeader, useSafeBottom, useSafeTop } from '@/components/ui/Screen';
 import { Eyebrow } from '@/components/ui/Eyebrow';
 import { Icon } from '@/components/ui/Icon';
 import { Text } from '@/components/ui/Text';
@@ -30,7 +31,7 @@ import {
   type TestState,
 } from '@/lib/reliability';
 import { rearmReminders } from '@/lib/reminders';
-import { useEnter } from '@/utils/motion';
+import { useEnter } from '@/hooks/use-enter';
 import { usePlaceProblems, WarningList } from '@/components/PlaceWarnings';
 import { usePreferences } from '@/lib/preferences';
 
@@ -112,7 +113,8 @@ function steps(h: ReminderHealth): Step[] {
  * none of that is visible until a reminder doesn't come.
  */
 export default function RemindersCheckScreen() {
-  const insets = useSafeAreaInsets();
+  const top = useSafeTop();
+  const bottom = useSafeBottom();
   const colors = useThemeColors();
   const { places: placesOn } = usePreferences();
   const enter = useEnter();
@@ -194,10 +196,8 @@ export default function RemindersCheckScreen() {
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.bg }}>
-      <ScrollView contentContainerStyle={{ paddingTop: Math.max(insets.top, 16), paddingBottom: Math.max(insets.bottom, 24) + 32 }}>
-        <View className="px-6 flex-row items-center mb-3">
-          <IconButton icon="x" label="Close" variant="bare" onPress={() => router.back()} />
-        </View>
+      <ScrollView contentContainerStyle={{ paddingTop: top, paddingBottom: bottom + 32 }}>
+        <ScreenHeader onClose={() => router.back()} />
 
         <MotiView {...enter.rise(0)} className="px-6 mb-7">
           <Eyebrow>Reminders</Eyebrow>
@@ -221,7 +221,7 @@ export default function RemindersCheckScreen() {
           <>
             <MotiView {...enter.rise(1)} className="px-6 mb-8">
               <Eyebrow>{toFix > 0 ? `${toFix} to change` : allClear(health) ? 'Looks right' : 'On this phone'}</Eyebrow>
-              <View className="rounded-lg overflow-hidden" style={{ backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border }}>
+              <Surface className="rounded-lg overflow-hidden">
                 {list.map((s, i) => (
                   <View
                     key={s.key}
@@ -246,7 +246,7 @@ export default function RemindersCheckScreen() {
                     </View>
                   </View>
                 ))}
-              </View>
+              </Surface>
               {health.strict && LOCKS_IN_RECENTS.has(health.maker) ? (
                 <Text className="font-sans text-sm leading-relaxed mt-3" style={{ color: colors.fgTertiary }}>
                   Also: open recent apps, press and hold Mnemo, and tap the lock. Then clearing recent apps won't close it.
@@ -263,7 +263,7 @@ export default function RemindersCheckScreen() {
             {placesOn && placeLines ? (
               <MotiView {...enter.rise(1)} className="px-6 mb-8">
                 <Eyebrow>{placeLines.length > 0 ? `Places · ${placeLines.length} to change` : 'Places · looks right'}</Eyebrow>
-                <View className="rounded-lg p-4" style={{ backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border }}>
+                <Surface className="rounded-lg p-4">
                   {placeLines.length > 0 ? (
                     <WarningList lines={placeLines} tone={colors.error} />
                   ) : (
@@ -271,14 +271,14 @@ export default function RemindersCheckScreen() {
                       Location, “All the time” and Google Location Accuracy are on.
                     </Text>
                   )}
-                </View>
+                </Surface>
               </MotiView>
             ) : null}
 
             {/* The proof: a real reminder, with the app closed. */}
             <MotiView {...enter.rise(2)} className="px-6">
               <Eyebrow>Test it</Eyebrow>
-              <View className="rounded-lg p-5" style={{ backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border }}>
+              <Surface className="rounded-lg p-5">
                 {arrived ? (
                   <View className="flex-row items-start">
                     <StateMark state="ok" />
@@ -349,7 +349,7 @@ export default function RemindersCheckScreen() {
                     ) : null}
                   </>
                 )}
-              </View>
+              </Surface>
             </MotiView>
           </>
         ) : null}

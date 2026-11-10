@@ -3,18 +3,16 @@ import { View, Platform, useWindowDimensions } from 'react-native';
 import { Text } from '@/components/ui/Text';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
-import * as SecureStore from 'expo-secure-store';
 import { MotiView } from 'moti';
 
 import { useReduceMotion } from '@/hooks/use-accessibility-motion';
 import { EASE_OUT, REDUCED } from '@/utils/motion';
 import { Button } from '@/components/ui/Button';
 import { AiChoiceStep, FirstCaptureStep, KeyStep, NameStep, NudgeStep, RevealStep } from '@/components/OnboardingSteps';
+import { markOnboarded } from '@/lib/onboarding';
 import { setPreferences } from '@/lib/preferences';
 import { OpenRing } from '@/components/ui/ThreadRing';
 import { useThemeColors } from '@/hooks/use-theme';
-
-export const ONBOARDING_KEY = 'mnemo-onboarded';
 
 const features: { title: string; description: string }[] = [
   { title: 'Capture it', description: 'Talk or type. Saved before it can slip away, even offline.' },
@@ -59,21 +57,14 @@ export default function OnboardingScreen() {
   const isNarrow = width < 360;
   const horizontalPadding = isNarrow ? 22 : 28;
   const heroTitleSize = isTiny ? 32 : isCompact ? 36 : 44;
-  // Welcome → name → AI or offline (→ key) → first capture → see it → nudges → app.
   // Web has no local notifications, so it skips the nudge step.
   const [step, setStep] = React.useState<'welcome' | 'name' | 'ai' | 'key' | 'capture' | 'reveal' | 'nudges'>('welcome');
   const [capturedId, setCapturedId] = React.useState<string | null>(null);
 
   const finish = async () => {
-    try {
-      if (Platform.OS === 'web') {
-        localStorage.setItem(ONBOARDING_KEY, 'true');
-      } else {
-        await SecureStore.setItemAsync(ONBOARDING_KEY, 'true');
-      }
-    } catch {
-      // Non-critical — proceed anyway.
-    }
+    await markOnboarded().catch(() => {
+      // Non-critical: proceed anyway.
+    });
     router.replace('/(tabs)');
   };
 
@@ -122,7 +113,6 @@ export default function OnboardingScreen() {
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.bg }}>
-      {/* Hero — full-bleed ink panel with the mark cropped off its corner */}
       <View
         className="overflow-hidden"
         style={{
@@ -164,7 +154,6 @@ export default function OnboardingScreen() {
         </MotiView>
       </View>
 
-      {/* How it works — numbered, editorial. Takes the space that's left. */}
       <View
         className="flex-1 justify-center"
         style={{ paddingHorizontal: horizontalPadding, gap: isTiny ? 14 : isCompact ? 18 : 26 }}
@@ -190,7 +179,6 @@ export default function OnboardingScreen() {
         ))}
       </View>
 
-      {/* CTA, always on screen */}
       <MotiView
         from={{ opacity: 0, translateY: 16 }}
         animate={{ opacity: 1, translateY: 0 }}

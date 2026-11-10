@@ -1,11 +1,13 @@
 import { GoogleGenAI, Modality, Type, type GenerateContentParameters, type HarmBlockThreshold, type HarmCategory, type SafetySetting } from '@google/genai';
 import { getActiveApiKey, onApiKeyChanged } from './api-key';
-import { isLiteModel, isMissingModel, isOverloaded, pickTextModels, pickTtsModel, quotaInfo, quotaPause, type ModelInfo } from './model-pick';
+import { isLiteModel, pickTextModels, pickTtsModel, type ModelInfo } from './model-pick';
+import { isMissingModel, isOverloaded, QuotaRestingError, quotaInfo, quotaPause } from './ai-error';
 import { aiEnabled, setAiNotice } from './ai-mode';
 import { describeEmpty, EmptyResponseError, isBlocked, type EmptyAttempt, type InputInfo } from './empty-response';
 import { describePages, type PageContext } from './link-preview';
+import { CATEGORIES, KINDS, ROLLUPS } from '@/types/mnemo';
+import type { CaptureContext, ThreadMatch } from '@/types/filing';
 
-/** Thrown instead of calling Google when the person chose offline. */
 export class AiOffError extends Error {
   constructor() {
     super('AI is off');
@@ -65,12 +67,12 @@ function isResting(model: string, now = Date.now()): boolean {
   return false;
 }
 
-function allRestingError(): string {
+function allRestingError(): QuotaRestingError {
   const rests = [...resting.values()];
-  if (rests.length > 0 && rests.every((r) => r.daily)) return 'RESOURCE_EXHAUSTED: PerDay quota used up on every model';
+  if (rests.length > 0 && rests.every((r) => r.daily)) return new QuotaRestingError(true);
   const soonest = Math.min(...rests.map((r) => r.until));
   const secs = Math.max(1, Math.ceil((soonest - Date.now()) / 1000));
-  return `RESOURCE_EXHAUSTED: every model is out of quota. Please retry in ${secs}s.`;
+  return new QuotaRestingError(false, secs * 1000);
 }
 
 /** Flash-Lite writing a note means every full Flash model was resting: say so until one answers again. */
@@ -86,7 +88,7 @@ function noteModelUsed(model: string, models: string[]): void {
 const REQUEST_TIMEOUT_MS = 90_000;
 
 /** Default filters sometimes block ordinary notes as "dangerous"; block only HIGH (never BLOCK_NONE). String values avoid the SDK's runtime enums. */
-export const SAFETY_SETTINGS: SafetySetting[] = (
+const SAFETY_SETTINGS: SafetySetting[] = (
   ['HARM_CATEGORY_HARASSMENT', 'HARM_CATEGORY_HATE_SPEECH', 'HARM_CATEGORY_SEXUALLY_EXPLICIT', 'HARM_CATEGORY_DANGEROUS_CONTENT'] as const
 ).map((category) => ({ category: category as HarmCategory, threshold: 'BLOCK_ONLY_HIGH' as HarmBlockThreshold }));
 
@@ -111,59 +113,64 @@ async function generateText(
   let tried = false;
   // One pass: a busy or out-of-quota model hands over to the next. Retrying the whole ladder
   // doubled the requests on every busy spell; the waiting note is retried later with back-off.
-  {
-    const models = await textModels();
-    for (const model of models) {
-      if (isResting(model)) continue;
-      tried = true;
-      try {
-        const response = await client.models.generateContent({
-          model,
-          ...params,
-          config: {
-            ...params.config,
-            safetySettings: params.config?.safetySettings ?? SAFETY_SETTINGS,
-            httpOptions: { ...params.config?.httpOptions, timeout: REQUEST_TIMEOUT_MS },
-          },
-        });
-        let unreadable = false;
-        if (response.text && validate) {
-          try {
-            validate(response.text);
-          } catch {
-            unreadable = true;
-          }
+  const models = await textModels();
+  for (const model of models) {
+    if (isResting(model)) continue;
+    tried = true;
+    try {
+      const response = await client.models.generateContent({
+        model,
+        ...params,
+        config: {
+          ...params.config,
+          safetySettings: SAFETY_SETTINGS,
+          httpOptions: { timeout: REQUEST_TIMEOUT_MS },
+        },
+      });
+      let unreadable = false;
+      if (response.text && validate) {
+        try {
+          validate(response.text);
+        } catch {
+          unreadable = true;
         }
-        if (!response.text || unreadable) {
-          const empty = describeEmpty(response, model, unreadable);
-          empties.push(empty);
-          lastWasEmpty = true;
-          // A safety block is about the content: another model would only spend quota to say the same.
-          if (isBlocked(empty)) break;
-          continue;
-        }
-        noteModelUsed(model, models);
-        return response;
-      } catch (e) {
-        lastError = e;
-        lastWasEmpty = false;
-        // Missing, busy or out-of-quota models try another; a bad key or no signal fails the same on each.
-        const pause = quotaPause(e);
-        if (pause !== undefined) resting.set(model, { until: Date.now() + pause, daily: quotaInfo(e)?.daily ?? false });
-        else if (isMissingModel(e)) sawMissing = true;
-        else if (!isOverloaded(e)) throw e;
       }
+      if (!response.text || unreadable) {
+        const empty = describeEmpty(response, model, unreadable);
+        empties.push(empty);
+        lastWasEmpty = true;
+        // A safety block is about the content: another model would only spend quota to say the same.
+        if (isBlocked(empty)) break;
+        continue;
+      }
+      noteModelUsed(model, models);
+      return response;
+    } catch (e) {
+      lastError = e;
+      lastWasEmpty = false;
+      // Missing, busy or out-of-quota models try another; a bad key or no signal fails the same on each.
+      const pause = quotaPause(e);
+      if (pause !== undefined) resting.set(model, { until: Date.now() + pause, daily: quotaInfo(e)?.daily ?? false });
+      else if (isMissingModel(e)) sawMissing = true;
+      else if (!isOverloaded(e)) throw e;
     }
   }
   if (sawMissing) refreshModels();
-  if (!tried) throw new Error(allRestingError());
+  if (!tried) throw allRestingError();
   if (lastWasEmpty) throw new EmptyResponseError(empties, input);
   throw lastError;
 }
 
-const VALID_CATEGORIES = ['work', 'personal', 'study', 'shopping', 'health', 'ideas', 'errands', 'general'];
+async function generateJson<T>(params: Omit<GenerateContentParameters, 'model'>, input?: InputInfo): Promise<T> {
+  const response = await generateText(
+    { ...params, config: { ...params.config, responseMimeType: 'application/json' } },
+    { input, validate: parsesAsJson },
+  );
+  return JSON.parse(response.text as string) as T;
+}
 
-const VALID_KINDS = ['project', 'task', 'idea', 'note'];
+const AI_CATEGORIES = [...CATEGORIES.filter((c) => c !== 'general'), 'general'];
+const VALID_KINDS = [...KINDS, 'note'];
 const KIND_RULE =
   'What this is: "project" (something ongoing with several steps: a portfolio, a trip, a renovation), "task" (one thing to get done, or a list to work through), "idea" (a thought worth keeping, not yet something to do), or "note" (information to keep: a number, an address, a receipt). When unsure, "note".';
 
@@ -197,8 +204,6 @@ const SUMMARY_SCHEMA = {
   required: ['leftOff', 'nextSteps', 'resources'],
 };
 
-const ROLLUPS = ['sum', 'latest', 'average', 'compare'];
-
 const DUMP_PROPERTIES = {
   title: { type: Type.STRING, description: 'Short punchy title (max 5 words)' },
   notes: { type: Type.STRING, description: 'Cleaned up, well-formatted notes' },
@@ -212,7 +217,7 @@ const DUMP_PROPERTIES = {
     items: { type: Type.STRING },
     description: '2-5 short lowercase keyword tags capturing the topic (e.g. "passport", "travel", "recipe"). No hashtags, no categories already covered by suggestedCategory.',
   },
-  suggestedCategory: { type: Type.STRING, enum: VALID_CATEGORIES },
+  suggestedCategory: { type: Type.STRING, enum: AI_CATEGORIES },
   kind: {
     type: Type.STRING,
     enum: VALID_KINDS,
@@ -230,7 +235,7 @@ const DUMP_PROPERTIES = {
         unit: { type: Type.STRING },
         label: { type: Type.STRING },
         group: { type: Type.STRING },
-        rollup: { type: Type.STRING, enum: ROLLUPS },
+        rollup: { type: Type.STRING, enum: [...ROLLUPS] },
       },
       required: ['metric', 'value', 'unit', 'label', 'group', 'rollup'],
     },
@@ -265,31 +270,6 @@ function dumpSchema(opts: { threads: boolean; transcript: boolean }) {
     required.push('thread');
   }
   return { type: Type.OBJECT, properties, required };
-}
-
-/** An open thread a new capture might belong to (see lib/filing.ts). */
-export interface ThreadCandidate {
-  id: string;
-  title: string;
-  category: string;
-  nextStep?: string;
-  latest?: string;
-  focused?: boolean;
-  /** e.g. "spent (EUR, sum)". */
-  tracks?: string[];
-  idleDays?: number;
-}
-
-export interface CaptureContext {
-  candidates: ThreadCandidate[];
-  tracks?: string[];
-}
-
-export interface ThreadMatch {
-  match: 'existing' | 'new';
-  threadId: string;
-  confidence: number;
-  reason: string;
 }
 
 /** `measures` is unchecked: see verifyMeasures. */
@@ -397,16 +377,10 @@ Question: "${question}"
 
 Notes:
 ${notes.map((n) => `--- id=${n.id} · "${n.title}"\n${n.text}`).join('\n')}`;
-  const response = await generateText(
-    {
-      contents: prompt,
-      config: { responseMimeType: 'application/json', responseSchema: ANSWER_SCHEMA },
-    },
-    { validate: parsesAsJson },
-  );
-  const text = response.text;
-  if (!text) throw new Error('No answer');
-  const parsed = JSON.parse(text) as { answer?: string; sourceIds?: string[] };
+  const parsed = await generateJson<{ answer?: string; sourceIds?: string[] }>({
+    contents: prompt,
+    config: { responseSchema: ANSWER_SCHEMA },
+  });
   const known = new Set(notes.map((n) => n.id));
   return {
     answer: (parsed.answer ?? '').trim(),
@@ -450,15 +424,7 @@ The person has jotted ${notes.length} notes into a thread called ${JSON.stringif
 Notes, oldest first:
 ${list}
 `;
-  const response = await generateText(
-    {
-      contents: prompt,
-      config: { responseMimeType: 'application/json', responseSchema: OVERVIEW_SCHEMA },
-    },
-    { validate: parsesAsJson },
-  );
-  if (!response.text) throw new Error('No response text');
-  return JSON.parse(response.text);
+  return generateJson<unknown>({ contents: prompt, config: { responseSchema: OVERVIEW_SCHEMA } });
 }
 
 export async function processVoiceDump(
@@ -483,7 +449,7 @@ export async function processVoiceDump(
     ${LANGUAGE_RULES}
     ${describePages(pages)}
     
-    Also suggest the best category from this list: ${VALID_CATEGORIES.join(', ')}
+    Also suggest the best category from this list: ${AI_CATEGORIES.join(', ')}
     And say what it is ("kind"): ${KIND_RULE}
     
     Format:
@@ -492,7 +458,7 @@ export async function processVoiceDump(
       "notes": "Cleaned up, well-formatted version of their notes. Fix grammar and make it readable, but keep all details.",
       "links": ["Extract any URLs or links mentioned. If none, empty array."],
       "tags": ["2-5 short lowercase keyword tags for the topic, e.g. passport, travel"],
-      "suggestedCategory": "one of: ${VALID_CATEGORIES.join(', ')}",
+      "suggestedCategory": "one of: ${AI_CATEGORIES.join(', ')}",
       "kind": "one of: ${VALID_KINDS.join(', ')}",
       "summary": {
         "leftOff": "1-2 sentences on exactly where they left off",
@@ -510,23 +476,17 @@ export async function processVoiceDump(
     label: `transcript ${transcript.length} chars${images.length ? `, ${images.length} photo${images.length === 1 ? '' : 's'}` : ''}`,
     none: transcript.trim() === '' && images.length === 0,
   };
-  const response = await generateText(
+  return generateJson<ProcessedCapture>(
     {
       contents: images.length
         ? [{ role: 'user', parts: [...images.map((data) => ({ inlineData: { mimeType: 'image/jpeg', data } })), { text: prompt }] }]
         : prompt,
       config: {
-        responseMimeType: 'application/json',
         responseSchema: dumpSchema({ threads: !!ctx?.candidates.length, transcript: images.length > 0 }),
       },
     },
-    { input, validate: parsesAsJson },
+    input,
   );
-
-  const text = response.text;
-  // generateText already treats no text as a failure; this is for the types.
-  if (!text) throw new EmptyResponseError([describeEmpty(response, response.modelVersion ?? 'unknown')], input);
-  return JSON.parse(text);
 }
 
 export async function generateSpeech(text: string) {
@@ -570,7 +530,7 @@ export async function processAudioDump(
     3. Generate a structured analysis in the SAME language as the speaker.
     ${LANGUAGE_RULES}
     ${describePages(pages)}
-    4. Suggest the best category from this list: ${VALID_CATEGORIES.join(', ')}
+    4. Suggest the best category from this list: ${AI_CATEGORIES.join(', ')}
     5. Say what it is ("kind"): ${KIND_RULE}
     
     Return a clean JSON object:
@@ -579,7 +539,7 @@ export async function processAudioDump(
       "notes": "Clean, well-formatted transcription/expanded notes in the speaker's language.",
       "links": ["Extract any URLs or links mentioned. If none, empty array."],
       "tags": ["2-5 short lowercase keyword tags for the topic, in the speaker's language"],
-      "suggestedCategory": "one of: ${VALID_CATEGORIES.join(', ')}",
+      "suggestedCategory": "one of: ${AI_CATEGORIES.join(', ')}",
       "kind": "one of: ${VALID_KINDS.join(', ')}",
       "summary": {
         "leftOff": "1-2 sentences on exactly where they left off in the speaker's language",
@@ -599,25 +559,19 @@ export async function processAudioDump(
     label: `audio ${audio.length} recording${audio.length === 1 ? '' : 's'}, ${Math.round(bytes / 1024)} KB`,
     none: bytes === 0,
   };
-  const response = await generateText(
+  return generateJson<ProcessedCapture>(
     {
       contents: [
         {
           parts: [{ text: prompt }, ...audio.map((a) => ({ inlineData: { mimeType: a.mimeType, data: a.data } }))],
-        }
+        },
       ],
       config: {
-        responseMimeType: 'application/json',
         responseSchema: dumpSchema({ threads: !!ctx?.candidates.length, transcript: true }),
       },
     },
-    { input, validate: parsesAsJson },
+    input,
   );
-
-  const text = response.text;
-  // generateText already treats no text as a failure; this is for the types.
-  if (!text) throw new EmptyResponseError([describeEmpty(response, response.modelVersion ?? 'unknown')], input);
-  return JSON.parse(text);
 }
 
 /** Plain prose (no markdown) in the note's language, to read aloud. */
