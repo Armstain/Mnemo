@@ -9,6 +9,7 @@ import { onReminderSet } from '@/lib/capture';
 import { onFiling } from '@/lib/filing';
 import { hasNudgePermission, requestNudgePermission } from '@/lib/nudges';
 import { formatReminder } from '@/lib/when';
+import { dismissSavedNotice, postSavedNotice, undoFor } from '@/lib/saved-notice';
 
 const FILED_TOAST_MS = 6000;
 
@@ -41,10 +42,13 @@ export function FilingNotifier() {
     };
 
     // A note that set a reminder says when, so there's no guessing; and if
-    // notifications are off, that it can't arrive yet.
+    // notifications are off, that it can't arrive yet. It's said in the tray
+    // too, with Undo / Change / Add note there (lib/saved-notice.ts), for
+    // when the phone went back in a pocket before the time was read.
     const stopReminders = onReminderSet(async (event) => {
       const s = storeRef.current;
       const allowed = Platform.OS === 'web' || (await hasNudgePermission());
+      const thread = s.getThread(event.threadId);
       const when = formatReminder(event.at);
       if (!allowed) {
         showToast({
@@ -55,11 +59,17 @@ export function FilingNotifier() {
         });
         return;
       }
+      if (thread) postSavedNotice(thread, event.at, event.before);
       showToast({
         message: `Reminder set · ${when}`,
         actionLabel: 'Undo',
         durationMs: FILED_TOAST_MS,
-        onAction: () => s.updateItem(event.threadId, { dueDate: event.previous }),
+        onAction: () => {
+          const now = s.getThread(event.threadId);
+          const undo = now && undoFor(now, { at: event.at, before: event.before });
+          if (undo) s.updateItem(event.threadId, undo);
+          dismissSavedNotice(event.threadId);
+        },
       });
     });
 

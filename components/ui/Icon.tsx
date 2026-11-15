@@ -7,6 +7,7 @@ import {
   Mic,
   Plus,
   Clock,
+  Bell,
   ArrowUpRight,
   ArrowRight,
   Sparkles,
@@ -49,6 +50,7 @@ export type IconName =
   | 'mic'
   | 'plus'
   | 'clock'
+  | 'bell'
   | 'arrowUpRight'
   | 'arrowRight'
   | 'sparkles'
@@ -95,6 +97,7 @@ const ICONS: Record<IconName, IconComponent> = {
   mic: Mic,
   plus: Plus,
   clock: Clock,
+  bell: Bell,
   arrowUpRight: ArrowUpRight,
   arrowRight: ArrowRight,
   sparkles: Sparkles,

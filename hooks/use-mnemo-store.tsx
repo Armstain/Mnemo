@@ -23,6 +23,7 @@ import { mergeBackup, type BackupPayload, type MergeResult } from '@/lib/backup'
 import { deriveThreadCache, generateEntryId, newestFirst } from '@/lib/threads';
 import { deleteAllRecordings } from '@/lib/capture';
 import { syncReminderForItem, cancelReminder, cancelAllReminders } from '@/lib/reminders';
+import { removeAllCalendarEvents, removeCalendarEvent, syncCalendarForItem } from '@/lib/calendar';
 import { removeAllPlaces } from '@/lib/place-store';
 import { afterReminder, nextOccurrence } from '@/lib/when';
 import { completeOccurrence } from '@/lib/places';
@@ -370,6 +371,7 @@ export function MnemoStoreProvider({ children }: { children: React.ReactNode }) 
       commitItems([newItem, ...itemsRef.current]);
       insertItem(newItem).catch((e) => console.error('Failed to persist new item', e));
       syncReminderForItem(newItem);
+      if (newItem.inCalendar) syncCalendarForItem(newItem);
       return newItem;
     },
     [],
@@ -393,8 +395,12 @@ export function MnemoStoreProvider({ children }: { children: React.ReactNode }) 
     }
 
     // Only reschedule when a field the reminder depends on changed.
-    if (['dueDate', 'status', 'title', 'repeat', 'nextStep', 'whereLeftOff', 'laterSteps'].some((k) => k in updates)) {
+    if (['dueDate', 'status', 'title', 'repeat', 'nextStep', 'whereLeftOff', 'laterSteps', 'leads'].some((k) => k in updates)) {
       if (current) syncReminderForItem({ ...current, ...updates });
+    }
+    // Its calendar event follows it (lib/calendar.ts), when it has or had one.
+    if (current && (current.inCalendar || updates.inCalendar !== undefined) && ['dueDate', 'status', 'title', 'repeat', 'nextStep', 'inCalendar'].some((k) => k in updates)) {
+      syncCalendarForItem({ ...current, ...updates });
     }
   }, [setFocusThread]);
 
@@ -572,6 +578,7 @@ export function MnemoStoreProvider({ children }: { children: React.ReactNode }) 
       commitItems(itemsRef.current.filter((i) => i.id !== id));
       commitEntries(entriesRef.current.filter((e) => e.threadId !== id));
       cancelReminder(id);
+      removeCalendarEvent(id);
       if (focusRef.current === id) setFocusThread(null);
       deleteItemRow(id).catch((e) => console.error('Failed to delete thread', e));
     },
@@ -642,6 +649,7 @@ export function MnemoStoreProvider({ children }: { children: React.ReactNode }) 
       delete deleteTimersRef.current[id];
       forgetImages(entriesRef.current.filter((e) => e.threadId === id));
       commitEntries(entriesRef.current.filter((e) => e.threadId !== id));
+      removeCalendarEvent(id);
       deleteItemRow(id).catch((e) => console.error('Failed to persist item delete', e));
     }, UNDO_WINDOW_MS);
   }
@@ -677,6 +685,7 @@ export function MnemoStoreProvider({ children }: { children: React.ReactNode }) 
     deleteAllRecordings();
     deleteAllImages();
     await cancelAllReminders();
+    await removeAllCalendarEvents().catch(() => {});
     await removeAllPlaces();
     commitItems([]);
     commitEntries([]);

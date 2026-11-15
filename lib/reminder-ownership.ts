@@ -11,7 +11,7 @@ import type { LaterStep, MnemoItem, PlaceReminder } from '@/types/mnemo';
 // other thread has room, and the move is refused, with a reason, when it would overwrite one.
 // See docs/audits/tasks-and-reminders-2026-11.md (P1).
 
-type Reminders = Pick<MnemoItem, 'title' | 'status' | 'place' | 'dueDate' | 'repeat' | 'laterSteps' | 'nextStep'>;
+type Reminders = Pick<MnemoItem, 'title' | 'status' | 'place' | 'dueDate' | 'repeat' | 'laterSteps' | 'nextStep'> & Partial<Pick<MnemoItem, 'leads' | 'inCalendar'>>;
 
 /** The thread's place reminder, while it can still ring. */
 export function armedPlace(t: Pick<MnemoItem, 'place' | 'status'>): PlaceReminder | undefined {
@@ -85,6 +85,11 @@ export function foldReminders(from: Reminders, to: Reminders, now = Date.now()):
     }
     const [first, ...rest] = from.dueDate ? [{ at: from.dueDate, step: from.nextStep }, ...(from.laterSteps ?? [])] : (from.laterSteps ?? []);
     Object.assign(carry, withReminders(to, { due: first.at, step: first.step, later: rest, repeat: from.repeat }, now));
+    // Its time became the other thread's own: the heads-ups and the calendar event go with it.
+    if (from.dueDate && carry.dueDate === from.dueDate) {
+      if (from.leads) carry.leads = from.leads;
+      if (from.inCalendar) carry.inCalendar = true;
+    }
   }
   return { ok: true, carry };
 }

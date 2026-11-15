@@ -30,6 +30,7 @@ import { imageBase64, imagesOf } from '@/lib/images';
 import { fetchLinkPreview, type LinkPreview, type PageContext } from '@/lib/link-preview';
 import { languageOf } from '@/lib/language';
 import { getPreferences, setPreferences } from '@/lib/preferences';
+import { DEFAULT_LEADS } from '@/lib/leads';
 import { deleteAllAudio, deleteAudio, joinAudio, loadAudio, splitAudio } from '@/lib/voice-audio';
 import { hasGroq, transcribeAudio } from '@/lib/groq';
 import {
@@ -94,11 +95,27 @@ function knownMetrics(store: CaptureStore, threadId?: string): KnownMetric[] {
   return summarizeMeasures(entries).map((m) => ({ metric: m.metric, unit: m.unit }));
 }
 
-// Shown by components/FilingNotifier.tsx.
+/** Everything a reminder set by a note can change on its thread, so Undo puts back exactly what was there. */
+export type ReminderState = Pick<MnemoItem, 'dueDate' | 'repeat' | 'laterSteps' | 'leads' | 'inCalendar'>;
+
+export function reminderState(t?: Partial<MnemoItem>): ReminderState {
+  return { dueDate: t?.dueDate, repeat: t?.repeat, laterSteps: t?.laterSteps, leads: t?.leads, inCalendar: t?.inCalendar };
+}
+
+/** Heads-ups and the calendar for an appointment heard in a note, as chosen in Settings → Reminders. */
+export function appointmentExtras(appointment: boolean | undefined): Pick<MnemoItem, 'leads' | 'inCalendar'> {
+  if (!appointment) return {};
+  const prefs = getPreferences();
+  const leads = prefs.appointmentLeads ?? DEFAULT_LEADS;
+  return { ...(leads.length > 0 ? { leads } : {}), ...(prefs.appointmentsToCalendar ? { inCalendar: true } : {}) };
+}
+
+// Shown by components/FilingNotifier.tsx (a toast, and a "Reminder set" notification: lib/saved-notice.ts).
 export interface ReminderSetEvent {
   threadId: string;
   at: number;
-  previous?: number;
+  /** The thread's reminder before this note set it; all unset for a thread the note began. */
+  before: ReminderState;
 }
 const reminderListeners = new Set<(event: ReminderSetEvent) => void>();
 export function onReminderSet(listener: (event: ReminderSetEvent) => void): () => void {
@@ -161,10 +178,12 @@ function saveNote(source: Entry['source'], params: NoteInput): { threadId: strin
             force: !!params.dueDate,
           })
         : {};
+      // The note's time became the thread's own (not a later step): an appointment gets its heads-ups.
+      if (updates.dueDate === due && !params.dueDate && !placeRepeats) Object.assign(updates, appointmentExtras(reading.appointment));
       if (reading.tags.some((t) => !thread.tags.includes(t))) updates.tags = [...new Set([...thread.tags, ...reading.tags])].slice(0, 8);
       if (place) updates.place = place;
       if (Object.keys(updates).length > 0) store.updateItem(threadId, updates);
-      if (updates.dueDate) reminderSet({ threadId, at: updates.dueDate, previous: thread.dueDate });
+      if (updates.dueDate) reminderSet({ threadId, at: updates.dueDate, before: reminderState(thread) });
     }
   } else {
     const fallback =
@@ -183,13 +202,14 @@ function saveNote(source: Entry['source'], params: NoteInput): { threadId: strin
         dueDate: due,
         laterSteps: later.length > 0 ? later : undefined,
         repeat: params.dueDate || placeRepeats ? undefined : reading.repeat,
+        ...(due && !params.dueDate && !placeRepeats ? appointmentExtras(reading.appointment) : {}),
         place,
         pending: ai,
       },
       entryInput,
     );
     saved = { threadId: created.thread.id, entry: created.entry };
-    if (due) reminderSet({ threadId: saved.threadId, at: due });
+    if (due) reminderSet({ threadId: saved.threadId, at: due, before: reminderState() });
     if (!ai) suggestByKeywords(saved, words, store);
   }
   if (ai) resolvePendingEntry(saved.entry, store);
@@ -370,9 +390,10 @@ function nameFromWords(store: CaptureStore, threadId: string, words: string): vo
   if (reading.due && !placeRepeats && reading.due > Date.now() && !(thread.dueDate && thread.dueDate > Date.now())) {
     updates.dueDate = reading.due;
     updates.repeat = reading.repeat;
+    Object.assign(updates, appointmentExtras(reading.appointment));
   }
   if (Object.keys(updates).length > 0) store.updateItem(threadId, updates);
-  if (updates.dueDate) reminderSet({ threadId, at: updates.dueDate, previous: thread.dueDate });
+  if (updates.dueDate) reminderSet({ threadId, at: updates.dueDate, before: reminderState(thread) });
 }
 /** More photos would be slow and costly. */
 const MAX_PHOTOS_TO_AI = 3;
@@ -539,8 +560,8 @@ async function structure(entry: PendingEntry, store: CaptureStore): Promise<void
     threadId = t.id;
     if (heardPlace?.repeat && heard?.repeat) return;
     if (!heard?.due || heard.due < Date.now() || (t.dueDate && t.dueDate > Date.now())) return;
-    store.updateItem(threadId, { dueDate: heard.due, repeat: heard.repeat });
-    reminderSet({ threadId, at: heard.due, previous: t.dueDate });
+    store.updateItem(threadId, { dueDate: heard.due, repeat: heard.repeat, ...appointmentExtras(heard.appointment) });
+    reminderSet({ threadId, at: heard.due, before: reminderState(t) });
   };
 
   // ─── Filing ───
@@ -579,7 +600,7 @@ async function structure(entry: PendingEntry, store: CaptureStore): Promise<void
     if (filed.moved) {
       const target = store.getThread(decision.threadId);
       if (!target) return;
-      if (filed.carried?.dueDate) reminderSet({ threadId: target.id, at: filed.carried.dueDate, previous: before?.dueDate });
+      if (filed.carried?.dueDate) reminderSet({ threadId: target.id, at: filed.carried.dueDate, before: reminderState(before) });
       if (tags.length > 0) {
       store.updateItem(target.id, { tags: [...new Set([...target.tags, ...tags])].slice(0, 8) });
     }

@@ -1,8 +1,10 @@
 import { nfc } from '@/utils/text';
+import type { Repeat } from '@/types/mnemo';
+import { alignNth, alignTo, everyN, nthOfMonth, type Nth } from '@/lib/repeat';
 
 // Hermes has no lookbehind and no \p{…}, so Bangla word edges are spelled out.
 
-export type Repeat = 'daily' | 'weekly' | 'monthly';
+export type { Repeat };
 
 export interface When {
   at: number;
@@ -143,11 +145,42 @@ function fromNow(t: string): { minutes: number; days: boolean } | undefined {
   return { minutes, days: per >= 24 * 60 };
 }
 
+const N_WORD: Record<string, number> = {
+  other: 2, second: 2, '2nd': 2, two: 2, third: 3, '3rd': 3, three: 3, fourth: 4, '4th': 4, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10, twelve: 12,
+};
+const N_ALT = String.raw`(\d{1,2}|other|second|2nd|two|third|3rd|three|fourth|4th|four|five|six|seven|eight|nine|ten|twelve)`;
+const NTH_WORDS: Record<string, Nth> = { first: 1, '1st': 1, second: 2, '2nd': 2, third: 3, '3rd': 3, fourth: 4, '4th': 4, last: -1 };
+const NTH_ALT = '(first|1st|second|2nd|third|3rd|fourth|4th|last)';
+const WORKDAYS = String.raw`(?:week ?days?|work ?days?|working days?|business days?|school days?)`;
+
+/** "the last Friday of the month", "every first Monday": which of its weekday in the month, if said. */
+function readNth(t: string): Nth | undefined {
+  const m =
+    t.match(new RegExp(`${S}(?:every |each |on the |the )?${NTH_ALT} ${WEEKDAY_ALT}s?(?: (?:of|in) (?:every|each|the|this) month| monthly)${E}`)) ??
+    t.match(new RegExp(`${S}(?:every|each) ${NTH_ALT} ${WEEKDAY_ALT}${E}`)) ??
+    t.match(new RegExp(`${S}(?:every|each) month on the ${NTH_ALT} ${WEEKDAY_ALT}${E}`));
+  return m ? NTH_WORDS[m[1]] : undefined;
+}
+
 function readRepeat(t: string): Repeat | undefined {
   const p = pad(t);
+  const nth = readNth(t);
+  if (nth !== undefined && new RegExp(`${S}(?:every|each|monthly)${E}`).test(t)) return nthOfMonth(nth);
+  if (new RegExp(`${S}(?:(?:every|each|on) ${WORKDAYS}|weekdays|on workdays)${E}`).test(t)) return 'weekdays';
+  if (/ (fortnightly|biweekly|bi-weekly|every fortnight|each fortnight) /.test(p)) return 'every-2-weeks';
+  const n = t.match(new RegExp(`${S}(?:every|each) ${N_ALT} (days?|weeks?|months?|${WEEKDAY_ALT})${E}`));
+  if (n) {
+    const count = N_WORD[n[1]] ?? Number(n[1]);
+    const unit = n[2].replace(/s?$/, 's');
+    if (count >= 1 && count <= 99) {
+      if (/^(days|weeks|months)$/.test(unit)) return everyN(count, unit as 'days' | 'weeks' | 'months');
+      return everyN(count, 'weeks'); // "every other Wednesday"
+    }
+  }
   if (/ (every ?day|everyday|daily|each day|every (morning|evening|night)|প্রতিদিন|রোজ|protidin|prottek din|roj) /.test(p)) return 'daily';
   if (new RegExp(`(every|each|প্রতি|proti) ${WEEKDAY_ALT}${E}`).test(t) || / (every week|weekly|each week|প্রতি সপ্তাহে?|proti shoptahe?) /.test(p)) return 'weekly';
   if (/ (every month|monthly|each month|প্রতি মাসে?|proti mashe?) /.test(p)) return 'monthly';
+  if (/ (every year|yearly|annually|each year|every birthday|প্রতি বছরে?|proti bochore?|protibochor) /.test(p)) return 'yearly';
   return undefined;
 }
 
@@ -335,7 +368,14 @@ function readDay(t: string, now: number, monthFirst: boolean): Day | undefined {
 export function readWhenFull(sentence: string, now = Date.now(), monthFirst = false): When | undefined {
   const t = normalizeWhen(sentence);
   const repeat = readRepeat(t);
+  const nth = repeat ? undefined : readNth(t);
+  // "every weekday at 7" said on a Saturday starts on the next working day; "the last Friday" on that Friday.
+  const fit = (when: When | undefined): When | undefined =>
+    when && { ...when, at: nth !== undefined ? alignNth(when.at, nth) : alignTo(when.at, when.repeat) };
+  return fit(readWhenRaw(t, now, monthFirst, repeat));
+}
 
+function readWhenRaw(t: string, now: number, monthFirst: boolean, repeat: Repeat | undefined): When | undefined {
   const later = fromNow(t);
   if (later && !later.days) return { at: Math.round((now + later.minutes * MINUTE) / MINUTE) * MINUTE, repeat };
 
@@ -368,7 +408,7 @@ export function readWhenFull(sentence: string, now = Date.now(), monthFirst = fa
     // Passed today. A named day stays put (and is gone); otherwise the next one.
     if (day?.fixed && !day.today) return undefined;
     if (day?.today && !repeat) return undefined;
-    const step = repeat === 'weekly' ? 7 : 1;
+    const step = weekStep(repeat);
     return { at: at(addDays(dayFor, step), options[0], clock.minute), repeat };
   }
 
@@ -381,7 +421,7 @@ export function readWhenFull(sentence: string, now = Date.now(), monthFirst = fa
       return { at: Math.ceil((now + MINUTE) / (30 * MINUTE)) * 30 * MINUTE, repeat };
     }
     if (!day?.fixed || repeat) {
-      return { at: at(addDays(base, repeat === 'weekly' ? 7 : 1), start, 0), repeat };
+      return { at: at(addDays(base, weekStep(repeat)), start, 0), repeat };
     }
     if (!part) {
       const evening = at(base, 18, 0);
@@ -392,6 +432,9 @@ export function readWhenFull(sentence: string, now = Date.now(), monthFirst = fa
   }
   return undefined;
 }
+
+/** A weekly kind of repeat said for a time already past today comes round a week later; anything else the next day. */
+const weekStep = (repeat: Repeat | undefined) => (repeat === 'weekly' || /^every-\d+-weeks$/.test(repeat ?? '') ? 7 : 1);
 
 const PAST =
   /\b(was|were|did|had|yesterday|ago|last (night|week|month|year|time)|earlier today|already|used to)\b|(^|\s)(গতকাল|গত|ছিল|ছিলো|করেছি|করলাম|গিয়েছিলাম|গেলাম|এসেছিল|gotokal|goto|chilo|chhilo|korechi|korlam|gechilam|gelam|esechilo)(\s|$)/;
@@ -441,6 +484,8 @@ const SLANG_DAY = String.raw`(?:2moro|2morrow|2mrw|2mro|tomoro|tomorow|tmrrw|ton
 const BN_HOUR_WORDS = '(?:এক|দুই|দু|তিন|চার|পাঁচ|ছয়|ছ|সাত|আট|নয়|ন|দশ|এগারো|বারো)';
 const BL_HOUR_WORDS = '(?:ek|dui|du|tin|char|pach|panch|choy|soy|sat|saat|at|aat|noy|dosh|egaro|baro)';
 
+const NTH_STRIP = '(?:first|1st|second|2nd|third|3rd|fourth|4th|last)';
+
 export const STRIP: RegExp[] = [
   new RegExp(String.raw`${S}${SLANG_DAY}${E}`, 'gi'),
   new RegExp(String.raw`${S}(?:at|by|around|before)\s+(?:${EN_HOUR_ALT})(?:\s+(?:fifteen|thirty|forty[ -]five|o five|oh five))?(?:\s*(?:am|pm|a\.m\.?|p\.m\.?|o'clock))?${E}`, 'gi'),
@@ -452,8 +497,12 @@ export const STRIP: RegExp[] = [
   new RegExp(String.raw`${S}(?:a|an|one|two|three)\s+(?:${MIN_UNIT}|${HOUR_UNIT}|${DAY_UNIT})\s+later${E}`, 'gi'),
   new RegExp(String.raw`${S}(?:in|after|within)\s+(?:${D}+(?:\.${D}+)?|a|an|one|two|three|four|five|six|ten|fifteen|twenty|thirty|forty five|forty|half an|half)\s*(?:${MIN_UNIT}|${HOUR_UNIT}|${DAY_UNIT})(?:\s+and\s+(?:a half|${D}+\s*${MIN_UNIT}))?${E}`, 'gi'),
   new RegExp(String.raw`${S}${D}+(?:\.${D}+)?\s*(?:${MIN_UNIT}|${HOUR_UNIT}|${DAY_UNIT})\s*(?:পর|পরে|বাদে|por|pore|bade|baad|later|from now)${E}`, 'gi'),
-  new RegExp(String.raw`${S}(?:every|each|প্রতি|proti)\s+(?:day|week|month|morning|evening|night|${WEEKDAY_ALT}|সপ্তাহে?|মাসে?|shoptahe?|mashe?)${E}`, 'gi'),
-  new RegExp(String.raw`${S}(?:everyday|daily|weekly|monthly|প্রতিদিন|রোজ|protidin|roj)${E}`, 'gi'),
+  new RegExp(String.raw`${S}(?:on\s+)?(?:the\s+)?(?:(?:every|each)\s+${NTH_STRIP}\s+${WEEKDAY_ALT}(?:\s+(?:of|in)\s+(?:every|each|the|this)\s+month)?|${NTH_STRIP}\s+${WEEKDAY_ALT}s?\s+(?:(?:of|in)\s+(?:every|each|the|this)\s+month|monthly))${E}`, 'gi'),
+  new RegExp(String.raw`${S}(?:every|each)\s+month\s+on\s+the\s+${NTH_STRIP}\s+${WEEKDAY_ALT}${E}`, 'gi'),
+  new RegExp(String.raw`${S}(?:every|each)\s+(?:\d{1,2}|other|second|2nd|two|third|3rd|three|fourth|4th|four|five|six|seven|eight|nine|ten|twelve)\s+(?:days?|weeks?|months?|${WEEKDAY_ALT})${E}`, 'gi'),
+  new RegExp(String.raw`${S}(?:(?:every|each|on)\s+(?:week ?days?|work ?days?|working days?|business days?|school days?)|weekdays|on workdays)${E}`, 'gi'),
+  new RegExp(String.raw`${S}(?:every|each|প্রতি|proti)\s+(?:day|week|month|year|fortnight|morning|evening|night|${WEEKDAY_ALT}|সপ্তাহে?|মাসে?|বছরে?|shoptahe?|mashe?|bochore?)${E}`, 'gi'),
+  new RegExp(String.raw`${S}(?:everyday|daily|weekly|monthly|yearly|annually|fortnightly|biweekly|bi-weekly|প্রতিদিন|রোজ|protidin|roj|protibochor)${E}`, 'gi'),
   new RegExp(String.raw`${S}(?:on\s+|by\s+|this\s+|next\s+|আগামী\s+|agami\s+)?(?:the\s+)?(?:${DAY_AFTER}|${TOMORROW}|${TODAY}|${WEEKDAY_E}|next week|next month|this weekend|weekend|end of (?:the )?month)(?:\s+(?:morning|afternoon|evening|night))?${E}`, 'gi'),
   new RegExp(String.raw`${S}(?:on\s+|by\s+)?(?:the\s+)?${D}{1,2}(?:st|nd|rd|th)?(?:\s+of)?\s+${MONTH_ALT}${E}`, 'gi'),
   new RegExp(String.raw`${S}(?:on\s+|by\s+)?${MONTH_ALT}\s+${D}{1,2}(?:st|nd|rd|th)?${E}`, 'gi'),

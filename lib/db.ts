@@ -2,6 +2,8 @@ import * as SQLite from 'expo-sqlite';
 import type { Entry, MnemoItem } from '@/types/mnemo';
 import { entryFromLegacyItem } from '@/lib/threads';
 import { asKind } from '@/lib/kind';
+import { isRepeat } from '@/lib/repeat';
+import { cleanLeads } from '@/lib/leads';
 
 // Opened lazily and asynchronously. On web, expo-sqlite runs in a worker,
 // and a synchronous open at import time times out waiting on it ("Sync
@@ -91,14 +93,15 @@ export function initDb(): Promise<void> {
 //   5 — timed steps: items gain `laterSteps`.
 //   6 — kinds: items gain `kind` (project, task or idea).
 //   7 — places: items gain `place` (a reminder on arriving or leaving).
-const SCHEMA_VERSION = 7;
+//   8 — appointments: items gain `leads` (heads-ups before) and `inCalendar`.
+const SCHEMA_VERSION = 8;
 
 // Every column, in one place, for the INSERT statements below.
 const ITEM_COLUMNS = [
   'id', 'type', 'title', 'content', 'checklistItems', 'links', 'category', 'tags', 'status',
   'nextStep', 'whereLeftOff', 'dueDate', 'createdAt', 'updatedAt', 'lastResumedAt',
   'aiSummary', 'pending', 'pendingRawText', 'pendingAudioUri', 'pinned', 'repeat', 'starred',
-  'completedAt', 'quietUntil', 'overview', 'laterSteps', 'kind', 'place',
+  'completedAt', 'quietUntil', 'overview', 'laterSteps', 'kind', 'place', 'leads', 'inCalendar',
 ];
 const ENTRY_COLUMNS = [
   'id', 'threadId', 'createdAt', 'updatedAt', 'source', 'transcript', 'blocks', 'leftOff', 'nextStep',
@@ -145,6 +148,10 @@ async function runMigrations(db: SQLite.SQLiteDatabase): Promise<void> {
   }
   if (version < 7) {
     await addColumn(db, 'items', 'place', 'TEXT');
+  }
+  if (version < 8) {
+    await addColumn(db, 'items', 'leads', 'TEXT');
+    await addColumn(db, 'items', 'inCalendar', 'INTEGER');
   }
   await db.execAsync(`PRAGMA user_version = ${SCHEMA_VERSION}`);
 }
@@ -205,6 +212,8 @@ interface ItemRow {
   laterSteps: string | null;
   kind: string | null;
   place: string | null;
+  leads: string | null;
+  inCalendar: number | null;
 }
 
 function rowToItem(row: ItemRow): MnemoItem {
@@ -229,7 +238,7 @@ function rowToItem(row: ItemRow): MnemoItem {
     pendingRawText: row.pendingRawText ?? undefined,
     pendingAudioUri: row.pendingAudioUri ?? undefined,
     pinned: row.pinned ? JSON.parse(row.pinned) : undefined,
-    repeat: (row.repeat as MnemoItem['repeat']) ?? undefined,
+    repeat: isRepeat(row.repeat) ? row.repeat : undefined,
     starred: row.starred ? true : undefined,
     completedAt: row.completedAt ?? undefined,
     quietUntil: row.quietUntil ?? undefined,
@@ -237,6 +246,8 @@ function rowToItem(row: ItemRow): MnemoItem {
     laterSteps: row.laterSteps ? JSON.parse(row.laterSteps) : undefined,
     kind: asKind(row.kind),
     place: row.place ? JSON.parse(row.place) : undefined,
+    leads: row.leads ? cleanLeads(JSON.parse(row.leads)) : undefined,
+    inCalendar: row.inCalendar ? true : undefined,
   };
 }
 
@@ -270,6 +281,8 @@ function itemToParams(item: MnemoItem) {
     $laterSteps: item.laterSteps?.length ? JSON.stringify(item.laterSteps) : null,
     $kind: item.kind ?? null,
     $place: item.place ? JSON.stringify(item.place) : null,
+    $leads: item.leads ? JSON.stringify(item.leads) : null,
+    $inCalendar: item.inCalendar ? 1 : null,
   };
 }
 
@@ -304,13 +317,13 @@ export async function insertItems(items: MnemoItem[]): Promise<void> {
 // Columns updateItem is allowed to touch. Used both as a whitelist (so the
 // dynamic SET clause never interpolates anything but a known column name)
 // and to look up how each value needs to be serialized for storage.
-const JSON_COLUMNS = new Set(['checklistItems', 'links', 'tags', 'aiSummary', 'pinned', 'overview', 'laterSteps', 'place']);
-const BOOLEAN_COLUMNS = new Set(['pending', 'starred']);
+const JSON_COLUMNS = new Set(['checklistItems', 'links', 'tags', 'aiSummary', 'pinned', 'overview', 'laterSteps', 'place', 'leads']);
+const BOOLEAN_COLUMNS = new Set(['pending', 'starred', 'inCalendar']);
 const COLUMN_KEYS = new Set([
   'type', 'title', 'content', 'checklistItems', 'links', 'category', 'tags', 'status',
   'nextStep', 'whereLeftOff', 'dueDate', 'createdAt', 'updatedAt', 'lastResumedAt',
   'aiSummary', 'pending', 'pendingRawText', 'pendingAudioUri', 'pinned', 'repeat', 'starred',
-  'completedAt', 'quietUntil', 'overview', 'laterSteps', 'kind', 'place',
+  'completedAt', 'quietUntil', 'overview', 'laterSteps', 'kind', 'place', 'leads', 'inCalendar',
 ]);
 
 function serializeColumnValue(key: string, value: unknown): string | number | null {

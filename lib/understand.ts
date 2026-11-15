@@ -5,6 +5,7 @@ import { DAY_MS } from '@/utils/time';
 import { queueSteps } from '@/lib/when';
 import { isPlan, MONTH_WORDS, opensInPast, readWhenFull, withoutWhen, type Repeat } from '@/lib/when-read';
 import { readKind } from '@/lib/kind';
+import { isAppointment } from '@/lib/leads';
 
 // On-device note reading, no AI: English, Bangla and Banglish, typed or spoken. Offline's only path and what every note shows before Gemini answers.
 
@@ -19,8 +20,10 @@ export interface Reading {
   leftOff?: string;
   /** When the next step is due, if a time or day was named ("tomorrow", "at 7", "শুক্রবার"). */
   due?: number;
-  /** "every day at 8", "every Friday", "প্রতিদিন". */
+  /** "every day at 8", "every other Friday", "the last Friday of every month", "প্রতিদিন". */
   repeat?: Repeat;
+  /** Somewhere to be at that time ("dentist tomorrow at 10"), not a to-do: worth heads-ups before (lib/leads.ts). */
+  appointment?: boolean;
   later: LaterStep[];
   category?: Category;
   /** Project, task or idea, when the words make it clear (lib/kind.ts). */
@@ -678,6 +681,7 @@ export function understand(
     leftOff: upperI(readLeftOff(text ? said : '', sentence)),
     due: timed[0]?.at,
     repeat: due ? when?.repeat : undefined,
+    appointment: due !== undefined && !when?.repeat && isAppointment(whenSentence ?? said) ? true : undefined,
     later,
     category: readCategory(words),
     kind: readKind(raw, { due: timed[0]?.at, nextStep: firstStep, checklist: list.items.length }),

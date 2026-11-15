@@ -37,3 +37,24 @@ reminders and doesn't include the native module.
 
 Play Store: `SCHEDULE_EXACT_ALARM` needs no declaration form (unlike
 `USE_EXACT_ALARM`, which is for alarm-clock and calendar apps).
+
+## Repeats, heads-ups and the "Reminder set" notice
+
+How a thread's reminder is laid out as alarms (`lib/reminders.ts`):
+
+| Reminder | Alarms |
+| --- | --- |
+| Once | One, named by the thread's id. |
+| Every day / week / month / year | One repeating alarm the phone keeps (`DAILY`, `WEEKLY`, `MONTHLY`, `YEARLY` triggers). |
+| Every weekday | One `WEEKLY` alarm per working day (`:wd:<day>`); the weekend is the region's (`phoneWeekend`). |
+| Every N days/weeks/months, nth weekday of the month | The next few times as one-off alarms (`:occ:<at>`), at most 12 and within 45 days, topped up by `rearmReminders` whenever the app opens. Not opened for over 45 days (or 12 times), those stop until it is. |
+| Heads-ups before a one-off appointment | One-off alarms (`:lead:<at>`) in the `heads-up` category. |
+
+A heads-up's **OK** has `opensAppToForeground: false`: expo-notifications runs
+`lib/notification-task.ts` in the background, which dismisses it. To test:
+set a reminder for a few minutes ahead with a "15 min" heads-up, close Mnemo,
+and tap OK when it comes. It should go away without opening the app.
+
+"Reminder set" notices go on their own quiet channel (`saved`, no sound) and
+are not shown as a banner while the app is open, since the toast says the
+same thing. Undo, Change and Add note open the app.

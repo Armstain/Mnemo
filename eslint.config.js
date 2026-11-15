@@ -24,7 +24,7 @@ module.exports = defineConfig([
   {
     // Native modules loaded only where they exist (not in Expo Go, not on
     // the web): a static import would throw before the check could run.
-    files: ['index.ts', 'components/ShareIntake.native.tsx', 'components/WidgetSync.android.tsx', 'lib/notifications.ts'],
+    files: ['index.ts', 'components/ShareIntake.native.tsx', 'components/WidgetSync.android.tsx', 'lib/notifications.ts', 'lib/calendar.ts'],
     rules: { '@typescript-eslint/no-require-imports': 'off' },
   },
 ]);

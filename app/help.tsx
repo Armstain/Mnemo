@@ -50,6 +50,15 @@ const TOPICS: { title: string; body: string[] }[] = [
     ],
   },
   {
+    title: 'Reminders and appointments',
+    body: [
+      'Say when, and the note reminds you: "tomorrow at 10", "in 20 minutes". It repeats when you say so: every day, every weekday, every Monday, every other Wednesday, every 3 days, every month, the last Friday of every month, every year. Weekdays leave out your region\'s weekend.',
+      'Right after a note sets a reminder, a quiet notification says when, with Undo, Change and Add note, so you can put the phone away and still fix it.',
+      'Somewhere to be ("dentist tomorrow at 10", "lunch with Rumi on Friday") also gets heads-ups before it: the evening before and an hour before, unless you choose others in Settings → Appointments or on the thread. A heads-up has OK, which puts only that one away; the reminder itself still comes, with Done.',
+      'Appointments can go into your phone\'s calendar too (Settings → Appointments, or "Add to calendar" on a thread). Mnemo moves the event when the time changes and removes it when the reminder goes; the event has no alarm of its own, so nothing rings twice.',
+    ],
+  },
+  {
     title: 'Place reminders',
     body: [
       'A place is a circle on the map; anywhere inside it counts as being there. Your location stays on your phone.',

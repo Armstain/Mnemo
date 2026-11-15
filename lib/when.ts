@@ -1,11 +1,11 @@
 import type { LaterStep, MnemoItem } from '@/types/mnemo';
 import { DAY_MS } from '@/utils/time';
+import { nextOccurrence, repeatLabel } from '@/lib/repeat';
 
 // Reminder times: the quick choices offered, the next time a repeating one
 // comes round, and how a reminder reads. Pure, so it's easy to test.
 
 export type Repeat = NonNullable<MnemoItem['repeat']>;
-
 
 function at(day: Date, hour: number, minute = 0): Date {
   const d = new Date(day);
@@ -19,27 +19,8 @@ function addDays(day: Date, n: number): Date {
   return d;
 }
 
-/** Same day of the month, clamped: a monthly on the 31st lands on Feb 28/29. */
-function addMonths(day: Date, n: number): Date {
-  const d = new Date(day);
-  const target = d.getDate();
-  d.setDate(1);
-  d.setMonth(d.getMonth() + n);
-  const last = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
-  d.setDate(Math.min(target, last));
-  return d;
-}
-
-/** The first time at or after `now` a repeating reminder comes round. */
-export function nextOccurrence(due: number, repeat: Repeat | undefined, now = Date.now()): number {
-  if (!repeat || due > now) return due;
-  let d = new Date(due);
-  let steps = 0;
-  while (d.getTime() <= now && steps++ < 1000) {
-    d = repeat === 'daily' ? addDays(d, 1) : repeat === 'weekly' ? addDays(d, 7) : addMonths(d, 1);
-  }
-  return d.getTime();
-}
+// The first time after `now` a repeating reminder comes round, and how a repeat reads (lib/repeat.ts).
+export { nextOccurrence, repeatLabel };
 
 export function queueSteps(current: LaterStep[] = [], added: LaterStep[] = []): LaterStep[] {
   return [...current, ...added].filter((l, i, all) => all.findIndex((x) => x.at === l.at) === i).sort((a, b) => a.at - b.at);
@@ -116,12 +97,6 @@ export function formatReminder(ts: number, now = Date.now()): string {
             : d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
   return hasTime(ts) ? `${day}, ${timeOf(ts)}` : day;
 }
-
-export const REPEAT_LABEL: Record<Repeat, string> = {
-  daily: 'Every day',
-  weekly: 'Every week',
-  monthly: 'Every month',
-};
 
 // ─── Which thread to pick back up ───────────────────────────────
 

@@ -18,6 +18,7 @@ import { AiModeCard } from '@/components/settings/AiModeCard';
 import { Icon, type IconName } from '@/components/ui/Icon';
 import { useThemeColors, useThemeName, useThemePreference, type ThemePreference } from '@/hooks/use-theme';
 import { NudgeSettingsCard } from '@/components/settings/NudgeSettingsCard';
+import { AppointmentsCard } from '@/components/settings/AppointmentsCard';
 import { LocationCard } from '@/components/settings/LocationCard';
 import { ApiKeyConfigCard, GROQ } from '@/components/settings/ApiKeyConfigCard';
 
@@ -144,6 +145,14 @@ export default function ModalScreen() {
               <Eyebrow className="mb-1">Nudges</Eyebrow>
 
               <NudgeSettingsCard />
+            </MotiView>
+          )}
+
+          {/* Appointments: heads-ups before, and the phone's calendar. */}
+          {Platform.OS !== 'web' && (
+            <MotiView {...enter.rise(1)} className="gap-3 mb-10">
+              <Eyebrow className="mb-1">Appointments</Eyebrow>
+              <AppointmentsCard />
             </MotiView>
           )}
 

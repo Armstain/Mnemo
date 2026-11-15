@@ -22,6 +22,7 @@ import 'react-native-reanimated';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { Notifications, notificationsAvailable } from '@/lib/notifications';
+import { registerNotificationActions } from '@/lib/reminders';
 import "../global.css";
 
 import { ONBOARDING_KEY } from '@/app/onboarding';
@@ -58,13 +59,15 @@ void appReady;
 // silently swallowed instead of shown).
 if (notificationsAvailable) {
   Notifications.setNotificationHandler({
-    handleNotification: async () => ({
-      shouldShowBanner: true,
-      shouldShowList: true,
-      shouldPlaySound: true,
-      shouldSetBadge: false,
-    }),
+    // "Reminder set" (lib/saved-notice.ts) is already said by a toast while the app is open: it
+    // waits quietly in the tray for when the phone goes back in a pocket.
+    handleNotification: async (n) => {
+      const quiet = n.request.content.data?.kind === 'saved';
+      return { shouldShowBanner: !quiet, shouldShowList: true, shouldPlaySound: !quiet, shouldSetBadge: false };
+    },
   });
+  // A heads-up's OK is answered in the background (lib/notification-task.ts).
+  registerNotificationActions();
 }
 
 // Anything that breaks while drawing shows a way back instead of a blank

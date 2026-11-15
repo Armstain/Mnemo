@@ -11,6 +11,8 @@ import { markTestArrived, TEST_ROUTE } from '@/lib/reliability';
 import { PLACE_NOTIFICATION } from '@/lib/places';
 import { finishModel } from '@/lib/done';
 import { useCompleteThread } from '@/hooks/use-complete-thread';
+import { undoFor, type SavedNoticeData } from '@/lib/saved-notice';
+import { getLaunchKey } from '@/lib/launch-key';
 
 type Response = import('expo-notifications').NotificationResponse;
 
@@ -68,6 +70,34 @@ export function ReminderActions() {
       const item = s.getThread(itemId);
       const text = response.actionIdentifier === 'reply' ? response.userText?.trim() : undefined;
       Notifications.dismissNotificationAsync(identifier).catch(() => {});
+
+      // A heads-up's OK: only that notification goes (lib/notification-task.ts does it with the app closed).
+      if (response.actionIdentifier === 'ok') return;
+
+      // "Reminder set" (lib/saved-notice.ts): take it back, change it, or add a note by voice.
+      if (content.data?.kind === 'saved') {
+        if (!item) return;
+        const data = content.data as unknown as SavedNoticeData;
+        if (response.actionIdentifier === 'undo') {
+          const undo = undoFor(item, data);
+          if (undo) {
+            s.updateItem(item.id, undo);
+            showToast({ message: 'Reminder taken back' });
+          } else {
+            showToast({ message: 'That reminder was changed since, so it stays' });
+          }
+          router.push(`/(tabs)/context?id=${item.id}`);
+        } else if (response.actionIdentifier === 'change') {
+          router.push(`/(tabs)/context?id=${item.id}&edit=reminder`);
+        } else if (response.actionIdentifier === 'note') {
+          // Our own button, so it may start listening at once (lib/launch-key.ts).
+          getLaunchKey().then((key) => router.push({ pathname: '/dump', params: { threadId: item.id, autostart: '1', key } }));
+        } else {
+          router.push(`/(tabs)/context?id=${item.id}`);
+        }
+        return;
+      }
+
       if (!item) {
         // The thread was deleted after the notification went out. Whatever
         // was typed is still kept, as a note of its own.

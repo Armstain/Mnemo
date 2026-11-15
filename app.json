@@ -52,6 +52,12 @@
       ],
       "expo-secure-store",
       [
+        "expo-calendar",
+        {
+          "calendarPermission": "Mnemo adds the appointments you choose to your calendar, and keeps them in step when they change."
+        }
+      ],
+      [
         "expo-build-properties",
         {
           "android": {

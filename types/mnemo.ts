@@ -24,6 +24,23 @@ export type ItemStatus = 'active' | 'paused' | 'completed' | 'archived';
  */
 export type ThreadKind = 'project' | 'task' | 'idea';
 
+/**
+ * How a reminder comes back. Stored as written here, in one text column:
+ * `every-2-weeks` is every other week, `monthly-last` the last (weekday of
+ * the reminder) of every month. See lib/repeat.ts.
+ */
+export type Repeat =
+  | 'daily'
+  | 'weekdays'
+  | 'weekly'
+  | 'monthly'
+  | 'yearly'
+  | `every-${number}-${'days' | 'weeks' | 'months'}`
+  | `monthly-${'1st' | '2nd' | '3rd' | '4th' | 'last'}`;
+
+/** A heads-up before a reminder: minutes before it, or 'eve' for 6 pm the day before. */
+export type Lead = number | 'eve';
+
 export interface ChecklistItem {
   id: string;
   text: string;
@@ -142,8 +159,12 @@ export interface MnemoItem {
 
   /** Fields the user edited on the thread, which new entries must not overwrite. */
   pinned?: { nextStep?: boolean; whereLeftOff?: boolean; title?: boolean; kind?: boolean };
-  /** The reminder (dueDate) comes back: every day, week or month at that time. */
-  repeat?: 'daily' | 'weekly' | 'monthly';
+  /** The reminder (dueDate) comes back at that time: every day, weekday, week, month, year, every N of them, or the nth weekday of the month (lib/repeat.ts). */
+  repeat?: Repeat;
+  /** Heads-ups before the reminder, for an appointment: "a day before", "an hour before" (lib/leads.ts). */
+  leads?: Lead[];
+  /** Kept as an event in the phone's calendar too (lib/calendar.ts). */
+  inCalendar?: boolean;
   /** Kept at the top of Home's "pick up where you left off". */
   starred?: boolean;
   /** When it was marked done (kept if it's reopened, replaced if it's done again). */

@@ -1,6 +1,7 @@
 import { useSyncExternalStore } from 'react';
 import { Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import type { Lead } from '@/types/mnemo';
 
 // App-wide choices the person makes once (in onboarding or Settings) and
 // that the capture pipeline reads outside React. One small store, read
@@ -39,6 +40,10 @@ export interface Preferences {
   haptics?: boolean;
   /** What a place reminder sounds like (lib/place-sound.ts). */
   placeSound?: 'chime' | 'bells' | 'rise' | 'default';
+  /** Heads-ups before an appointment heard in a note (Settings → Reminders). Unset: DEFAULT_LEADS in lib/leads.ts. */
+  appointmentLeads?: Lead[];
+  /** Appointments heard in a note go into the phone's calendar too (lib/calendar.ts). Off until turned on. */
+  appointmentsToCalendar?: boolean;
 }
 
 /** Long enough for most first names, short enough for the greeting to fit. */

@@ -7,14 +7,23 @@ import { Text } from '@/components/ui/Text';
 import { useThemeColors } from '@/hooks/use-theme';
 import { Icon } from '@/components/ui/Icon';
 import { Button } from '@/components/ui/Button';
-import { formatReminder, quickTimes, REPEAT_LABEL, type Repeat } from '@/lib/when';
+import { formatReminder, quickTimes, repeatLabel, type Repeat } from '@/lib/when';
+import { nthOf, nthOfMonth } from '@/lib/repeat';
+import { LEAD_CHOICES, type Lead } from '@/lib/leads';
+import { calendarAvailable } from '@/lib/calendar';
 
 interface DueDatePickerProps {
   value?: number; // timestamp
   onChange: (timestamp: number | undefined) => void;
-  /** Offer "every day / week / month" once a time is set. */
+  /** Offer "every day / weekday / week / other week / month / year" once a time is set. */
   repeat?: Repeat;
   onRepeatChange?: (repeat: Repeat | undefined) => void;
+  /** Heads-ups before a one-off reminder ("a day before", "an hour before"). */
+  leads?: Lead[];
+  onLeadsChange?: (leads: Lead[] | undefined) => void;
+  /** Also an event in the phone's calendar. */
+  inCalendar?: boolean;
+  onCalendarChange?: (on: boolean) => void;
 }
 
 /** "Due tomorrow, 9:00 AM" / "Overdue · Yesterday, 5:00 PM". */
@@ -23,7 +32,12 @@ export function formatDueDate(timestamp: number): string {
   return timestamp < Date.now() ? `Overdue · ${when}` : `Due ${when.charAt(0).toLowerCase()}${when.slice(1)}`;
 }
 
-const REPEATS: (Repeat | undefined)[] = [undefined, 'daily', 'weekly', 'monthly'];
+/** The repeats offered for a reminder at `value`: the month one follows its weekday ("the last Friday"), and one read from a note stays offered. */
+function repeatChoices(value: number, current?: Repeat): (Repeat | undefined)[] {
+  const { nth, last } = nthOf(new Date(value));
+  const choices: (Repeat | undefined)[] = [undefined, 'daily', 'weekdays', 'weekly', 'every-2-weeks', 'monthly', nthOfMonth(last ? -1 : nth), 'yearly'];
+  return current && !choices.includes(current) ? [...choices, current] : choices;
+}
 
 function Chip({
   label,
@@ -34,7 +48,7 @@ function Chip({
   label: string;
   selected?: boolean;
   onPress: () => void;
-  icon?: 'clock' | 'repeat' | 'calendar';
+  icon?: 'clock' | 'repeat' | 'calendar' | 'bell';
 }) {
   const colors = useThemeColors();
   return (
@@ -93,7 +107,7 @@ function WebDateTime({ value, onPick }: { value?: number; onPick: (ts: number) =
  * When to be reminded: quick choices ("Tomorrow morning"), any day and time,
  * and whether it comes back every day, week or month.
  */
-export function DueDatePicker({ value, onChange, repeat, onRepeatChange }: DueDatePickerProps) {
+export function DueDatePicker({ value, onChange, repeat, onRepeatChange, leads, onLeadsChange, inCalendar, onCalendarChange }: DueDatePickerProps) {
   const colors = useThemeColors();
   // Native picking is two steps on Android (a day, then a time).
   const [step, setStep] = useState<'closed' | 'date' | 'time'>('closed');
@@ -140,7 +154,7 @@ export function DueDatePicker({ value, onChange, repeat, onRepeatChange }: DueDa
             <Icon name={repeat ? 'repeat' : 'clock'} size={14} color={isOverdue ? colors.error : colors.accent} />
             <Text className="font-sans-medium text-sm ml-2" style={{ color: isOverdue ? colors.error : colors.accent }}>
               {formatReminder(value)}
-              {repeat ? ` · ${REPEAT_LABEL[repeat].toLowerCase()}` : ''}
+              {repeat ? ` · ${repeatLabel(repeat, value).toLowerCase()}` : ''}
             </Text>
           </View>
           <Pressable
@@ -174,15 +188,44 @@ export function DueDatePicker({ value, onChange, repeat, onRepeatChange }: DueDa
 
       {value && onRepeatChange ? (
         <View className="flex-row flex-wrap gap-2">
-          {REPEATS.map((r) => (
+          {repeatChoices(value, repeat).map((r) => (
             <Chip
               key={r ?? 'once'}
-              label={r ? REPEAT_LABEL[r] : 'Once'}
+              label={r ? repeatLabel(r, value) : 'Once'}
               icon={r ? 'repeat' : undefined}
               selected={repeat === r}
               onPress={() => onRepeatChange(r)}
             />
           ))}
+        </View>
+      ) : null}
+
+      {value && !repeat && onLeadsChange ? (
+        <View className="gap-2">
+          <Text className="font-sans text-xs text-fg-tertiary">Heads-up before (for an appointment)</Text>
+          <View className="flex-row flex-wrap gap-2">
+            {LEAD_CHOICES.map((c) => {
+              const on = !!leads?.includes(c.lead);
+              return (
+                <Chip
+                  key={String(c.lead)}
+                  label={c.short}
+                  icon={on ? 'bell' : undefined}
+                  selected={on}
+                  onPress={() => {
+                    const next = on ? (leads ?? []).filter((l) => l !== c.lead) : [...(leads ?? []), c.lead];
+                    onLeadsChange(next.length > 0 ? next : undefined);
+                  }}
+                />
+              );
+            })}
+          </View>
+        </View>
+      ) : null}
+
+      {value && onCalendarChange && calendarAvailable ? (
+        <View className="flex-row flex-wrap gap-2">
+          <Chip label={inCalendar ? 'In your calendar' : 'Add to calendar'} icon="calendar" selected={!!inCalendar} onPress={() => onCalendarChange(!inCalendar)} />
         </View>
       ) : null}
 
@@ -227,7 +270,7 @@ export function DueDateLabel({ dueDate, repeat }: { dueDate: number; repeat?: Re
       <Icon name={repeat ? 'repeat' : 'clock'} size={14} color={isOverdue ? colors.error : colors.fgTertiary} />
       <Text className="font-sans text-sm ml-1.5" style={{ color: isOverdue ? colors.error : colors.fgTertiary }}>
         {formatDueDate(dueDate)}
-        {repeat ? ` · ${REPEAT_LABEL[repeat].toLowerCase()}` : ''}
+        {repeat ? ` · ${repeatLabel(repeat, dueDate).toLowerCase()}` : ''}
       </Text>
     </View>
   );

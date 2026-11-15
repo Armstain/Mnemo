@@ -38,8 +38,18 @@ standing in a shop. Mnemo optimises for two moments:
   quiet project was left, and ideas kept for later. Worked out on the phone,
   so it's instant and works offline.
 - ⏰ **Reminders that actually fire** — natural language ("remind me in 20 mins"),
-  repeats, several timed steps in one note ("bring the file at 10, send it at 11"),
-  and serious reliability engineering for Android's battery-saving habits.
+  repeats ("every weekday", "every other Wednesday", "every 3 days", "the last
+  Friday of every month", "every year"), several timed steps in one note ("bring
+  the file at 10, send it at 11"), and serious reliability engineering for
+  Android's battery-saving habits. A quiet "Reminder set" notification right
+  after a note sets one has **Undo / Change / Add note**, so a wrong time can be
+  fixed without opening the app first.
+- 📅 **Appointments** — somewhere to be ("dentist tomorrow at 10") also gets
+  heads-ups before it (the evening before and an hour before by default; a week,
+  a day, 2 h, 30 or 15 min to choose from). A heads-up's button is **OK**, which
+  only puts it away; the reminder itself keeps **Done**. Optionally, appointments
+  go into the phone's calendar and stay in step with the thread, without alarms
+  of their own.
 - 📍 **Place reminders (optional)** — off until you turn them on in Settings →
   Location. Save a place by dropping a pin on the map or using where you are,
   then get reminded on arriving or leaving, even with the app closed ("when I

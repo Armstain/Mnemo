@@ -29,6 +29,7 @@ import { LabeledInput } from '@/components/ui/LabeledInput';
 import { noFocusRing } from '@/utils/web';
 import { DetailSkeleton } from '@/components/ui/NoteListSkeleton';
 import { DueDatePicker, DueDateLabel } from '@/components/ui/DueDatePicker';
+import { requestCalendarPermission } from '@/lib/calendar';
 import { PlaceReminderField, PlaceReminderLabel } from '@/components/thread/PlaceReminderField';
 import { ThreadRing } from '@/components/ui/ThreadRing';
 import { EntryCard } from '@/components/thread/EntryCard';
@@ -66,7 +67,8 @@ import { reportFlightTarget } from '@/lib/card-flight';
 export default function ThreadScreen() {
   const enter = useEnter();
   const insets = useSafeAreaInsets();
-  const { id } = useLocalSearchParams<{ id: string }>();
+  // `edit=reminder`: opened from "Change" on a "Reminder set" notification, straight into editing.
+  const { id, edit } = useLocalSearchParams<{ id: string; edit?: string }>();
   const store = useMnemoStore();
   const {
     items,
@@ -145,6 +147,14 @@ export default function ThreadScreen() {
     setEditWhereLeftOff(thread.whereLeftOff ?? '');
     setIsEditing(true);
   };
+
+  const openedToEdit = React.useRef<string | null>(null);
+  React.useEffect(() => {
+    if (edit !== 'reminder' || !thread || openedToEdit.current === thread.id) return;
+    openedToEdit.current = thread.id;
+    startEditing();
+    router.setParams({ edit: undefined });
+  }, [edit, thread?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const [related, setRelated] = React.useState<RelatedThread[]>([]);
   React.useEffect(() => {
@@ -496,6 +506,16 @@ export default function ThreadScreen() {
                     onChange={(d) => updateItem(thread.id, d ? rescheduled(thread, d) : { dueDate: undefined, laterSteps: undefined })}
                     repeat={thread.repeat}
                     onRepeatChange={(r) => updateItem(thread.id, { repeat: r })}
+                    leads={thread.leads}
+                    onLeadsChange={(leads) => updateItem(thread.id, { leads })}
+                    inCalendar={thread.inCalendar}
+                    onCalendarChange={async (on) => {
+                      if (on && !(await requestCalendarPermission())) {
+                        showToast({ message: 'Mnemo isn\'t allowed to add to your calendar. You can allow it in the phone\'s settings.' });
+                        return;
+                      }
+                      updateItem(thread.id, { inCalendar: on || undefined });
+                    }}
                   />
                 </View>
                 {placesOn ? (
