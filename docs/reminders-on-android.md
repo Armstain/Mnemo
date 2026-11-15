@@ -50,10 +50,12 @@ How a thread's reminder is laid out as alarms (`lib/reminders.ts`):
 | Every N days/weeks/months, nth weekday of the month | The next few times as one-off alarms (`:occ:<at>`), at most 12 and within 45 days, topped up by `rearmReminders` whenever the app opens. Not opened for over 45 days (or 12 times), those stop until it is. |
 | Heads-ups before a one-off appointment | One-off alarms (`:lead:<at>`) in the `heads-up` category. |
 
-A heads-up's **OK** has `opensAppToForeground: false`: expo-notifications runs
-`lib/notification-task.ts` in the background, which dismisses it. To test:
-set a reminder for a few minutes ahead with a "15 min" heads-up, close Mnemo,
-and tap OK when it comes. It should go away without opening the app.
+A heads-up's **OK** opens Mnemo like the other buttons and only dismisses that
+notification. It is deliberately not a background action: registering a
+notification task (`Notifications.registerTaskAsync`) makes expo-notifications
+start a headless JS run for every button tapped while the app is closed, racing
+the app's own launch, and that race can break TaskManager, which the geofence
+task (place reminders) depends on.
 
 "Reminder set" notices go on their own quiet channel (`saved`, no sound) and
 are not shown as a banner while the app is open, since the toast says the

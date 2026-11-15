@@ -71,7 +71,7 @@ export function ReminderActions() {
       const text = response.actionIdentifier === 'reply' ? response.userText?.trim() : undefined;
       Notifications.dismissNotificationAsync(identifier).catch(() => {});
 
-      // A heads-up's OK: only that notification goes (lib/notification-task.ts does it with the app closed).
+      // A heads-up's OK: only that notification goes; the reminders still to come stay, and nothing opens.
       if (response.actionIdentifier === 'ok') return;
 
       // "Reminder set" (lib/saved-notice.ts): take it back, change it, or add a note by voice.

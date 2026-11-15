@@ -62,21 +62,6 @@ async function cancelLaterSteps(id: string, scheduled?: NotificationRequest[]): 
   }
 }
 
-/** Answers notification buttons that don't open the app (lib/notification-task.ts defines it). */
-export const NOTIFICATION_ACTION_TASK = 'mnemo-notification-action';
-let actionsRegistered = false;
-
-/** Once per launch; the phone keeps it between launches, and asking again is harmless. */
-export async function registerNotificationActions(): Promise<void> {
-  if (actionsRegistered || Platform.OS === 'web') return;
-  actionsRegistered = true;
-  try {
-    await Notifications.registerTaskAsync(NOTIFICATION_ACTION_TASK);
-  } catch {
-    actionsRegistered = false;
-  }
-}
-
 export const REMINDER_CATEGORY = 'reminder';
 /** A heads-up before an appointment: OK puts it away and nothing else, so the reminders still to come come all the same. */
 export const HEADS_UP_CATEGORY = 'heads-up';
@@ -100,9 +85,12 @@ export async function ensureReminderCategory(): Promise<void> {
       options: { opensAppToForeground: true },
     },
   ]);
-  // OK runs in the background (lib/notification-task.ts): the app doesn't open for it.
+  // OK opens the app like every other button and does nothing else (components/ReminderActions.tsx).
+  // Not a background action on purpose: registering a notification task makes expo-notifications
+  // start a headless JS run for every button tapped while the app is closed, racing the app's own
+  // launch, and that race can break TaskManager, which the place reminders' geofence task runs on.
   await Notifications.setNotificationCategoryAsync(HEADS_UP_CATEGORY, [
-    { identifier: 'ok', buttonTitle: 'OK', options: { opensAppToForeground: false } },
+    { identifier: 'ok', buttonTitle: 'OK', options: { opensAppToForeground: true } },
   ]);
   await Notifications.setNotificationCategoryAsync(SAVED_CATEGORY, [
     { identifier: 'undo', buttonTitle: 'Undo', options: { opensAppToForeground: true } },

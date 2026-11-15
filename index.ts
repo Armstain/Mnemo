@@ -15,6 +15,4 @@ if (Platform.OS === 'android' && Constants.executionEnvironment !== ExecutionEnv
 // Expo Go can't run background location.
 if ((Platform.OS === 'android' || Platform.OS === 'ios') && Constants.executionEnvironment !== ExecutionEnvironment.StoreClient) {
   require('./lib/geofence-task');
-  // A heads-up's OK, answered without opening the app (lib/notification-task.ts).
-  require('./lib/notification-task');
 }

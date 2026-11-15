@@ -22,7 +22,6 @@ import 'react-native-reanimated';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { Notifications, notificationsAvailable } from '@/lib/notifications';
-import { registerNotificationActions } from '@/lib/reminders';
 import "../global.css";
 
 import { ONBOARDING_KEY } from '@/app/onboarding';
@@ -66,8 +65,6 @@ if (notificationsAvailable) {
       return { shouldShowBanner: !quiet, shouldShowList: true, shouldPlaySound: !quiet, shouldSetBadge: false };
     },
   });
-  // A heads-up's OK is answered in the background (lib/notification-task.ts).
-  registerNotificationActions();
 }
 
 // Anything that breaks while drawing shows a way back instead of a blank
