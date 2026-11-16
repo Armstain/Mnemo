@@ -1,5 +1,6 @@
 import { tokenize } from '@/lib/bm25';
 import { telling } from '@/lib/filing';
+import { ASKING_WORDS, rootOf } from '@/lib/lang-packs';
 import { entryText } from '@/lib/threads';
 import { dot } from '@/lib/vector-math';
 import type { Entry, MnemoItem } from '@/types/mnemo';
@@ -121,32 +122,14 @@ export function chunkEntries(items: MnemoItem[], entries: Entry[]): Chunk[] {
   return out;
 }
 
-// Words of asking, not of what's asked about.
-const ASKING = new Set(
-  (
-    'said say says tell told mention mentioned wrote write noted anything something everything thing things ' +
-    'bolechi bolechilam bolsi likhechi likhechilam niye somporke ki kobe koto kothay keno'
-  ).split(' '),
-);
-
 /** The words of a question that could be found in a note. */
 export function queryTerms(query: string): string[] {
   const all = [...new Set(tokenize(query))];
-  const kept = [...telling(all)].filter((t) => !ASKING.has(t));
+  const kept = [...telling(all)].filter((t) => !ASKING_WORDS.has(t));
   // "what did I do" has none: better the plain words than nothing.
   return kept.length > 0 ? kept : all;
 }
 
-/**
- * What an English word keeps across its forms: "delivered" and "delivery",
- * "blocking" and "blocker". Undefined when too little would be left to
- * mean anything. Bangla words already lose their endings in `tokenize`.
- */
-function rootOf(term: string): string | undefined {
-  if (!/^[a-z]+$/.test(term) || term.length < 5) return undefined;
-  const root = term.replace(/(ing|ed|er|ery|ion|ions|ies|es|ly|y|e)$/, '');
-  return root.length >= 4 ? root : undefined;
-}
 /** Another form of the word counts this much of the word itself. */
 const FORM_WEIGHT = 0.8;
 

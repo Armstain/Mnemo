@@ -1,3 +1,4 @@
+import { stemOf } from '@/lib/lang-packs';
 import type { MnemoItem } from '@/types/mnemo';
 
 const K1 = 1.5; // Term frequency saturation — controls how quickly TF effect diminishes
@@ -8,30 +9,14 @@ const PREFIX_WEIGHT = 0.7;
 /** Minimum number of characters for a token to be indexed. Excludes noise like "a", "I". */
 const MIN_TOKEN_LENGTH = 2;
 
-// Bangla words carry their endings ("ট্যুরের", "ঢাকায়", "বইগুলো"); without
-// them "ট্যুর" finds "ট্যুরের". Longest first.
-const BANGLA_ENDINGS = ['গুলোর', 'গুলো', 'গুলি', 'দের', 'েরা', 'ের', 'এর', 'য়ের', 'কে', 'তে', 'টা', 'টি', 'টার', 'য়', 'র', 'ে']
-  .map((e) => e.normalize('NFC'))
-  .sort((a, b) => b.length - a.length);
-
-function stripBanglaEnding(token: string): string {
-  for (const ending of BANGLA_ENDINGS) {
-    if (token.length > ending.length + 1 && token.endsWith(ending)) return token.slice(0, -ending.length);
+function gapPattern(): RegExp {
+  try {
+    return new RegExp('[^a-z0-9\\u00c0-\\u024f\\u0980-\\u09ff\\p{L}\\p{M}\\p{Nd}]+|[\\ufe00-\\ufe0f\\u20e3]+', 'gu');
+  } catch {
+    return /[^a-z0-9\u00c0-\u024f\u0980-\u09ff]+/g;
   }
-  return token;
 }
-
-function stem(token: string): string {
-  if (/[\u0980-\u09FF]/.test(token)) {
-    // Twice, so a word and its forms land on the same key: "ডাক্তার" loses
-    // its last "র" (it reads like "মামার"), so "ডাক্তারকে" and "ডাক্তারের"
-    // must lose it too, not stop at "ডাক্তার". A key, not a word.
-    return stripBanglaEnding(stripBanglaEnding(token));
-  }
-  // English plurals: "tickets" finds "ticket".
-  if (token.length > 3 && token.endsWith('s') && !token.endsWith('ss')) return token.slice(0, -1);
-  return token;
-}
+const GAP = gapPattern();
 
 /**
  * Words for matching, in any script the app meets: Latin (with accents),
@@ -45,11 +30,11 @@ export function tokenize(text: string): string[] {
     // Older engines: compare as typed.
   }
   return normal
-    .replace(/[^a-z0-9\u00c0-\u024f\u0980-\u09ff]+/g, ' ')
+    .replace(GAP, ' ')
     .replace(/[\u0964\u0965]/g, ' ')
     .split(/\s+/)
     .filter((t) => t.length >= MIN_TOKEN_LENGTH)
-    .map(stem);
+    .map(stemOf);
 }
 
 export interface ScoredItem {

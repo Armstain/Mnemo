@@ -1,4 +1,5 @@
 import { bm25Scored, tokenize } from '@/lib/bm25';
+import { COMMON_WORDS } from '@/lib/lang-packs';
 import { dot } from '@/lib/vector-math';
 import { entryText, newestFirst } from '@/lib/threads';
 import { trackedMetrics } from '@/lib/measures';
@@ -109,22 +110,9 @@ export function gatherCandidates(input: {
   });
 }
 
-// Words too common to say two notes are about the same thing.
-const COMMON = new Set(
-  (
-    'the and for with this that from have has had was were are will would should could about into over just ' +
-    'need today tomorrow yesterday then also some more very really what when where which who why how note ' +
-    'taka spent paid got went did done make made take took call called get buy' +
-    ' ami amar tumi ache ase gese hobe korte korbo kore kal aj ajke'
-  ).split(' '),
-);
-const COMMON_BN = new Set('আমি আমার আজ কাল আজকে হবে করতে করবো করে আছে গেছে টাকা এবং আর'.split(' ').map((w) => w.normalize('NFC')));
-
 /** The words in a text that could say what it's about. */
 export function telling(words: string[]): Set<string> {
-  return new Set(
-    words.filter((w) => w.length >= 3 && !/^\d+$/.test(w) && !COMMON.has(w) && !COMMON_BN.has(w)),
-  );
+  return new Set(words.filter((w) => w.length >= 3 && !/^\d+$/.test(w) && !COMMON_WORDS.has(w)));
 }
 
 /**
