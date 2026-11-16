@@ -2,7 +2,7 @@
   "expo": {
     "name": "Mnemo",
     "slug": "mnemo-ai",
-    "version": "2.0.2",
+    "version": "2.0.3",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "mnemo",
@@ -18,7 +18,7 @@
         "backgroundColor": "#FAF8F3"
       },
       "package": "com.mnemo.app",
-      "versionCode": 4,
+      "versionCode": 5,
       "permissions": [
         "RECORD_AUDIO",
         "SCHEDULE_EXACT_ALARM"
