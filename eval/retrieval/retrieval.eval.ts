@@ -1,8 +1,9 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { GoogleGenAI } from '@google/genai';
+import { GoogleGenAI, Type } from '@google/genai';
 import { expect, it } from 'vitest';
 import { chunkEntries, retrieve, textHash, type Chunk, type RetrieveOptions } from '@/lib/retrieve';
+import { cleanSearchTerms, SEARCH_TERMS_RULE } from '@/lib/search-terms';
 import type { Entry, MnemoItem } from '@/types/mnemo';
 
 // How well "find what I said about X" finds it: recall@5 over hand-written
@@ -78,21 +79,72 @@ async function embed(ai: GoogleGenAI, model: string, texts: string[], taskType: 
   const missing = [...new Set(texts)].filter((t) => !cache[textHash(t)]);
   for (let i = 0; i < missing.length; i += 20) {
     const batch = missing.slice(i, i + 20);
-    const res = await ai.models.embedContent({ model, contents: batch, config: { taskType, outputDimensionality: DIMS } });
+    const request = {
+      model,
+      contents: batch.map((text) => ({ parts: [{ text }] })),
+      config: { taskType, outputDimensionality: DIMS },
+    };
+    const res = await ai.models.embedContent(request).catch(async (e) => {
+      if ((e as { status?: number }).status !== 429) throw e;
+      console.log(`${model}: per-minute limit reached, waiting 65s`);
+      await new Promise((done) => setTimeout(done, 65_000));
+      return ai.models.embedContent(request);
+    });
     batch.forEach((t, j) => {
       const values = res.embeddings?.[j]?.values;
       if (!values) throw new Error(`${model} returned no embedding`);
       cache[textHash(t)] = [...normalize(values)].map((x) => Math.round(x * 1e5) / 1e5);
     });
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, JSON.stringify(cache));
   }
-  fs.mkdirSync(path.dirname(file), { recursive: true });
-  fs.writeFileSync(file, JSON.stringify(cache));
   return new Map(texts.map((t) => [textHash(t), Float32Array.from(cache[textHash(t)])]));
+}
+
+const TERMS_SCHEMA = {
+  type: Type.ARRAY,
+  items: {
+    type: Type.OBJECT,
+    properties: { id: { type: Type.STRING }, searchTerms: { type: Type.ARRAY, items: { type: Type.STRING } } },
+    required: ['id', 'searchTerms'],
+  },
+};
+
+async function searchTerms(ai: GoogleGenAI, models: string[]): Promise<Map<string, string[]>> {
+  const file = path.resolve(HERE, '.cache', 'search-terms.json');
+  const cache: Record<string, string[]> = fs.existsSync(file) ? JSON.parse(fs.readFileSync(file, 'utf8')) : {};
+  const notes = threads.flatMap((t) => t.entries.map((e) => ({ id: e.id, key: textHash(`${SEARCH_TERMS_RULE} ${e.text}`), text: e.text })));
+  const missing = notes.filter((n) => !cache[n.key]);
+  for (let i = 0; i < missing.length; i += 20) {
+    const batch = missing.slice(i, i + 20);
+    const contents = `For each note below, return "searchTerms": ${SEARCH_TERMS_RULE}\n\n${batch.map((n) => `--- id=${n.id}\n${n.text}`).join('\n')}`;
+    let text: string | undefined;
+    let lastError: unknown;
+    for (const model of models) {
+      try {
+        text = (await ai.models.generateContent({ model, contents, config: { responseMimeType: 'application/json', responseSchema: TERMS_SCHEMA } })).text;
+        if (text) {
+          console.log(`search terms: notes ${i + 1}-${i + batch.length} of ${missing.length} (${model})`);
+          break;
+        }
+      } catch (e) {
+        lastError = e;
+        console.log(`search terms: ${model} did not answer, trying the next model`);
+      }
+    }
+    if (!text) throw lastError ?? new Error('No model wrote search terms');
+    const answers = JSON.parse(text) as { id: string; searchTerms: unknown }[];
+    for (const n of batch) cache[n.key] = cleanSearchTerms(answers.find((a) => a.id === n.id)?.searchTerms) ?? [];
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, JSON.stringify(cache));
+  }
+  return new Map(notes.map((n) => [n.id, cache[n.key]]));
 }
 
 interface Setup {
   name: string;
   options: (q: Question) => RetrieveOptions;
+  chunks?: Chunk[];
 }
 
 /**
@@ -105,7 +157,7 @@ function recall(setup: Setup): Record<string, number> {
   for (const q of questions) {
     // Counted by note: two passages of one note are one result.
     const found: string[] = [];
-    for (const hit of retrieve(q.q, chunks, { ...setup.options(q), limit: 20 })) {
+    for (const hit of retrieve(q.q, setup.chunks ?? chunks, { ...setup.options(q), limit: 20 })) {
       if (!found.includes(hit.chunk.entryId)) found.push(hit.chunk.entryId);
     }
     const top = found.slice(0, K);
@@ -126,8 +178,15 @@ it(`recall@${K} over ${questions.length} questions`, async () => {
 
   const key = process.env.GEMINI_API_KEY;
   const models = (process.env.EVAL_EMBED_MODELS ?? 'gemini-embedding-2').split(',').map((m) => m.trim()).filter(Boolean);
+  if (key && !/^[\w.-]+$/.test(key)) throw new Error('GEMINI_API_KEY is not a real key: replace the … placeholder with your own key');
   if (key) {
-    const ai = new GoogleGenAI({ apiKey: key });
+    const ai = new GoogleGenAI({ apiKey: key, httpOptions: { timeout: 60_000 } });
+    const terms = await searchTerms(ai, (process.env.EVAL_TERMS_MODEL ?? 'gemini-flash-latest,gemini-flash-lite-latest').split(',').map((m) => m.trim()).filter(Boolean));
+    const withTerms = chunkEntries(items, entries.map((e) => ({ ...e, searchTerms: terms.get(e.id) })));
+    setups.push(
+      { name: 'keyword + search terms', chunks: withTerms, options: () => ({ mode: 'keyword', rerank: false }) },
+      { name: 'keyword + search terms + rerank', chunks: withTerms, options: () => ({ mode: 'keyword', rerank: true }) },
+    );
     for (const model of models) {
       const chunkVectors = await embed(ai, model, chunks.map((c) => c.text), 'RETRIEVAL_DOCUMENT');
       const threadText = new Map(items.map((i) => [i.id, `${i.title} ${i.content}`]));
@@ -152,7 +211,7 @@ it(`recall@${K} over ${questions.length} questions`, async () => {
     `|---|${langs.map(() => '---').join('|')}|---|`,
     ...rows.map((r) => `| ${r.name} | ${langs.map((l) => pct(r.scores[l])).join(' | ')} | ${r.scores.mrr.toFixed(2)} |`),
   ].join('\n');
-  const note = key ? '' : '\n\nNo GEMINI_API_KEY: the vector-only, hybrid and hybrid + rerank rows were not run.';
+  const note = key ? '' : '\n\nNo GEMINI_API_KEY: the search-terms, vector-only, hybrid and hybrid + rerank rows were not run.';
   const report = `${threads.length} threads, ${entries.length} notes, ${chunks.length} passages, ${questions.length} questions.\n\n${table}${note}\n`;
   console.log(`\n${report}`);
   fs.writeFileSync(path.resolve(HERE, 'RESULTS.md'), `# Retrieval evaluation\n\nWritten by \`npm run eval:retrieval\`.\n\n${report}`);

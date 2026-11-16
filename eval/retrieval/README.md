@@ -6,7 +6,8 @@ fused, and both fused then ranked again.
 
 ```bash
 npm run eval:retrieval                                  # words only, no key needed
-GEMINI_API_KEY=… npm run eval:retrieval                 # adds vector-only, hybrid, hybrid + rerank
+GEMINI_API_KEY=… npm run eval:retrieval                 # adds search terms, vector-only, hybrid, hybrid + rerank
+EVAL_TERMS_MODEL=gemini-flash-latest,gemini-flash-lite-latest GEMINI_API_KEY=… npm run eval:retrieval   # the models that write the search terms, tried in order
 EVAL_EMBED_MODELS=gemini-embedding-2,gemini-embedding-001 GEMINI_API_KEY=… npm run eval:retrieval
 EVAL_NOTES=mine.json EVAL_QUESTIONS=mine-questions.json GEMINI_API_KEY=… npm run eval:retrieval
 ```

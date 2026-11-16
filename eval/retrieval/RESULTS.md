@@ -8,5 +8,8 @@ Written by `npm run eval:retrieval`.
 |---|---|---|---|---|---|---|
 | keyword only | 93.3% | 90.0% | 100.0% | 100.0% | 100.0% | 0.77 |
 | keyword + rerank | 93.3% | 90.0% | 100.0% | 100.0% | 100.0% | 0.76 |
-
-No GEMINI_API_KEY: the vector-only, hybrid and hybrid + rerank rows were not run.
+| keyword + search terms | 96.7% | 95.0% | 100.0% | 100.0% | 100.0% | 0.89 |
+| keyword + search terms + rerank | 93.3% | 90.0% | 100.0% | 100.0% | 100.0% | 0.84 |
+| vector only (gemini-embedding-2) | 100.0% | 100.0% | 100.0% | 100.0% | 100.0% | 0.90 |
+| hybrid (gemini-embedding-2) | 100.0% | 100.0% | 100.0% | 100.0% | 100.0% | 0.88 |
+| hybrid + rerank (gemini-embedding-2) | 100.0% | 100.0% | 100.0% | 100.0% | 100.0% | 0.92 |
