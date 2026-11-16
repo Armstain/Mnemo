@@ -135,11 +135,11 @@ export function caughtLate(r: PlaceReminder, place: Place, here: Point & { accur
 
 // ─── Repeating ──────────────────────────────────────────────────
 // A crossing that would ring (onPlaceEvent / onFix said 'fire') goes through `ringNow`: a one-shot
-// always rings; a repeating one only on its days and once a day, so a phone bouncing at the edge
-// of the circle, or two visits in a day, ring once. Either way `afterCrossing` notes which side the
+// always rings; a repeating one only on its days and after an hour on the other side, so a phone
+// bouncing at the edge of the circle, or stepping out briefly, rings once. Either way `afterCrossing` notes which side the
 // phone is now on, so the next real crossing counts. All of it in the phone's local time.
 
-const DAY_MS = 24 * 60 * 60 * 1000;
+export const AWAY_MS = 60 * 60 * 1000;
 
 /** Fri–Sat weekends, by time zone (the device region, where the language often says "en-US"). */
 const FRI_SAT_ZONES = new Set([
@@ -212,11 +212,12 @@ const localDay = (at: number) => {
 };
 
 /** Whether a crossing that would ring rings now. */
-export function ringNow(r: Pick<PlaceReminder, 'repeat' | 'lastFiredAt' | 'days' | 'doneAt'>, now: number, weekend: number[] = phoneWeekend()): boolean {
+export function ringNow(r: Pick<PlaceReminder, 'repeat' | 'lastFiredAt' | 'sideAt' | 'days' | 'doneAt'>, now: number, weekend: number[] = phoneWeekend()): boolean {
   if (!r.repeat) return true;
   // Today's was already marked done (before it rang): the next one is another day.
-  if (r.doneAt !== undefined && localDay(r.doneAt) === localDay(now)) return false;
-  if (r.lastFiredAt !== undefined && now - r.lastFiredAt < DAY_MS && localDay(r.lastFiredAt) === localDay(now)) return false;
+  const rangToday = r.lastFiredAt !== undefined && localDay(r.lastFiredAt) === localDay(now);
+  if (!rangToday && r.doneAt !== undefined && localDay(r.doneAt) === localDay(now)) return false;
+  if (r.lastFiredAt !== undefined && now - Math.max(r.lastFiredAt, r.sideAt ?? 0) < AWAY_MS) return false;
   if (r.repeat === 'always') return true;
   if (r.repeat === 'days') return ringDays(r).includes(new Date(now).getDay());
   const isWeekend = weekend.includes(new Date(now).getDay());
@@ -229,7 +230,7 @@ export function ringNow(r: Pick<PlaceReminder, 'repeat' | 'lastFiredAt' | 'days'
  * after the next real crossing (leave and come back, for "when I get to").
  */
 export function afterCrossing(r: PlaceReminder, now: number, rang: boolean, late = false): PlaceReminder {
-  const side = { insideAtSet: r.on === 'arrive' };
+  const side = { insideAtSet: r.on === 'arrive', sideAt: now };
   if (!rang) return { ...r, ...side };
   if (!r.repeat) return { ...r, firedAt: now, ...(late ? { caughtLate: true } : {}) };
   return { ...r, ...side, lastFiredAt: now, ...(late ? { caughtLate: true } : { caughtLate: undefined }) };
@@ -237,7 +238,7 @@ export function afterCrossing(r: PlaceReminder, now: number, rang: boolean, late
 
 // ─── Occurrences ────────────────────────────────────────────────
 // A repeating reminder is a definition (place, side, days: kept until the person changes or
-// removes it) that rings at most once a day. Each ring is an occurrence, identified by its day
+// removes it) that rings again only after an hour away. The day's latest ring is its occurrence
 // (`lastFiredAt`); marking it done (`doneAt`) completes that occurrence only. A one-shot
 // reminder has a single occurrence, the ring that set `firedAt`.
 

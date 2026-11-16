@@ -316,18 +316,22 @@ async function save(item: MnemoItem, place: PlaceReminder): Promise<void> {
 async function show(item: MnemoItem, placeName: string | undefined, note?: string): Promise<void> {
   const step = item.place?.step || item.nextStep;
   const where = placeLabel(item.place!, placeName ? { name: placeName } : undefined);
-  await ringPlaceReminder({
-    title: item.title,
-    body: `${where}${note ? ` (${note})` : ''}${step ? `\nNext: ${step}` : ''}`,
-    data: { itemId: item.id, kind: PLACE_NOTIFICATION },
-  });
+  await ringPlaceReminder(
+    {
+      title: item.title,
+      body: `${where}${note ? ` (${note})` : ''}${step ? `\nNext: ${step}` : ''}`,
+      data: { itemId: item.id, kind: PLACE_NOTIFICATION },
+    },
+    undefined,
+    `place-${item.id}`,
+  );
 }
 
 /** So two quick reports can't ring one reminder twice. */
 const rung = new Set<string>();
 
 /**
- * A crossing that would ring. A repeating reminder on the wrong day, or one that already rang today,
+ * A crossing that would ring. A repeating reminder on the wrong day, or back within the hour,
  * only notes the side the phone is on (lib/places.ts `ringNow`, `afterCrossing`). True when it rang.
  */
 async function fire(item: MnemoItem, place: Place | undefined, now: number, note?: string, late = false): Promise<boolean> {
@@ -354,7 +358,7 @@ export async function handleGeofenceEvent(event: PlaceEvent, placeId: string, no
       await fire(item, place, now);
     } else if (action === 'inside' || action === 'outside') {
       const inside = action === 'inside';
-      if (item.place.insideAtSet !== inside) await save(item, { ...item.place, insideAtSet: inside });
+      if (item.place.insideAtSet !== inside) await save(item, { ...item.place, insideAtSet: inside, sideAt: now });
     }
   }
 }
@@ -370,7 +374,8 @@ async function applyFix(items: MnemoItem[], here: Fix, opening: boolean): Promis
     if (!place) continue;
     const action = onFix(r, place, here);
     if (action === 'inside' || action === 'outside') {
-      await save(item, { ...r, insideAtSet: action === 'inside' });
+      const inside = action === 'inside';
+      await save(item, { ...r, insideAtSet: inside, sideAt: r.insideAtSet === inside ? r.sideAt : now });
     } else if (action === 'fire' && opening) {
       // Watched and still missed: the phone held it back. Unwatched: only noticeable now.
       const rang = await fire(item, place, now, watching ? 'late: your phone held it back' : 'noticed when you opened Mnemo', watching);

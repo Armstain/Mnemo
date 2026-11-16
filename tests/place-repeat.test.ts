@@ -68,12 +68,12 @@ describe('whether a crossing rings', () => {
     expect(ringNow(r, on(6), BD)).toBe(true);
     expect(ringNow(r, on(2), BD)).toBe(false);
   });
-  it('at most once a day: a second visit, or the edge of the circle bouncing, stays quiet', () => {
-    const r = arrive({ repeat: 'always', lastFiredAt: on(2, 9) });
+  it('quiet until an hour away: the edge bouncing or a short trip out stays quiet, a real return rings', () => {
+    const r = arrive({ repeat: 'always', lastFiredAt: on(2, 9), sideAt: on(2, 9) });
     expect(ringNow(r, on(2, 9) + 10 * 60 * 1000, BD)).toBe(false);
-    expect(ringNow(r, on(2, 18), BD)).toBe(false);
-    // The next morning is a new day, even under 24 hours later.
-    expect(ringNow(r, on(3, 7), BD)).toBe(true);
+    expect(ringNow({ ...r, sideAt: on(2, 17) }, on(2, 17) + 30 * 60 * 1000, BD)).toBe(false);
+    expect(ringNow({ ...r, sideAt: on(2, 17) }, on(2, 18), BD)).toBe(true);
+    expect(ringNow({ ...r, sideAt: on(2, 18) }, on(3, 7), BD)).toBe(true);
   });
 });
 
@@ -105,7 +105,7 @@ describe('after a crossing', () => {
 });
 
 describe('a weekday reminder for the office, over a week (Dhaka)', () => {
-  it('rings arriving Sunday and Monday, not twice in a day, not on Friday', () => {
+  it('rings arriving Sunday and Monday, again after an hour out, not after a short trip out, not on Friday', () => {
     let r = arrive({ repeat: 'weekdays' });
     const rang: number[] = [];
     // [time, event]: arrive and leave each day; a second arrival Sunday afternoon.
@@ -113,6 +113,8 @@ describe('a weekday reminder for the office, over a week (Dhaka)', () => {
       [on(0, 9), 'enter'],
       [on(0, 13), 'exit'],
       [on(0, 14), 'enter'],
+      [on(0, 16), 'exit'],
+      [on(0, 16) + 20 * 60 * 1000, 'enter'],
       [on(0, 18), 'exit'],
       [on(1, 9), 'enter'],
       [on(1, 18), 'exit'],
@@ -127,10 +129,10 @@ describe('a weekday reminder for the office, over a week (Dhaka)', () => {
         if (ring) rang.push(at);
         r = afterCrossing(r, at, ring);
       } else if (action === 'inside' || action === 'outside') {
-        r = { ...r, insideAtSet: action === 'inside' };
+        r = { ...r, insideAtSet: action === 'inside', sideAt: at };
       }
     }
-    expect(rang).toEqual([on(0, 9), on(1, 9), on(0, 9, 1)]);
+    expect(rang).toEqual([on(0, 9), on(0, 14), on(1, 9), on(0, 9, 1)]);
     expect(isArmed({ status: 'active', place: r })).toBe(true);
   });
 });
@@ -156,12 +158,12 @@ describe('reading how often from the note', () => {
 });
 
 describe('specific days', () => {
-  it('rings only on the days picked, still once a day', () => {
+  it('rings only on the days picked, and not again within the hour', () => {
     const r = arrive({ repeat: 'days', days: [1, 4] });
     expect(ringNow(r, on(1), BD)).toBe(true);
     expect(ringNow(r, on(4), BD)).toBe(true);
     expect(ringNow(r, on(2), BD)).toBe(false);
-    expect(ringNow({ ...r, lastFiredAt: on(1, 8) }, on(1, 18), BD)).toBe(false);
+    expect(ringNow({ ...r, lastFiredAt: on(1, 8) }, on(1, 8) + 30 * 60 * 1000, BD)).toBe(false);
   });
   it('stored days that make no sense ring every day rather than never', () => {
     expect(ringDays({ days: [] })).toEqual([0, 1, 2, 3, 4, 5, 6]);

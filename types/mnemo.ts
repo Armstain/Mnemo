@@ -98,12 +98,13 @@ export interface PlaceReminder {
   insideAtSet?: boolean;
   /** When it fired. Set: it's done. A repeating reminder never sets it (see lastFiredAt). */
   firedAt?: number;
-  /** Rings on every crossing (on these days, at most once a day) instead of once. Unset: once. */
+  /** Rings on every crossing (on these days, after an hour away) instead of once. Unset: once. */
   repeat?: PlaceRepeat;
   /** With repeat 'days': the days it rings on, 0 = Sunday. */
   days?: number[];
   /** A repeating reminder's last ring. */
   lastFiredAt?: number;
+  sideAt?: number;
   /**
    * When the person marked the latest ring done (the notification's Done, or
    * the thread's Done on a repeating reminder). It completes that one

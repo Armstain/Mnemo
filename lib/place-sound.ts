@@ -76,13 +76,14 @@ export async function ensurePlaceChannel(sound: PlaceSound): Promise<string> {
 }
 
 /** Rings now: a place reminder, or the test from Settings. */
-export async function ringPlaceReminder(content: { title: string; body: string; data?: Record<string, unknown> }, sound?: PlaceSound): Promise<void> {
+export async function ringPlaceReminder(content: { title: string; body: string; data?: Record<string, unknown> }, sound?: PlaceSound, identifier?: string): Promise<void> {
   if (!notificationsAvailable) return;
   const chosen = sound ?? (await readPlaceSound());
   const channel = await ensurePlaceChannel(chosen);
   await ensureReminderCategory();
   const file = PLACE_SOUNDS.find((p) => p.key === chosen)?.file;
   await Notifications.scheduleNotificationAsync({
+    ...(identifier ? { identifier } : {}),
     content: {
       ...content,
       categoryIdentifier: REMINDER_CATEGORY,

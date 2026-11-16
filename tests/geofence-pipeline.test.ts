@@ -233,11 +233,14 @@ describe('a weekday reminder at the office, across days, in the background', () 
     expect(row('W').place?.repeat).toBe('always');
   });
 
-  it('a second arrival the same day does not ring again', async () => {
+  it('back within the hour does not ring again; back after an hour away does', async () => {
     await geofence.handleGeofenceEvent('enter', 'a', day(0));
     await geofence.handleGeofenceEvent('exit', 'a', day(0, 12));
-    await geofence.handleGeofenceEvent('enter', 'a', day(0, 13));
+    await geofence.handleGeofenceEvent('enter', 'a', day(0, 12) + 30 * 60 * 1000);
     expect(rang).toHaveLength(1);
+    await geofence.handleGeofenceEvent('exit', 'a', day(0, 14));
+    await geofence.handleGeofenceEvent('enter', 'a', day(0, 16));
+    expect(rang).toHaveLength(2);
   });
 });
 
