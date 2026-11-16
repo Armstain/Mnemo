@@ -78,6 +78,7 @@ interface Piece {
   /** Its words in order, for how close together a question's words fall. */
   tokens: string[];
   tf: Map<string, number>;
+  find: Map<string, number>;
 }
 
 // Entries are replaced, never changed in place, so what's read from one holds until it's gone.
@@ -86,11 +87,17 @@ const pieceCache = new WeakMap<Entry, Piece[]>();
 function piecesOf(entry: Entry): Piece[] {
   const cached = pieceCache.get(entry);
   if (cached) return cached;
+  const hidden = new Set(tokenize((entry.searchTerms ?? []).join(' ')));
   const pieces = splitText(entryText(entry)).map((text) => {
     const tokens = tokenize(text);
     const tf = new Map<string, number>();
     for (const t of tokens) tf.set(t, (tf.get(t) ?? 0) + 1);
-    return { text, hash: textHash(text), tokens, tf };
+    let find = tf;
+    if (hidden.size > 0) {
+      find = new Map(tf);
+      for (const t of hidden) if (!find.has(t)) find.set(t, 1);
+    }
+    return { text, hash: textHash(text), tokens, tf, find };
   });
   pieceCache.set(entry, pieces);
   return pieces;
@@ -226,7 +233,7 @@ export function retrieve(query: string, chunks: Chunk[], options: RetrieveOption
     if (!counts) {
       counts = new Map();
       for (const t of terms) {
-        const n = countOf(piece.tf, t, roots.get(t));
+        const n = countOf(piece.find, t, roots.get(t));
         if (n > 0) counts.set(t, n);
       }
       counted.set(c.id, counts);
@@ -356,7 +363,7 @@ function fallbackPiece(chunk: Chunk): Piece {
   const tokens = tokenize(chunk.text);
   const tf = new Map<string, number>();
   for (const t of tokens) tf.set(t, (tf.get(t) ?? 0) + 1);
-  const piece = { text: chunk.text, hash: chunk.hash, tokens, tf };
+  const piece = { text: chunk.text, hash: chunk.hash, tokens, tf, find: tf };
   pieceOf.set(chunk, piece);
   return piece;
 }

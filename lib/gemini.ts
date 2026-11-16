@@ -4,6 +4,7 @@ import { isLiteModel, isMissingModel, isOverloaded, pickTextModels, pickTtsModel
 import { aiEnabled, setAiNotice } from './ai-mode';
 import { describeEmpty, EmptyResponseError, isBlocked, type EmptyAttempt, type InputInfo } from './empty-response';
 import { describePages, type PageContext } from './link-preview';
+import { SEARCH_TERMS_RULE } from './search-terms';
 
 /** Thrown instead of calling Google when the person chose offline. */
 export class AiOffError extends Error {
@@ -212,6 +213,11 @@ const DUMP_PROPERTIES = {
     items: { type: Type.STRING },
     description: '2-5 short lowercase keyword tags capturing the topic (e.g. "passport", "travel", "recipe"). No hashtags, no categories already covered by suggestedCategory.',
   },
+  searchTerms: {
+    type: Type.ARRAY,
+    items: { type: Type.STRING },
+    description: SEARCH_TERMS_RULE,
+  },
   suggestedCategory: { type: Type.STRING, enum: VALID_CATEGORIES },
   kind: {
     type: Type.STRING,
@@ -248,7 +254,7 @@ const THREAD_MATCH_SCHEMA = {
   required: ['match', 'threadId', 'confidence', 'reason'],
 };
 
-const DUMP_REQUIRED = ['title', 'notes', 'links', 'tags', 'suggestedCategory', 'kind', 'summary', 'measures'];
+const DUMP_REQUIRED = ['title', 'notes', 'links', 'tags', 'searchTerms', 'suggestedCategory', 'kind', 'summary', 'measures'];
 
 function dumpSchema(opts: { threads: boolean; transcript: boolean }) {
   const properties: Record<string, unknown> = { ...DUMP_PROPERTIES };
@@ -298,6 +304,7 @@ export interface ProcessedCapture {
   notes: string;
   links: string[];
   tags?: string[];
+  searchTerms?: unknown;
   suggestedCategory?: string;
   kind?: string;
   summary?: { leftOff: string; nextSteps: string[]; resources: { name: string; url: string }[] };
@@ -492,6 +499,7 @@ export async function processVoiceDump(
       "notes": "Cleaned up, well-formatted version of their notes. Fix grammar and make it readable, but keep all details.",
       "links": ["Extract any URLs or links mentioned. If none, empty array."],
       "tags": ["2-5 short lowercase keyword tags for the topic, e.g. passport, travel"],
+      "searchTerms": ["${SEARCH_TERMS_RULE}"],
       "suggestedCategory": "one of: ${VALID_CATEGORIES.join(', ')}",
       "kind": "one of: ${VALID_KINDS.join(', ')}",
       "summary": {
@@ -579,6 +587,7 @@ export async function processAudioDump(
       "notes": "Clean, well-formatted transcription/expanded notes in the speaker's language.",
       "links": ["Extract any URLs or links mentioned. If none, empty array."],
       "tags": ["2-5 short lowercase keyword tags for the topic, in the speaker's language"],
+      "searchTerms": ["${SEARCH_TERMS_RULE}"],
       "suggestedCategory": "one of: ${VALID_CATEGORIES.join(', ')}",
       "kind": "one of: ${VALID_KINDS.join(', ')}",
       "summary": {

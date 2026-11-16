@@ -39,6 +39,8 @@ export function entryText(entry: Pick<Entry, 'blocks'>): string {
     .join('\n\n');
 }
 
+const MAX_THREAD_TERMS = 60;
+
 /**
  * The thread-level cache derived from its entries (see the MnemoItem doc
  * comment). Text is newest entry first, so previews show what changed
@@ -46,13 +48,15 @@ export function entryText(entry: Pick<Entry, 'blocks'>): string {
  */
 export function deriveThreadCache(
   entries: Entry[],
-): Pick<MnemoItem, 'content' | 'checklistItems' | 'links' | 'type'> {
+): Pick<MnemoItem, 'content' | 'checklistItems' | 'links' | 'type' | 'searchTerms'> {
   const ordered = newestFirst(entries);
   const textParts: string[] = [];
   const checklist: ChecklistItem[] = [];
   const links: string[] = [];
+  const terms = new Set<string>();
 
   for (const entry of ordered) {
+    for (const term of entry.searchTerms ?? []) if (terms.size < MAX_THREAD_TERMS) terms.add(term);
     for (const block of entry.blocks) {
       if (block.kind === 'text' && block.markdown.trim()) textParts.push(block.markdown.trim());
       if (block.kind === 'checklist') checklist.push(...block.items);
@@ -66,6 +70,7 @@ export function deriveThreadCache(
     checklistItems: checklist.length > 0 ? checklist : undefined,
     links,
     type: checklist.length > 0 ? 'checklist' : oldest?.source === 'voice' ? 'voice' : 'note',
+    searchTerms: terms.size > 0 ? [...terms] : undefined,
   };
 }
 

@@ -150,6 +150,7 @@ export interface MnemoItem {
    */
   kind?: ThreadKind;
   tags: string[];
+  searchTerms?: string[];
   status: ItemStatus;
 
   /** What to do next — from the latest entry, unless pinned by the user. */
@@ -281,6 +282,7 @@ export interface Entry {
   nextStep?: string;
   /** The person ticked this entry's next step off. */
   stepDone?: boolean;
+  searchTerms?: string[];
   filing: Filing;
   /** True while the entry waits for AI structuring (offline, failed, in flight). */
   pending?: boolean;

@@ -65,7 +65,7 @@ function indexDoc(item: MnemoItem): IndexedDoc {
   const cached = docCache.get(item.id);
   if (cached && cached.updatedAt === item.updatedAt) return cached.doc;
   const tokens = tokenize(
-    `${item.title} ${item.content} ${item.nextStep ?? ''} ${item.whereLeftOff ?? ''} ${item.tags?.join(' ') ?? ''} ${item.category}`,
+    `${item.title} ${item.content} ${item.nextStep ?? ''} ${item.whereLeftOff ?? ''} ${item.tags?.join(' ') ?? ''} ${item.category} ${item.searchTerms?.join(' ') ?? ''}`,
   );
   const tf = new Map<string, number>();
   for (const t of tokens) tf.set(t, (tf.get(t) ?? 0) + 1);

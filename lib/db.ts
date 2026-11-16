@@ -94,18 +94,20 @@ export function initDb(): Promise<void> {
 //   6 — kinds: items gain `kind` (project, task or idea).
 //   7 — places: items gain `place` (a reminder on arriving or leaving).
 //   8 — appointments: items gain `leads` (heads-ups before) and `inCalendar`.
-const SCHEMA_VERSION = 8;
+//   9 — search terms: entries and items gain `searchTerms` (lib/search-terms.ts).
+//       Stored vectors are dropped: batches came back as one blended vector, so they were wrong.
+const SCHEMA_VERSION = 9;
 
 // Every column, in one place, for the INSERT statements below.
 const ITEM_COLUMNS = [
   'id', 'type', 'title', 'content', 'checklistItems', 'links', 'category', 'tags', 'status',
   'nextStep', 'whereLeftOff', 'dueDate', 'createdAt', 'updatedAt', 'lastResumedAt',
   'aiSummary', 'pending', 'pendingRawText', 'pendingAudioUri', 'pinned', 'repeat', 'starred',
-  'completedAt', 'quietUntil', 'overview', 'laterSteps', 'kind', 'place', 'leads', 'inCalendar',
+  'completedAt', 'quietUntil', 'overview', 'laterSteps', 'kind', 'place', 'leads', 'inCalendar', 'searchTerms',
 ];
 const ENTRY_COLUMNS = [
   'id', 'threadId', 'createdAt', 'updatedAt', 'source', 'transcript', 'blocks', 'leftOff', 'nextStep',
-  'filing', 'pending', 'pendingRawText', 'pendingAudioUri', 'stepDone',
+  'filing', 'pending', 'pendingRawText', 'pendingAudioUri', 'stepDone', 'searchTerms',
 ];
 const valuesClause = (columns: string[]) =>
   `(${columns.join(', ')}) VALUES (${columns.map((c) => `$${c}`).join(', ')})`;
@@ -152,6 +154,11 @@ async function runMigrations(db: SQLite.SQLiteDatabase): Promise<void> {
   if (version < 8) {
     await addColumn(db, 'items', 'leads', 'TEXT');
     await addColumn(db, 'items', 'inCalendar', 'INTEGER');
+  }
+  if (version < 9) {
+    await addColumn(db, 'entries', 'searchTerms', 'TEXT');
+    await addColumn(db, 'items', 'searchTerms', 'TEXT');
+    await db.execAsync('DELETE FROM embeddings; DELETE FROM chunk_embeddings;');
   }
   await db.execAsync(`PRAGMA user_version = ${SCHEMA_VERSION}`);
 }
@@ -214,6 +221,7 @@ interface ItemRow {
   place: string | null;
   leads: string | null;
   inCalendar: number | null;
+  searchTerms: string | null;
 }
 
 function rowToItem(row: ItemRow): MnemoItem {
@@ -248,6 +256,7 @@ function rowToItem(row: ItemRow): MnemoItem {
     place: row.place ? JSON.parse(row.place) : undefined,
     leads: row.leads ? cleanLeads(JSON.parse(row.leads)) : undefined,
     inCalendar: row.inCalendar ? true : undefined,
+    searchTerms: row.searchTerms ? JSON.parse(row.searchTerms) : undefined,
   };
 }
 
@@ -283,6 +292,7 @@ function itemToParams(item: MnemoItem) {
     $place: item.place ? JSON.stringify(item.place) : null,
     $leads: item.leads ? JSON.stringify(item.leads) : null,
     $inCalendar: item.inCalendar ? 1 : null,
+    $searchTerms: item.searchTerms?.length ? JSON.stringify(item.searchTerms) : null,
   };
 }
 
@@ -317,13 +327,13 @@ export async function insertItems(items: MnemoItem[]): Promise<void> {
 // Columns updateItem is allowed to touch. Used both as a whitelist (so the
 // dynamic SET clause never interpolates anything but a known column name)
 // and to look up how each value needs to be serialized for storage.
-const JSON_COLUMNS = new Set(['checklistItems', 'links', 'tags', 'aiSummary', 'pinned', 'overview', 'laterSteps', 'place', 'leads']);
+const JSON_COLUMNS = new Set(['checklistItems', 'links', 'tags', 'aiSummary', 'pinned', 'overview', 'laterSteps', 'place', 'leads', 'searchTerms']);
 const BOOLEAN_COLUMNS = new Set(['pending', 'starred', 'inCalendar']);
 const COLUMN_KEYS = new Set([
   'type', 'title', 'content', 'checklistItems', 'links', 'category', 'tags', 'status',
   'nextStep', 'whereLeftOff', 'dueDate', 'createdAt', 'updatedAt', 'lastResumedAt',
   'aiSummary', 'pending', 'pendingRawText', 'pendingAudioUri', 'pinned', 'repeat', 'starred',
-  'completedAt', 'quietUntil', 'overview', 'laterSteps', 'kind', 'place', 'leads', 'inCalendar',
+  'completedAt', 'quietUntil', 'overview', 'laterSteps', 'kind', 'place', 'leads', 'inCalendar', 'searchTerms',
 ]);
 
 function serializeColumnValue(key: string, value: unknown): string | number | null {
@@ -384,6 +394,7 @@ interface EntryRow {
   pendingRawText: string | null;
   pendingAudioUri: string | null;
   stepDone: number | null;
+  searchTerms: string | null;
 }
 
 function rowToEntry(row: EntryRow): Entry {
@@ -402,6 +413,7 @@ function rowToEntry(row: EntryRow): Entry {
     pendingRawText: row.pendingRawText ?? undefined,
     pendingAudioUri: row.pendingAudioUri ?? undefined,
     stepDone: row.stepDone ? true : undefined,
+    searchTerms: row.searchTerms ? JSON.parse(row.searchTerms) : undefined,
   };
 }
 
@@ -421,6 +433,7 @@ function entryToParams(entry: Entry) {
     $pendingRawText: entry.pendingRawText ?? null,
     $pendingAudioUri: entry.pendingAudioUri ?? null,
     $stepDone: entry.stepDone ? 1 : null,
+    $searchTerms: entry.searchTerms?.length ? JSON.stringify(entry.searchTerms) : null,
   };
 }
 

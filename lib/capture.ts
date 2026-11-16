@@ -21,6 +21,7 @@ import type { Block, Category, ChecklistItem, Entry, Filing, MnemoItem, PlaceRem
 import { armedPlace, mayAutoFile, replacesPlaceReminder, samePlaceReminder, withReminders } from '@/lib/reminder-ownership';
 import type { CaptureStore } from '@/hooks/use-mnemo-store';
 import { buildBlocks } from '@/lib/threads';
+import { cleanSearchTerms } from '@/lib/search-terms';
 import { summarizeMeasures, trackedMetrics, verifyMeasures } from '@/lib/measures';
 import { understand, type KnownMetric } from '@/lib/understand';
 import { asKind } from '@/lib/kind';
@@ -526,6 +527,7 @@ async function structure(entry: PendingEntry, store: CaptureStore): Promise<void
     blocks,
     leftOff,
     nextStep,
+    searchTerms: editedMeanwhile ? now.searchTerms : cleanSearchTerms(processed.searchTerms),
     pending: false,
     pendingAudioUri: undefined,
     pendingRawText: undefined,
