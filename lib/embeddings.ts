@@ -22,7 +22,7 @@ export function meaningSearchOn(): boolean {
   return getPreferences().meaningSearch === true;
 }
 
-async function embed(contents: string | string[], taskType: EmbeddingTaskType) {
+async function embed(contents: string | { parts: { text: string }[] }[], taskType: EmbeddingTaskType) {
   // Every caller treats a failure as "keyword search only", so this is the one gate.
   if (!meaningSearchOn()) throw new Error('Search by meaning is off');
   try {
@@ -91,7 +91,11 @@ export async function embedText(text: string, taskType: EmbeddingTaskType): Prom
  */
 export async function embedBatch(texts: string[]): Promise<Float32Array[]> {
   if (texts.length === 0) return [];
-  const res = await embed(texts, 'RETRIEVAL_DOCUMENT');
+  const res = await embed(
+    texts.map((text) => ({ parts: [{ text }] })),
+    'RETRIEVAL_DOCUMENT',
+  );
   const embeddings = res.embeddings ?? [];
+  if (embeddings.length !== texts.length) throw new Error(`Asked for ${texts.length} embeddings, got ${embeddings.length}`);
   return embeddings.map((e) => Float32Array.from(e.values ?? []));
 }
