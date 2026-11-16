@@ -257,7 +257,9 @@ export default function ThreadScreen() {
   const model = finishModel(thread, entries);
   const recurring = model === 'occurrence';
   const placeRepeats = recurring && repeatsAtPlace(thread);
-  const doneToday = placeRepeats && occurrenceOf(thread.place!).state === 'done';
+  const occurrence = placeRepeats ? occurrenceOf(thread.place!) : null;
+  const doneToday = occurrence?.state === 'done';
+  const rangToday = occurrence !== null && occurrence.state !== 'none' && occurrence.at !== undefined;
 
   const finishThread = () => {
     if (hasHistory) router.push(`/wrapup?id=${thread.id}`);
@@ -272,7 +274,7 @@ export default function ThreadScreen() {
       if (!undo) return;
       haptic.success();
       const where = placeLabel(thread.place!, savedPlaces.find((p) => p.id === thread.place!.placeId));
-      showUndoToast(`Done for today. ${where}, it reminds you again.`, undo);
+      showUndoToast(`${rangToday ? 'Done' : 'Done for today'}. ${where}, it reminds you again.`, undo);
       return;
     }
     // A repeating time reminder: nothing about it changes (its time, its repeat, the step it
@@ -718,7 +720,7 @@ export default function ThreadScreen() {
                     disabled={doneToday}
                     onPress={handleDone}
                   >
-                    {recurring ? 'Done for today' : 'Done'}
+                    {recurring && !rangToday ? 'Done for today' : 'Done'}
                   </Button>
                 ) : hasHistory ? (
                   <Button variant="quiet" icon="share" className="flex-1" onPress={() => router.push(`/wrapup?id=${thread.id}`)}>

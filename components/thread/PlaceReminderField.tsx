@@ -38,9 +38,10 @@ function useWarnings(thread: MnemoItem): Line[] {
   if (!place) return [{ text: "That place was removed, so this can't go off.", action: 'Places', fix: () => router.push('/modal') }];
   const lines: Line[] = [];
   // Set where the phone already is: it can't ring until the next crossing, which looked like "not working".
-  if (r.on === 'arrive' && r.insideAtSet) {
+  const rangBefore = !!r.repeat && r.lastFiredAt !== undefined;
+  if (!rangBefore && r.on === 'arrive' && r.insideAtSet) {
     lines.push({ text: `You're at ${place.name} now, so this goes off the next time you arrive, after leaving.` });
-  } else if (r.on === 'leave' && r.insideAtSet === false) {
+  } else if (!rangBefore && r.on === 'leave' && r.insideAtSet === false) {
     lines.push({ text: `You're not at ${place.name} now, so this goes off after you get there and then leave.` });
   }
   const overlap = overlapText(overlaps(place, places));
@@ -93,7 +94,7 @@ export function PlaceReminderField({ thread, onChange }: { thread: MnemoItem; on
       {waiting?.repeat && waiting.lastFiredAt ? (
         <Text className="font-sans text-sm" style={{ color: colors.fgTertiary }}>
           Last went off {formatReminder(waiting.lastFiredAt)}
-          {waiting.caughtLate ? ', late' : ''}.
+          {waiting.caughtLate ? ', late' : ''}. It rings again once you've been {waiting.on === 'arrive' ? 'away' : 'back'} for an hour.
         </Text>
       ) : null}
     </View>
@@ -113,7 +114,7 @@ export function PlaceReminderLabel({ thread }: { thread: MnemoItem }) {
   const tone = shaky ? colors.accentWarm : colors.accent;
   // A repeating one: today's ring, so it's plain that Done finished today and not the reminder.
   const today = r.repeat ? occurrenceOf(r) : null;
-  const todayText = today?.state === 'done' ? 'Done for today' : today?.state === 'due' ? `Went off ${formatReminder(today.at).toLowerCase()}` : null;
+  const todayText = today?.state === 'done' ? (today.at !== undefined ? 'Done this time' : 'Done for today') : today?.state === 'due' ? `Went off ${formatReminder(today.at).toLowerCase()}` : null;
   return (
     <View className="mt-2 gap-1.5">
       <View className="flex-row items-center" style={{ gap: 6 }}>

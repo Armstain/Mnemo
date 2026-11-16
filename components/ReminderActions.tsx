@@ -117,7 +117,7 @@ export function ReminderActions() {
           completeRef.current(item.id);
         } else if (response.actionIdentifier === 'done') {
           const undo = s.completePlaceOccurrence(item.id);
-          if (undo) showToast({ message: item.place?.repeat ? `Done for today: ${item.title}` : `Done: ${item.title}`, actionLabel: 'Undo', onAction: undo });
+          if (undo) showToast({ message: `Done: ${item.title}`, actionLabel: 'Undo', onAction: undo });
         } else if (response.actionIdentifier === 'hour') {
           // One more nudge on top; the thread's own time reminder (if any) is left as it is.
           const at = Date.now() + 60 * 60 * 1000;
