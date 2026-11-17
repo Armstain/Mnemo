@@ -33,7 +33,7 @@ import type { Place } from '@/types/mnemo';
 
 /** Where a new map starts with no position to go on: the whole world. */
 const WORLD = { lat: 20, lng: 0, zoom: 2 };
-const STREET_ZOOM = 16;
+const STREET_ZOOM = 17;
 /** Zoomed out further than this, a dropped pin could be anywhere in a neighbourhood. */
 const PIN_ZOOM = 15;
 

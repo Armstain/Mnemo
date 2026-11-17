@@ -60,7 +60,7 @@ standing in a shop. Mnemo optimises for two moments:
   allowed all the time, battery saver, more than 20 places waiting) instead of
   failing silently, and catches one the phone held back when you open the app.
   Edge cases are handled in `lib/places.ts` and `lib/geofence.ts`. Locations stay on
-  the phone; map tiles come from CARTO (OpenStreetMap data) while you place a pin.
+  the phone; map tiles come from OpenStreetMap while you place a pin.
 - 🔍 **Search that finds things** — hybrid keyword + semantic search.
   No connection? Keyword search still works.
 - 📓 **Reviews & overviews** — a thread's loose notes organised by theme when you

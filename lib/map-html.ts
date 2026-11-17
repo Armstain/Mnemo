@@ -7,8 +7,8 @@
 // For a wide release, point TILE_URL at a provider with a key (MapTiler,
 // Stadia): OpenStreetMap's own servers are for light use.
 
-export const TILE_URL = 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png';
-export const TILE_ATTRIBUTION = '© OpenStreetMap contributors © CARTO';
+export const TILE_URL = 'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
+export const TILE_ATTRIBUTION = '© OpenStreetMap contributors';
 
 /** Messages the app sends the page. */
 export type ToMap =
@@ -36,7 +36,7 @@ function send(m){var s=JSON.stringify(m);if(window.ReactNativeWebView)window.Rea
 if(!window.L){send({type:'offline'});}else{
 var map=L.map('m',{zoomControl:false}).setView([${o.lat},${o.lng}],${o.zoom});
 var loaded=0,errors=0;
-L.tileLayer('${TILE_URL}',{maxZoom:20,subdomains:'abcd',attribution:'${TILE_ATTRIBUTION}'})
+L.tileLayer('${TILE_URL}',{maxZoom:19,attribution:'${TILE_ATTRIBUTION}'})
  .on('tileload',function(){loaded++;})
  .on('tileerror',function(){errors++;if(errors>3&&!loaded)send({type:'offline'});})
  .addTo(map);
