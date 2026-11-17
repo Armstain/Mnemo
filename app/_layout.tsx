@@ -37,6 +37,7 @@ import { FilingNotifier } from '@/components/FilingNotifier';
 import { UndoToastHost } from '@/components/ui/UndoToastHost';
 import { CelebrationHost } from '@/components/CelebrationHost';
 import { CardFlightHost } from '@/components/CardFlightHost';
+import { SplashIntro } from '@/components/SplashIntro';
 import { MnemoStoreProvider } from '@/hooks/use-mnemo-store';
 import { UndoToastProvider } from '@/hooks/use-undo-toast';
 import { applyStoredThemePreference, PALETTE, useThemeName } from '@/hooks/use-theme';
@@ -232,6 +233,7 @@ function RootLayoutNav() {
           <CardFlightHost />
           {/* A real task finished: the ring closes. Above everything, toast included. */}
           <CelebrationHost />
+          <SplashIntro />
         </ThemeProvider>
         </UndoToastProvider>
       </MnemoStoreProvider>
