@@ -1,7 +1,8 @@
 import { StatusBar } from 'expo-status-bar';
 import { useEnter } from '@/utils/motion';
 import { useState } from 'react';
-import { View, ScrollView, Pressable, Platform, Switch } from 'react-native';
+import { View, ScrollView, Pressable, Platform, Switch, Linking } from 'react-native';
+import { IconButton } from '@/components/ui/Button';
 import * as Clipboard from 'expo-clipboard';
 import { clearErrors, problemReport } from '@/lib/errors';
 import { setPreferences, usePreferences } from '@/lib/preferences';
@@ -22,6 +23,14 @@ import { AppointmentsCard } from '@/components/settings/AppointmentsCard';
 import { LocationCard } from '@/components/settings/LocationCard';
 import { ApiKeyConfigCard, GROQ } from '@/components/settings/ApiKeyConfigCard';
 
+const REPO = 'https://github.com/Armstain/Mnemo';
+
+function openIssue(label: string, title: string) {
+  const version = Constants.expoConfig?.version ?? '';
+  const body = `Mnemo v${version} on ${Platform.OS} ${Platform.Version}\n\n`;
+  Linking.openURL(`${REPO}/issues/new?labels=${label}&title=${encodeURIComponent(title)}&body=${encodeURIComponent(body)}`);
+}
+
 const THEME_OPTIONS: { key: ThemePreference; label: string; icon: typeof Sun }[] = [
   { key: 'system', label: 'System', icon: Smartphone },
   { key: 'light', label: 'Light', icon: Sun },
@@ -37,7 +46,7 @@ function LinkRow({ icon, title, onPress, silent = false, chevron = true }: { ico
         onPress();
       }}
       accessibilityRole="button"
-      className="bg-surface rounded-lg px-5 py-4 border border-border/50 flex-row items-center active:opacity-80"
+      className="bg-surface rounded-lg px-5 py-3 border border-border/50 flex-row items-center active:opacity-80"
     >
       <Icon name={icon} size={15} color={colors.accent} />
       <Text className="font-sans-semi text-sm text-fg ml-2 flex-1">{title}</Text>
@@ -84,23 +93,22 @@ export default function ModalScreen() {
           className="flex-1"
           contentContainerStyle={{
             paddingHorizontal: 24,
-            paddingTop: insets.top + 32,
+            paddingTop: insets.top + 16,
             paddingBottom: Math.max(insets.bottom, 24) + 48,
           }}
           showsVerticalScrollIndicator={false}
         >
-          <MotiView {...enter.rise(0)}
-            className="mb-10"
-          >
-            <Text className="text-display font-display text-fg mb-1">Settings</Text>
-            <Text className="font-sans text-sm text-fg-tertiary">
-              Mnemo v{Constants.expoConfig?.version ?? '1.0.0'}
-            </Text>
+          <View className="flex-row mb-4">
+            <IconButton icon="chevronLeft" label="Back" variant="bare" onPress={() => router.back()} />
+          </View>
+
+          <MotiView {...enter.rise(0)} className="mb-6">
+            <Text className="text-display font-display text-fg">Settings</Text>
           </MotiView>
 
           {/* Appearance */}
           <MotiView {...enter.rise(0)}
-            className="gap-3 mb-10"
+            className="gap-3 mb-6"
           >
             <Eyebrow className="mb-1">Appearance</Eyebrow>
 
@@ -140,7 +148,7 @@ export default function ModalScreen() {
           {/* Nudges — local notifications, so there's nothing to show on web. */}
           {Platform.OS !== 'web' && (
             <MotiView {...enter.rise(1)}
-              className="gap-3 mb-10"
+              className="gap-3 mb-6"
             >
               <Eyebrow className="mb-1">Nudges</Eyebrow>
 
@@ -150,21 +158,21 @@ export default function ModalScreen() {
 
           {/* Appointments: heads-ups before, and the phone's calendar. */}
           {Platform.OS !== 'web' && (
-            <MotiView {...enter.rise(1)} className="gap-3 mb-10">
+            <MotiView {...enter.rise(1)} className="gap-3 mb-6">
               <Eyebrow className="mb-1">Appointments</Eyebrow>
               <AppointmentsCard />
             </MotiView>
           )}
 
           {/* Location: optional place reminders, off until turned on. */}
-          <MotiView {...enter.rise(1)} className="gap-3 mb-10">
+          <MotiView {...enter.rise(1)} className="gap-3 mb-6">
             <Eyebrow className="mb-1">Location</Eyebrow>
             <LocationCard />
           </MotiView>
 
           {/* AI */}
           <MotiView {...enter.rise(1)}
-            className="gap-3 mb-10"
+            className="gap-3 mb-6"
           >
             <Eyebrow className="mb-1">How Mnemo thinks</Eyebrow>
 
@@ -175,14 +183,20 @@ export default function ModalScreen() {
           </MotiView>
 
           {/* Backup */}
-          <MotiView {...enter.rise(2)} className="gap-3 mb-10">
+          <MotiView {...enter.rise(2)} className="gap-3 mb-6">
             <Eyebrow className="mb-1">Backup</Eyebrow>
             <AutoBackupCard />
             <BackupCard />
           </MotiView>
 
-          <MotiView {...enter.rise(2)} className="gap-3 mb-10">
-            <Eyebrow className="mb-1">Something not working?</Eyebrow>
+          <MotiView {...enter.rise(2)} className="gap-3 mb-6">
+            <Eyebrow className="mb-1">Help and feedback</Eyebrow>
+            <LinkRow icon="sparkles" title="How Mnemo works" onPress={() => router.push('/help')} />
+            {Platform.OS !== 'web' ? (
+              <LinkRow icon="alert" title="Check that reminders arrive" onPress={() => router.push('/reminders-check')} />
+            ) : null}
+            <LinkRow icon="arrowUpRight" title="Report a bug" onPress={() => openIssue('bug', 'Bug: ')} />
+            <LinkRow icon="star" title="Suggest a feature" onPress={() => openIssue('enhancement', 'Idea: ')} />
             <LinkRow
               icon="copy"
               title={reportCopied ? 'Problem report copied' : 'Copy problem report'}
@@ -211,11 +225,12 @@ export default function ModalScreen() {
 
           {/* Everything that explains rather than sets: one row each, on its own page. */}
           <MotiView {...enter.rise(2)} className="gap-3">
-            <Eyebrow className="mb-1">Help</Eyebrow>
-            <LinkRow icon="sparkles" title="How Mnemo works" onPress={() => router.push('/help')} />
-            {Platform.OS !== 'web' ? (
-              <LinkRow icon="alert" title="Check that reminders arrive" onPress={() => router.push('/reminders-check')} />
-            ) : null}
+            <Eyebrow className="mb-1">About</Eyebrow>
+            <View className="bg-surface rounded-lg px-5 py-3 border border-border/50">
+              <Text className="font-sans-semi text-sm text-fg">Mnemo v{Constants.expoConfig?.version ?? '1.0.0'}</Text>
+              <Text className="font-sans text-sm text-fg-tertiary mt-0.5">Resume your life.</Text>
+            </View>
+            <LinkRow icon="arrowUpRight" title="Source code" onPress={() => Linking.openURL(REPO)} />
             <LinkRow icon="pin" title="Privacy and your data" onPress={() => router.push('/privacy')} />
             <LinkRow
               icon="repeat"
