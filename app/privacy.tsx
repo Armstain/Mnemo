@@ -35,7 +35,7 @@ const PRIVACY_FACTS = [
   },
   {
     title: 'Location',
-    body: "Off unless you turn on place reminders. Then your saved places and where your phone is stay on the phone; nothing is sent anywhere. While you place a pin, the map's pictures load from OpenStreetMap, which sees which area you're looking at, like any map website.",
+    body: "Off unless you turn on place reminders. Then your saved places and where your phone is stay on the phone; nothing is sent anywhere. While you place a pin, the map's pictures load from CARTO (built on OpenStreetMap), which sees which area you're looking at, like any map website.",
   },
 ];
 
