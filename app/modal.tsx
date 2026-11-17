@@ -98,12 +98,9 @@ export default function ModalScreen() {
           }}
           showsVerticalScrollIndicator={false}
         >
-          <View className="flex-row mb-4">
+          <MotiView {...enter.rise(0)} className="flex-row items-center mb-6 -ml-2">
             <IconButton icon="chevronLeft" label="Back" variant="bare" onPress={() => router.back()} />
-          </View>
-
-          <MotiView {...enter.rise(0)} className="mb-6">
-            <Text className="text-display font-display text-fg">Settings</Text>
+            <Text className="text-display font-display text-fg ml-1">Settings</Text>
           </MotiView>
 
           {/* Appearance */}
