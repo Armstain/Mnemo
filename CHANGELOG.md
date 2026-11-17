@@ -5,11 +5,11 @@ All notable changes to Mnemo, newest first. Versions match `app.json`. Everythin
 ## [2.0.4] - 2026-11-17
 
 ### Added
-- **An animated intro** with the name and tagline, shown after the launch screen.
-- **Settings: a back button,** an About section with a link to the source code, and "Report a bug" and "Suggest a feature" rows that open a prefilled GitHub issue.
+- **An animated intro:** the logo is drawn in code, then the name and tagline, over a plain launch screen.
+- **Settings: a back button** beside the title, an About section with a link to the source code, and "Report a bug" and "Suggest a feature" rows that open a prefilled GitHub issue.
 
 ### Changed
-- The pin-drop map uses CARTO Voyager tiles, so place names are sharper and there are more of them. The privacy text now says the tiles come from CARTO, built on OpenStreetMap data.
+- The pin-drop map opens one zoom closer.
 - Settings rows are tighter, and "Help" and "Something not working?" are grouped as "Help and feedback".
 
 ## [2.0.3] - 2026-11-16
