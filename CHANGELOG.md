@@ -2,7 +2,7 @@
 
 All notable changes to Mnemo, newest first. Versions match `app.json`. Everything before 1.0.0 is summarised by phase.
 
-## [2.1.0] - 2026-11-17
+## [2.0.4] - 2026-11-17
 
 ### Added
 - **An animated intro** with the name and tagline, shown after the launch screen.
