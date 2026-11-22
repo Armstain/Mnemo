@@ -1,4 +1,5 @@
 import { kindOf } from '@/lib/kind';
+import { repeatsAtPlace } from '@/lib/places';
 import { lastActivity, quietDays } from '@/lib/review';
 import { nextOccurrence } from '@/lib/when';
 import type { Entry, MnemoItem, ThreadKind } from '@/types/mnemo';
@@ -143,6 +144,8 @@ export function awayDigest(
   for (const item of open) {
     const kind = kinds.get(item.id);
     if (kind === 'idea') continue;
+    // Routines have their own place on Home ("At places") and wait for the place, not for you.
+    if (repeatsAtPlace(item)) continue;
     const step = item.nextStep?.trim();
     if (item.dueDate) {
       const at = nextOccurrence(item.dueDate, item.repeat, now);

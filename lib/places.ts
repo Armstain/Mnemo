@@ -359,3 +359,51 @@ export function readPlaceReminder(text: string, places: Place[]): Pick<PlaceRemi
   if (meant.length !== 1) return undefined;
   return { placeId: meant[0].id, on: leave ? 'leave' : 'arrive', ...readPlaceSchedule(text) };
 }
+
+// ─── Routines on Home ───────────────────────────────────────────
+// A repeating place reminder is a routine, not a task that can stall: it waits for the place.
+// Home lists it under "At places" and lifts it to the top card only on a day it rang and
+// isn't done yet; nudges and the weekly review leave it alone.
+
+/** Whether a reminder could ring on this local day (its days, its weekdays or weekends). */
+export function ringsOnDay(r: Pick<PlaceReminder, 'repeat' | 'days'>, day: number, weekend: number[] = phoneWeekend()): boolean {
+  if (!r.repeat || r.repeat === 'always') return true;
+  if (r.repeat === 'days') return ringDays(r).includes(day);
+  const isWeekend = weekend.includes(day);
+  return r.repeat === 'weekends' ? isWeekend : !isWeekend;
+}
+
+export type RoutineState =
+  /** Rang today and not marked done: Home's top card. */
+  | { state: 'rang'; at: number }
+  /** Today's is done (rang and marked, or marked before it rang). */
+  | { state: 'done'; at?: number; doneAt: number; next: number }
+  /** Waiting for the place; `next` is how many days until a day it can ring (0 = today). */
+  | { state: 'waiting'; next: number };
+
+const dayAfter = (now: number, n: number) => {
+  const d = new Date(now);
+  d.setDate(d.getDate() + n);
+  return d.getDay();
+};
+
+/** The next day it can ring, from `from` days ahead (0 = today), within a week. */
+function nextRingDay(r: Pick<PlaceReminder, 'repeat' | 'days'>, now: number, from: number, weekend: number[]): number {
+  for (let n = from; n < from + 7; n++) if (ringsOnDay(r, dayAfter(now, n), weekend)) return n;
+  return from;
+}
+
+/** Where a routine stands today, for Home. */
+export function routineState(r: PlaceReminder, now = Date.now(), weekend: number[] = phoneWeekend()): RoutineState {
+  const o = occurrenceOf(r, now);
+  if (o.state === 'due') return { state: 'rang', at: o.at };
+  if (o.state === 'done') return { ...o, next: nextRingDay(r, now, 1, weekend) };
+  return { state: 'waiting', next: nextRingDay(r, now, 0, weekend) };
+}
+
+/** "Today", "Tomorrow", "Fri": when a routine can next ring. */
+export function routineWhen(next: number, now = Date.now()): string {
+  if (next === 0) return 'Today';
+  if (next === 1) return 'Tomorrow';
+  return DAY_SHORT[dayAfter(now, next)];
+}

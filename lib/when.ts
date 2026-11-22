@@ -145,6 +145,8 @@ export type ResumeReason =
   | { kind: 'starred' }
   | { kind: 'focus' }
   | { kind: 'recent' }
+  /** A routine (repeating place reminder) that rang today and isn't done: lib/places.ts routineState. */
+  | { kind: 'place'; at: number }
   | null;
 
 /**

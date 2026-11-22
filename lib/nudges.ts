@@ -4,6 +4,7 @@ import { Platform } from 'react-native';
 import type { MnemoItem } from '@/types/mnemo';
 import { ensureReminderCategory, REMINDER_CATEGORY } from '@/lib/reminders';
 import { DAY_MS } from '@/utils/time';
+import { isArmed } from '@/lib/places';
 
 // No server: the next PLAN_DAYS of nudges are scheduled locally up front and re-planned on item change or foreground.
 // Items only change while the app is open, so the last plan stays accurate until then.
@@ -39,7 +40,7 @@ const RENUDGE_AFTER_MS = 4 * DAY_MS;
 
 type NudgeItem = Pick<
   MnemoItem,
-  'id' | 'title' | 'status' | 'pending' | 'nextStep' | 'whereLeftOff' | 'dueDate' | 'updatedAt' | 'lastResumedAt'
+  'id' | 'title' | 'status' | 'pending' | 'nextStep' | 'whereLeftOff' | 'dueDate' | 'updatedAt' | 'lastResumedAt' | 'place'
 >;
 
 interface NudgeSlot {
@@ -145,8 +146,8 @@ function lastTouched(item: NudgeItem): number {
   return Math.max(item.updatedAt, item.lastResumedAt ?? 0);
 }
 
-/** Each thread appears at most once per plan, and never within RENUDGE_AFTER_MS of its last delivery. */
-function planSlots(
+/** Each thread appears at most once per plan, and never within RENUDGE_AFTER_MS of its last delivery. Exported for tests. */
+export function planSlots(
   items: NudgeItem[],
   clock: { hour: number; minute: number },
   delivered: Record<string, number>,
@@ -158,7 +159,10 @@ function planSlots(
         (item.status === 'active' || item.status === 'paused') &&
         !item.pending &&
         // A future due date already has its own reminder (lib/reminders.ts).
-        !(item.dueDate && item.dueDate > now),
+        !(item.dueDate && item.dueDate > now) &&
+        // So does a place reminder still set: it's waiting for the place, not stalled. A
+        // repeating one is a routine its thread is rarely edited for (lib/places.ts).
+        !isArmed(item),
     )
     // Next step first, then freshest: the nudge can say what to do, and recent threads are most likely still wanted.
     .sort((a, b) => {

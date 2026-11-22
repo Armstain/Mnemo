@@ -1,5 +1,6 @@
 import { countsAsHappened, metricKey, summarizeMeasures } from '@/lib/measures';
 import { nextOccurrence } from '@/lib/when';
+import { isArmed, repeatsAtPlace } from '@/lib/places';
 import type { Entry, MnemoItem } from '@/types/mnemo';
 import { DAY_MS } from '@/utils/time';
 
@@ -84,6 +85,8 @@ export function quietDays(t: MnemoItem, entries: Entry[], now = Date.now()): num
   if (t.status !== 'active' || t.pending) return null;
   if (t.quietUntil && t.quietUntil > now) return null;
   if (t.dueDate && nextOccurrence(t.dueDate, t.repeat, now) > now) return null;
+  // Waiting for a place: a routine, or a reminder that rings on arrival, isn't stalled.
+  if (isArmed(t)) return null;
   const days = Math.floor((now - lastActivity(t, entries)) / DAY_MS);
   return days >= QUIET_DAYS ? days : null;
 }
@@ -128,7 +131,8 @@ export function weekReview(items: MnemoItem[], entries: Entry[], now = Date.now(
 
   // Each thread shows up once: a due or quiet thread already says its next step.
   const steps = open
-    .filter((t) => t.status === 'active' && t.nextStep && !dueIds.has(t.id) && !quietIds.has(t.id))
+    // A routine's step is what it reminds of each time, not a step left open.
+    .filter((t) => t.status === 'active' && t.nextStep && !repeatsAtPlace(t) && !dueIds.has(t.id) && !quietIds.has(t.id))
     .sort((a, b) => lastActivity(b, of(b)) - lastActivity(a, of(a)));
 
   // Each thread's sum-type numbers from this week, then added across threads

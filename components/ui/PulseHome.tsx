@@ -29,7 +29,11 @@ import { useReduceMotion } from '@/hooks/use-accessibility-motion';
 import { flightsEnabled, launchFlight } from '@/lib/card-flight';
 import { awayDigest, awayFor, shortWhen, type AwayRow } from '@/lib/away';
 import { useAwaySince } from '@/hooks/use-away';
-import type { MnemoItem } from '@/types/mnemo';
+import { useUndoToast } from '@/hooks/use-undo-toast';
+import { usePlaces } from '@/lib/place-store';
+import { placeLabel, repeatsAtPlace, routineState, routineWhen, type RoutineState } from '@/lib/places';
+import { haptic } from '@/utils/haptics';
+import type { MnemoItem, Place } from '@/types/mnemo';
 
 /** How far ahead "Coming up" looks for due dates. */
 const COMING_UP_DAYS = 7;
@@ -45,7 +49,7 @@ const numberWord = (n: number) => NUMBER_WORDS[n] ?? String(n);
 const openItem = (id: string) => router.push(`/(tabs)/context?id=${id}`);
 
 /** What the resume card's chip says: why this thread is first. */
-function reasonChip(reason: NonNullable<ResumeReason>, repeats: boolean): { icon: IconName; label: string } {
+function reasonChip(reason: NonNullable<ResumeReason>, repeats: boolean, place?: Place): { icon: IconName; label: string } {
   switch (reason.kind) {
     case 'missed':
       return { icon: 'clock', label: `Missed · ${formatReminder(reason.at)}` };
@@ -57,7 +61,24 @@ function reasonChip(reason: NonNullable<ResumeReason>, repeats: boolean): { icon
       return { icon: 'pin', label: 'Capturing here' };
     case 'recent':
       return { icon: 'pencil', label: 'You were just here' };
+    case 'place':
+      return { icon: 'mapPin', label: `Rang ${clockOf(reason.at)}${place ? ` at ${place.name}` : ''}` };
   }
+}
+
+/** Rang (not on top, when two did) first, then waiting, then done for today. */
+const order = (s: RoutineState) => (s.state === 'rang' ? 0 : s.state === 'waiting' ? 1 : 2);
+
+const clockOf = (at: number) => new Date(at).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+
+/** A routine's row under "At places": what it says, and when it can next ring. */
+function routineRow(s: RoutineState, item: MnemoItem, place: Place | undefined, now: number): { detail: string; trailing: string; done: boolean } {
+  if (s.state === 'done') {
+    return { detail: s.at !== undefined ? `Done for today · rang ${clockOf(s.at)}` : 'Done for today', trailing: `Next: ${routineWhen(s.next, now)}`, done: true };
+  }
+  const where = placeLabel(item.place!, place);
+  if (s.state === 'rang') return { detail: where, trailing: `Rang ${clockOf(s.at)}`, done: false };
+  return { detail: where, trailing: s.next === 0 ? 'Today' : `Next: ${routineWhen(s.next, now)}`, done: false };
 }
 
 /**
@@ -65,13 +86,13 @@ function reasonChip(reason: NonNullable<ResumeReason>, repeats: boolean): { icon
  * back up, why it's first, and its next step. Kept short so what's next
  * shows without scrolling.
  */
-function ResumeCard({ item, reason }: { item: MnemoItem; reason: ResumeReason }) {
+function ResumeCard({ item, reason, place, onDoneToday }: { item: MnemoItem; reason: ResumeReason; place?: Place; onDoneToday?: () => void }) {
   const colors = useThemeColors();
   const categories = useCategories();
   const category = categories[item.category];
   const checklist = item.type === 'checklist' ? item.checklistItems ?? [] : [];
   const done = checklist.filter((c) => c.checked).length;
-  const chip = reason ? reasonChip(reason, !!item.repeat) : null;
+  const chip = reason ? reasonChip(reason, !!item.repeat, place) : null;
   const reduceMotion = useReduceMotion();
   const cardRef = React.useRef<View>(null);
   const titleRef = React.useRef<View>(null);
@@ -102,7 +123,9 @@ function ResumeCard({ item, reason }: { item: MnemoItem; reason: ResumeReason })
   // A reminder further off than the chip covers still shows, in place of the age.
   const dueAt = item.dueDate ? nextOccurrence(item.dueDate, item.repeat) : undefined;
   const aside =
-    dueAt !== undefined && reason?.kind !== 'due' && reason?.kind !== 'missed'
+    reason?.kind === 'place' && item.place
+      ? placeLabel(item.place, place)
+      : dueAt !== undefined && reason?.kind !== 'due' && reason?.kind !== 'missed'
       ? formatReminder(dueAt)
       : `${item.status === 'paused' ? 'Paused' : category.label} · ${formatCompactDistance(item.updatedAt)}`;
 
@@ -201,9 +224,26 @@ function ResumeCard({ item, reason }: { item: MnemoItem; reason: ResumeReason })
                 </Text>
               )}
             </View>
-            <View className="w-12 h-12 rounded-full items-center justify-center" style={{ backgroundColor: colors.onHero }}>
-              <Icon name="play" size={18} stroke={2.2} color={colors.hero} />
-            </View>
+            {onDoneToday ? (
+              // A routine that rang: today's is what's left to do, so Done is the action here.
+              <Pressable
+                onPress={onDoneToday}
+                accessibilityRole="button"
+                accessibilityLabel={`Done for today: ${item.title}`}
+                hitSlop={6}
+                className="flex-row items-center rounded-full px-4 h-12 active:opacity-80"
+                style={{ backgroundColor: colors.onHero, gap: 6 }}
+              >
+                <Icon name="check" size={16} stroke={2.4} color={colors.hero} />
+                <Text className="font-sans-semi text-sm" style={{ color: colors.hero }}>
+                  Done for today
+                </Text>
+              </Pressable>
+            ) : (
+              <View className="w-12 h-12 rounded-full items-center justify-center" style={{ backgroundColor: colors.onHero }}>
+                <Icon name="play" size={18} stroke={2.2} color={colors.hero} />
+              </View>
+            )}
           </View>
         </View>
       </Pressable>
@@ -237,16 +277,36 @@ export function PulseHome() {
   const aiProblemText = useAiProblemDetail() ?? (aiProblem ? AI_PROBLEM_TEXT[aiProblem] : '');
   const aiNotice = useAiNotice();
   const insets = useSafeAreaInsets();
-  const { items, entries, getActiveItems, focusThreadId, setFocusThread } = useMnemoStore();
+  const { items, entries, getActiveItems, focusThreadId, setFocusThread, completePlaceOccurrence } = useMnemoStore();
+  const savedPlaces = usePlaces();
+  const { showUndoToast } = useUndoToast();
+  const placeOf = (t: MnemoItem) => (t.place ? savedPlaces.find((p) => p.id === t.place!.placeId) : undefined);
   const focusThread = focusThreadId ? items.find((i) => i.id === focusThreadId) : undefined;
   const colors = useThemeColors();
   const categories = useCategories();
 
-  const activeItems = resumeOrder(getActiveItems(), { focusId: focusThreadId });
-  const latestItem = activeItems[0];
-  const reason = latestItem ? resumeReason(latestItem, { focusId: focusThreadId }) : null;
-
   const now = Date.now();
+  // Routines (repeating place reminders) wait for their place: listed under "At places", and on
+  // top only on a day one rang and isn't done yet. Starred or the focus thread, it ranks as usual.
+  const open = getActiveItems();
+  const isRoutine = (t: MnemoItem) => repeatsAtPlace(t) && !t.starred && t.id !== focusThreadId;
+  const routines = open
+    .filter(isRoutine)
+    .map((item) => ({ item, state: routineState(item.place!, now) }))
+    .sort((a, b) => order(a.state) - order(b.state) || (a.state.state === 'waiting' && b.state.state === 'waiting' ? a.state.next - b.state.next : 0));
+  const rang = routines.find((r) => r.state.state === 'rang');
+  const activeItems = resumeOrder(open.filter((t) => !isRoutine(t)), { focusId: focusThreadId });
+  const latestItem = rang?.item ?? activeItems[0];
+  const reason: ResumeReason = rang && rang.state.state === 'rang'
+    ? { kind: 'place', at: rang.state.at }
+    : latestItem ? resumeReason(latestItem, { focusId: focusThreadId }) : null;
+  const atPlaces = routines.filter((r) => r.item.id !== latestItem?.id);
+  const doneToday = (id: string) => {
+    const undo = completePlaceOccurrence(id);
+    if (!undo) return;
+    haptic.success();
+    showUndoToast('Done for today. It reminds you again next time.', undo);
+  };
   // Back after days away: what came and went, and what's waiting (lib/away.ts).
   const { since: awaySince, presented: awayPresented, markPresented, dismiss: dismissAway } = useAwaySince();
   // Cheap (a pass over the threads); the React Compiler memoizes it.
@@ -261,7 +321,7 @@ export function PulseHome() {
   }, [hasAway, awayPresented, markPresented]);
   // The next few of the same ranking, so the order is visible, not just its
   // winner. While "while you were away" lists what's waiting, it takes their place.
-  const upNext = away ? [] : activeItems.slice(1, 1 + UP_NEXT_LIMIT);
+  const upNext = away ? [] : activeItems.filter((t) => t.id !== latestItem?.id).slice(0, UP_NEXT_LIMIT);
   const shownIds = new Set([latestItem?.id, ...upNext.map((i) => i.id), ...(away?.rows.map((r) => r.item.id) ?? [])]);
   const comingUp = activeItems
     .flatMap((i): { item: MnemoItem; at: number; step?: string }[] => [
@@ -424,7 +484,12 @@ export function PulseHome() {
         {/* Hero */}
         {latestItem ? (
           <MotiView {...enter.rise(1)}>
-            <ResumeCard item={latestItem} reason={reason} />
+            <ResumeCard
+              item={latestItem}
+              reason={reason}
+              place={placeOf(latestItem)}
+              onDoneToday={reason?.kind === 'place' ? () => doneToday(latestItem.id) : undefined}
+            />
           </MotiView>
         ) : (
           <MotiView {...enter.rise(1)}>
@@ -525,6 +590,30 @@ export function PulseHome() {
                   last={i === shown.length - 1}
                 />
               ))}
+            </ThreadList>
+          </MotiView>
+        )}
+
+        {/* At places: routines waiting for their place, and today's that are done */}
+        {atPlaces.length > 0 && (
+          <MotiView {...enter.rise(2)} {...enter.reflow()} className="mb-7">
+            <Eyebrow>At places</Eyebrow>
+            <ThreadList>
+              {atPlaces.map(({ item, state }, i, shown) => {
+                const row = routineRow(state, item, placeOf(item), now);
+                return (
+                  <ThreadRow
+                    key={item.id}
+                    item={item}
+                    index={i}
+                    onPress={() => openItem(item.id)}
+                    detail={row.detail}
+                    trailing={row.trailing}
+                    trailingTone={row.done ? undefined : state.state === 'waiting' && state.next === 0 ? colors.accent : undefined}
+                    last={i === shown.length - 1}
+                  />
+                );
+              })}
             </ThreadList>
           </MotiView>
         )}
