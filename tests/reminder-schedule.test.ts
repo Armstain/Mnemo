@@ -8,6 +8,11 @@ vi.mock('expo-constants', () => ({ default: {}, ExecutionEnvironment: {} }));
 vi.mock('@/lib/places', async (orig) => ({ ...(await orig<typeof import('@/lib/places')>()), phoneWeekend: () => [6, 0] }));
 vi.mock('@/lib/notifications', () => ({
   notificationsAvailable: true,
+  CHANNELS: { reminders: 'reminder-alerts', nudges: 'nudges' },
+  ACTIONS: { done: 'done', hour: 'hour', reply: 'reply' },
+  ensureChannel: async () => {},
+  hasNotificationPermission: async () => true,
+  askNotificationPermission: async () => true,
   Notifications: {
     SchedulableTriggerInputTypes: { DATE: 'date', DAILY: 'daily', WEEKLY: 'weekly', MONTHLY: 'monthly', YEARLY: 'yearly' },
     AndroidImportance: { HIGH: 4, DEFAULT: 3 },
