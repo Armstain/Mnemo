@@ -1,5 +1,4 @@
 import { isOpenStatus, type MnemoItem, type Place, type PlaceReminder, type PlaceRepeat } from '@/types/mnemo';
-import { DAY_MS } from '@/utils/time';
 
 // A place is a circle, never narrower than MIN_RADIUS or the fix accuracy it was saved with.
 // Set while inside: arriving counts only after leaving first, and vice versa. Pure logic; phone side is lib/geofence.ts.

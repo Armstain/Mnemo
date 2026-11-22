@@ -39,7 +39,7 @@ export interface Preferences {
   /** Vibration feedback on taps and results (Settings → Appearance). On unless turned off. */
   haptics?: boolean;
   /** What a place reminder sounds like (lib/place-sound.ts). */
-  placeSound?: 'chime' | 'bells' | 'rise' | 'default';
+  placeSound?: PlaceSound;
   /** Heads-ups before an appointment heard in a note (Settings → Reminders). Unset: DEFAULT_LEADS in lib/leads.ts. */
   appointmentLeads?: Lead[];
   /** Appointments heard in a note go into the phone's calendar too (lib/calendar.ts). Off until turned on. */

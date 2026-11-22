@@ -586,7 +586,7 @@ export function PulseHome() {
                     key={item.id}
                     item={item}
                     index={i}
-                    onPress={() => openItem(item.id)}
+                    onPress={() => openThread(item.id)}
                     detail={row.detail}
                     trailing={row.trailing}
                     trailingTone={row.done ? undefined : state.state === 'waiting' && state.next === 0 ? colors.accent : undefined}
