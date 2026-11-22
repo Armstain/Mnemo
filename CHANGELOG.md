@@ -2,6 +2,11 @@
 
 All notable changes to Mnemo, newest first. Versions match `app.json`. Everything before 1.0.0 is summarised by phase.
 
+## [Unreleased]
+
+### Added
+- **The problem report explains a missed place reminder.** It lists each place reminder as Mnemo sees it (inside or outside, since when, last rang) and the last 30 place events: what Android sent, when the places were set, what opening the app caught, and why a crossing didn't ring (already counted inside, back within the hour, not one of its days, done today). Short ids only, no titles or coordinates. Times are local.
+
 ## [2.0.4] - 2026-11-17
 
 ### Added

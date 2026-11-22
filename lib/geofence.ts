@@ -7,7 +7,8 @@ import { nativeGeofencing } from '@/lib/geofence-native';
 import { outcomeProblem, outcomeReport, type GeofenceOutcome } from '@/lib/geofence-outcome';
 import { logError } from '@/lib/errors';
 import { loadPlaces } from '@/lib/place-store';
-import { afterCrossing, isArmed, onFix, onPlaceEvent, pickWatched, placeLabel, PLACE_NOTIFICATION, ringNow, watchedRadius, type PlaceEvent } from '@/lib/places';
+import { notePlace, shortId } from '@/lib/place-log';
+import { afterCrossing, heldBack, isArmed, onFix, onPlaceEvent, pickWatched, placeLabel, PLACE_NOTIFICATION, watchedRadius, type PlaceEvent } from '@/lib/places';
 import { ringPlaceReminder } from '@/lib/place-sound';
 import { getPreferences } from '@/lib/preferences';
 import { openSettings, reminderHealth, type CheckState } from '@/lib/reliability';
@@ -273,6 +274,7 @@ export async function syncGeofences(items: MnemoItem[], places: Place[]): Promis
       // is retried at the next sync (a change, or coming back to Mnemo) and shown in Settings.
       const outcome = await native.start(GEOFENCE_TASK, regions);
       setThisLaunch = true;
+      void notePlace(`set ${regions.length} ${regions.length === 1 ? 'place' : 'places'}: Android said ${outcome.state}${outcome.code ? ` (${outcome.code})` : ''}`);
       if (outcome.state === 'ok') {
         await AsyncStorage.setItem(WATCH_KEY, JSON.stringify({ signature, since: Date.now() }));
       } else {
@@ -294,6 +296,7 @@ export async function syncGeofences(items: MnemoItem[], places: Place[]): Promis
     }
     await Location.startGeofencingAsync(GEOFENCE_TASK, regions);
     setThisLaunch = true;
+    void notePlace(`set ${regions.length} ${regions.length === 1 ? 'place' : 'places'}`);
     await AsyncStorage.setItem(WATCH_KEY, JSON.stringify({ signature, since: Date.now() }));
   } catch (e) {
     logError('geofence sync', e);
@@ -332,40 +335,57 @@ const rung = new Set<string>();
 
 /**
  * A crossing that would ring. A repeating reminder on the wrong day, or back within the hour,
- * only notes the side the phone is on (lib/places.ts `ringNow`, `afterCrossing`). True when it rang.
+ * only notes the side the phone is on (lib/places.ts `heldBack`, `afterCrossing`). `rang`: it
+ * rang; `why`: what happened, for the place log.
  */
-async function fire(item: MnemoItem, place: Place | undefined, now: number, note?: string, late = false): Promise<boolean> {
+async function fire(item: MnemoItem, place: Place | undefined, now: number, note?: string, late = false): Promise<{ rang: boolean; why: string }> {
   const r = item.place!;
-  const rang = ringNow(r, now);
-  if (rang) {
+  const held = heldBack(r, now);
+  if (!held) {
     const key = `${item.id}:${r.setAt}:${r.lastFiredAt ?? 0}`;
-    if (rung.has(key)) return false;
+    if (rung.has(key)) return { rang: false, why: 'already rang for this crossing' };
     rung.add(key);
     await show(item, place?.name, note);
   }
-  await save(item, afterCrossing(r, now, rang, late));
-  return rang;
+  await save(item, afterCrossing(r, now, !held, late));
+  return { rang: !held, why: held ? `held back: ${held}` : 'RANG' };
+}
+
+/** "arrive, already counted inside": a crossing that changed nothing, said plainly for the log. */
+function sideNote(r: PlaceReminder, action: 'inside' | 'outside' | 'ignore'): string {
+  if (action === 'ignore') return 'ignored';
+  const inside = action === 'inside';
+  if (r.insideAtSet === inside) return `already counted ${action}, no ring`;
+  return `now counted ${action}${r.insideAtSet === undefined ? ' (side was unknown)' : ''}`;
 }
 
 /** Runs with the app closed, so it reads the threads itself. */
 export async function handleGeofenceEvent(event: PlaceEvent, placeId: string, now = Date.now()): Promise<void> {
   const [items, places, watch] = await Promise.all([getAllItems(), loadPlaces(), loadWatch()]);
   const place = places.find((p) => p.id === placeId);
+  const did: string[] = [];
   for (const item of items) {
     if (!isArmed(item) || item.place.placeId !== placeId) continue;
     const action = onPlaceEvent(item.place, event, now, watch.since);
+    const tag = `r:${shortId(item.id)} ${item.place.on}`;
     if (action === 'fire') {
-      await fire(item, place, now);
-    } else if (action === 'inside' || action === 'outside') {
-      const inside = action === 'inside';
-      if (item.place.insideAtSet !== inside) await save(item, { ...item.place, insideAtSet: inside, sideAt: now });
+      did.push(`${tag} ${(await fire(item, place, now)).why}`);
+    } else {
+      did.push(`${tag} ${sideNote(item.place, action)}`);
+      if (action !== 'ignore') {
+        const inside = action === 'inside';
+        if (item.place.insideAtSet !== inside) await save(item, { ...item.place, insideAtSet: inside, sideAt: now });
+      }
     }
   }
+  const after = watch.since ? ` (${Math.round((now - watch.since) / 1000)}s after set)` : '';
+  await notePlace(`Android: ${event} p:${shortId(placeId)}${after} → ${did.length ? did.join('; ') : 'no reminder set here'}`, now);
 }
 
 /** `opening`: the app just opened, so a ring now is one the phone should have given earlier, and it says so. */
 async function applyFix(items: MnemoItem[], here: Fix, opening: boolean): Promise<void> {
   const now = Date.now();
+  const did: string[] = [];
   const places = await loadPlaces();
   const watching = opening && (await Location.getBackgroundPermissionsAsync().catch(() => ({ granted: false }))).granted;
   for (const item of items.filter(isArmed)) {
@@ -373,17 +393,22 @@ async function applyFix(items: MnemoItem[], here: Fix, opening: boolean): Promis
     const place = places.find((p) => p.id === r.placeId);
     if (!place) continue;
     const action = onFix(r, place, here);
+    const tag = `r:${shortId(item.id)} ${r.on}`;
     if (action === 'inside' || action === 'outside') {
       const inside = action === 'inside';
+      if (r.insideAtSet !== inside) did.push(`${tag} ${sideNote(r, action)}`);
       await save(item, { ...r, insideAtSet: inside, sideAt: r.insideAtSet === inside ? r.sideAt : now });
     } else if (action === 'fire' && opening) {
       // Watched and still missed: the phone held it back. Unwatched: only noticeable now.
-      const rang = await fire(item, place, now, watching ? 'late: your phone held it back' : 'noticed when you opened Mnemo', watching);
+      const { rang, why } = await fire(item, place, now, watching ? 'late: your phone held it back' : 'noticed when you opened Mnemo', watching);
+      did.push(`${tag} ${why}${rang ? ' late' : ''}`);
       if (rang && watching) await AsyncStorage.setItem(LATE_KEY, String(Date.now())).catch(() => {});
     } else if (action === 'fire') {
-      await fire(item, place, now);
+      did.push(`${tag} ${(await fire(item, place, now)).why}`);
     }
   }
+  // Only what changed something: a position every 30 seconds while open would bury the rest.
+  if (did.length || opening) await notePlace(`${opening ? 'on opening' : 'while open'}, ±${Math.round(here.accuracy)} m → ${did.length ? did.join('; ') : 'nothing changed'}`, now);
 }
 
 /** No recent position cached (common: nothing else asked for one): read one, briefly. */

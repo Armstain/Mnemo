@@ -301,3 +301,59 @@ describe('Android with Mnemo\'s own registration: the list counts as set only wh
     expect(native.started).toBe(false);
   });
 });
+
+describe('the place log says what happened to each crossing', () => {
+  const log = async () => (await import('@/lib/place-log')).readPlaceLog();
+
+  it('a ring is logged as rung', async () => {
+    await geofence.handleGeofenceEvent('enter', 'a', day(0));
+    const entries = await log();
+    expect(entries).toHaveLength(1);
+    expect(entries[0].at).toBe(day(0));
+    expect(entries[0].text).toBe('Android: enter p:a → r:A arrive RANG');
+  });
+
+  it('an arrival Mnemo already counted as inside says so, instead of looking like silence', async () => {
+    save({ ...row('A'), place: { placeId: 'a', on: 'arrive', setAt: 1, insideAtSet: true, sideAt: 1, repeat: 'always' } });
+    await geofence.handleGeofenceEvent('enter', 'a', day(0));
+    expect(rang).toHaveLength(0);
+    expect((await log())[0].text).toBe('Android: enter p:a → r:A arrive already counted inside, no ring');
+  });
+
+  it('a repeating reminder back within the hour is logged as held back', async () => {
+    save({ ...row('A'), place: { placeId: 'a', on: 'arrive', setAt: 1, insideAtSet: false, sideAt: day(0, 8), lastFiredAt: day(0, 8) - 1000, repeat: 'always' } });
+    await geofence.handleGeofenceEvent('enter', 'a', day(0, 8) + 30 * 60 * 1000);
+    expect(rang).toHaveLength(0);
+    expect((await log())[0].text).toBe('Android: enter p:a → r:A arrive held back: back within the hour');
+  });
+
+  it('an event for a place with no reminder, and setting the places, are logged', async () => {
+    native.on = true;
+    await restart();
+    await geofence.syncGeofences(items(), places.list);
+    await geofence.handleGeofenceEvent('exit', 'nowhere', Date.now());
+    const texts = (await log()).map((e) => e.text);
+    expect(texts[0]).toBe('set 2 places: Android said ok');
+    expect(texts[1]).toMatch(/^Android: exit p:here \(\d+s after set\) → no reminder set here$/);
+  });
+
+  it('keeps only the last entries', async () => {
+    const { notePlace, PLACE_LOG_MAX } = await import('@/lib/place-log');
+    for (let i = 0; i < PLACE_LOG_MAX + 5; i++) await notePlace(`e${i}`, i + 1);
+    const entries = await log();
+    expect(entries).toHaveLength(PLACE_LOG_MAX);
+    expect(entries[0].text).toBe('e5');
+  });
+});
+
+describe('the report lists each place reminder as Mnemo sees it', () => {
+  it('side, repeat and last ring, with short ids and no titles', async () => {
+    const { reminderLines } = await import('@/lib/place-log');
+    const lines = reminderLines([
+      { id: 'thread-1234', status: 'active', place: { placeId: 'place-abcd', on: 'arrive', setAt: day(-3), insideAtSet: true, sideAt: day(-1, 18), lastFiredAt: day(-1, 17), repeat: 'weekdays' } },
+      { id: 'old', status: 'completed', place: { placeId: 'a', on: 'arrive', setAt: 1, firedAt: 2 } },
+    ]);
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).toMatch(/^r:1234 at p:abcd · arrive, weekdays · active · inside since 2026-01-04 18:00:00 \([+-]\d\d:\d\d\) · set .* · last rang 2026-01-04 17:00:00/);
+  });
+});

@@ -65,13 +65,23 @@ async function placeLine(): Promise<string> {
     const watch = w ? JSON.parse(w) : null;
     const event = e ? JSON.parse(e) : null;
     const count = watch?.signature ? String(watch.signature).split('|').length : 0;
-    const when = (at: unknown) => (Number(at) ? new Date(Number(at)).toISOString() : 'never');
+    const { logLines, readPlaceLog, reminderLines, stamp } = await import('@/lib/place-log');
+    const when = (at: unknown) => stamp(Number(at));
     // What Android itself answered (Android builds with the native registration). Loaded here
     // only, so everything else that logs errors doesn't load the native module.
     const { nativeGeofencing } = await import('@/lib/geofence-native');
     const { outcomeReport } = await import('@/lib/geofence-outcome');
     const android = nativeGeofencing ? `\n${outcomeReport(nativeGeofencing.outcome())}` : '';
-    return `Places watched: ${count}${count ? ` since ${when(watch.since)}` : ''} · last place event: ${event ? `${event.event} ${when(event.at)}` : 'never'}${android}`;
+    // Each place reminder as Mnemo sees it, and what happened lately (oldest first): together
+    // they say whether Android was silent or Mnemo heard it and didn't ring, and why.
+    const { getAllItems } = await import('@/lib/db');
+    const reminders = reminderLines(await getAllItems().catch(() => []));
+    const log = logLines(await readPlaceLog());
+    return [
+      `Places watched: ${count}${count ? ` since ${when(watch.since)} (set again on every launch)` : ''} · last place event: ${event ? `${event.event} ${when(event.at)}` : 'never'}${android}`,
+      `Place reminders: ${reminders.length ? `\n${reminders.join('\n')}` : 'none'}`,
+      `Place log (last ${log.length}): ${log.length ? `\n${log.join('\n')}` : 'empty'}`,
+    ].join('\n');
   } catch {
     return 'Places: unreadable';
   }

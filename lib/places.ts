@@ -211,17 +211,26 @@ const localDay = (at: number) => {
   return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
 };
 
-/** Whether a crossing that would ring rings now. */
-export function ringNow(r: Pick<PlaceReminder, 'repeat' | 'lastFiredAt' | 'sideAt' | 'days' | 'doneAt'>, now: number, weekend: number[] = phoneWeekend()): boolean {
-  if (!r.repeat) return true;
+/** Why a crossing that would ring stays quiet (for the problem report), or null when it rings. */
+export function heldBack(
+  r: Pick<PlaceReminder, 'repeat' | 'lastFiredAt' | 'sideAt' | 'days' | 'doneAt'>,
+  now: number,
+  weekend: number[] = phoneWeekend(),
+): 'done today' | 'back within the hour' | 'not one of its days' | null {
+  if (!r.repeat) return null;
   // Today's was already marked done (before it rang): the next one is another day.
   const rangToday = r.lastFiredAt !== undefined && localDay(r.lastFiredAt) === localDay(now);
-  if (!rangToday && r.doneAt !== undefined && localDay(r.doneAt) === localDay(now)) return false;
-  if (r.lastFiredAt !== undefined && now - Math.max(r.lastFiredAt, r.sideAt ?? 0) < AWAY_MS) return false;
-  if (r.repeat === 'always') return true;
-  if (r.repeat === 'days') return ringDays(r).includes(new Date(now).getDay());
+  if (!rangToday && r.doneAt !== undefined && localDay(r.doneAt) === localDay(now)) return 'done today';
+  if (r.lastFiredAt !== undefined && now - Math.max(r.lastFiredAt, r.sideAt ?? 0) < AWAY_MS) return 'back within the hour';
+  if (r.repeat === 'always') return null;
+  if (r.repeat === 'days') return ringDays(r).includes(new Date(now).getDay()) ? null : 'not one of its days';
   const isWeekend = weekend.includes(new Date(now).getDay());
-  return r.repeat === 'weekends' ? isWeekend : !isWeekend;
+  return (r.repeat === 'weekends' ? isWeekend : !isWeekend) ? null : 'not one of its days';
+}
+
+/** Whether a crossing that would ring rings now. */
+export function ringNow(r: Pick<PlaceReminder, 'repeat' | 'lastFiredAt' | 'sideAt' | 'days' | 'doneAt'>, now: number, weekend: number[] = phoneWeekend()): boolean {
+  return heldBack(r, now, weekend) === null;
 }
 
 /**
