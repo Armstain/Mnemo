@@ -1,15 +1,15 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect } from 'react';
 import { AppState } from 'react-native';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import { onAppActive, onAppBackground, type AwayState } from '@/lib/away';
+import { storage } from '@/lib/storage';
+import { createValueStore } from '@/lib/value-store';
 
 const KEY = 'mnemo-away';
 
 // One state for the whole app, so Home remounting doesn't count as a return.
-let state: AwayState | null = null;
+const away = createValueStore<AwayState | null>(null);
 let started: Promise<void> | null = null;
-const listeners = new Set<(s: AwayState) => void>();
 
 function parse(raw: string | null): AwayState {
   try {
@@ -23,20 +23,21 @@ function parse(raw: string | null): AwayState {
 }
 
 function commit(next: AwayState) {
-  state = next;
-  listeners.forEach((l) => l(next));
-  AsyncStorage.setItem(KEY, JSON.stringify(next)).catch(() => {
+  away.set(next);
+  storage.set(KEY, JSON.stringify(next)).catch(() => {
     // Not remembered: at worst the card shows again, or not at all, next time.
   });
 }
 
 function start(): Promise<void> {
   if (!started) {
-    started = AsyncStorage.getItem(KEY)
+    started = storage
+      .get(KEY)
       .catch(() => null)
       .then((raw) => {
         commit(onAppActive(parse(raw), Date.now()));
         AppState.addEventListener('change', (s) => {
+          const state = away.get();
           if (!state) return;
           if (s === 'active') commit(onAppActive(state, Date.now()));
           else if (s === 'background') commit(onAppBackground(state, Date.now()));
@@ -58,18 +59,15 @@ export function useAwaySince(): {
   markPresented: () => void;
   dismiss: () => void;
 } {
-  const [current, setCurrent] = useState<AwayState | null>(state);
+  const current = away.useValue();
 
   useEffect(() => {
-    listeners.add(setCurrent);
-    start().then(() => setCurrent(state));
-    return () => {
-      listeners.delete(setCurrent);
-    };
+    void start();
   }, []);
 
   const dismiss = useCallback(() => commit({ lastSeenAt: Date.now() }), []);
   const markPresented = useCallback(() => {
+    const state = away.get();
     if (state?.since !== undefined) commit({ ...state, presentedFor: state.since });
   }, []);
   const since = current?.since ?? null;

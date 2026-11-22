@@ -4,9 +4,9 @@ import { TextInput } from '@/components/ui/TextInput';
 import { noFocusRing } from '@/utils/web';
 import type { TextInput as RNTextInput } from 'react-native';
 import { Text } from '@/components/ui/Text';
-import { haptic } from '@/utils/haptics';
+import { haptic } from '@/lib/haptics';
 import { useThemeColors } from '@/hooks/use-theme';
-import { useStatusConfig } from '@/utils/categories';
+import { useStatusConfig } from '@/hooks/use-categories';
 import { Icon } from '@/components/ui/Icon';
 import { MotiView } from 'moti';
 import { Animated, usePressScale } from '@/hooks/use-press-scale';
@@ -69,7 +69,6 @@ export function ChecklistEditor({
 
   return (
     <View>
-      {/* Progress bar */}
       {totalCount > 0 && (
         <View className={`mb-3 ${compact ? 'mb-2' : 'mb-4'}`}>
           <View className="flex-row justify-between items-center mb-1.5">
@@ -97,7 +96,6 @@ export function ChecklistEditor({
         </View>
       )}
 
-      {/* Checklist items */}
       <View className={compact ? 'gap-1' : 'gap-2'}>
         {items.map((item) => (
           <View
@@ -151,7 +149,6 @@ export function ChecklistEditor({
         ))}
       </View>
 
-      {/* Add new item input */}
       {editable && (
         <View className="flex-row items-center mt-3 border-t border-border/30 pt-3">
           <View className="w-5 h-5 rounded-md border border-dashed border-border/60 items-center justify-center mr-3">

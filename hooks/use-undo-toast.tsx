@@ -1,12 +1,6 @@
 import React, { createContext, useCallback, useContext, useRef, useState } from 'react';
 
-/**
- * How long a soft delete waits before it's persisted for real. Matched by
- * use-mnemo-store's own delete timer so the toast and the actual data
- * lifetime never drift apart — undo always works for exactly as long as
- * the toast says it will.
- */
-export const UNDO_WINDOW_MS = 6000;
+import { UNDO_WINDOW_MS } from '@/types/store';
 
 interface ToastState {
   id: number;

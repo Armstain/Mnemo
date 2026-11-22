@@ -11,9 +11,13 @@ import { MotiView } from 'moti';
 import { useCountUp } from '@/hooks/use-count-up';
 
 import { Eyebrow } from '@/components/ui/Eyebrow';
-import { useThemeColors, type ThemeColors } from '@/hooks/use-theme';
-import { countsAsHappened, formatValue, isCurrency, metricKey, MONEY_KINDS, ROLLUPS, UNSORTED_MONEY, worthBreakingDown, type MetricSummary } from '@/lib/measures';
+import { useThemeColors } from '@/hooks/use-theme';
+import type { ThemeColors } from '@/utils/palette';
+import { countsAsHappened, formatValue, isCurrency, metricKey, MONEY_KINDS, UNSORTED_MONEY, worthBreakingDown, type MetricSummary } from '@/lib/measures';
+import { useSurfaceStyle } from '@/components/ui/Card';
 import { Pill } from '@/components/ui/Pill';
+import { ROLLUPS } from '@/types/mnemo';
+import type { MetricFix } from '@/lib/measure-fix';
 import type { Measure, Rollup } from '@/types/mnemo';
 import { capitalize } from '@/utils/text';
 
@@ -146,9 +150,6 @@ export function MeasureEditor({
               {MONEY_KINDS.map((k) => (
                 <Pill
                   key={k.metric}
-                  size="md"
-                  dot={false}
-                  outline
                   tone={colors.accent}
                   selected={metricKey(m.metric) === k.metric}
                   onPress={() => update(i, { metric: k.metric, rollup: 'sum' })}
@@ -258,12 +259,12 @@ function signed(value: number, unit?: string): string {
 }
 
 /** One tracked metric, laid out for how it combines. */
-export type MetricFix = { metric?: string; rollup?: Rollup };
 
 const ROLLUP_NAMES: Record<Rollup, string> = { sum: 'Add up', latest: 'Latest', average: 'Average', compare: 'Compare' };
 
-export function MetricCard({ summary, onFix }: { summary: MetricSummary; onFix?: (fix: MetricFix) => void }) {
+function MetricCard({ summary, onFix }: { summary: MetricSummary; onFix?: (fix: MetricFix) => void }) {
   const colors = useThemeColors();
+  const surface = useSurfaceStyle();
   const [fixing, setFixing] = React.useState(false);
   const [name, setName] = React.useState(summary.metric);
   const palette = groupPalette(colors);
@@ -307,7 +308,6 @@ export function MetricCard({ summary, onFix }: { summary: MetricSummary; onFix?:
       const total = summary.total || 1;
       body = (
         <View className="mt-4">
-          {/* Where it went, at a glance */}
           <MotiView
             from={{ scaleX: 0 }}
             animate={{ scaleX: 1 }}
@@ -366,7 +366,7 @@ export function MetricCard({ summary, onFix }: { summary: MetricSummary; onFix?:
   }
 
   return (
-    <View className="rounded-lg px-5 py-4" style={{ backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border }}>
+    <View className="rounded-lg px-5 py-4" style={surface}>
       {fixing && onFix ? (
         // Rename it (an existing name merges the two) or change how it adds up.
         <View className="gap-3 mb-2">

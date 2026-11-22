@@ -9,6 +9,8 @@ vi.mock('@react-native-async-storage/async-storage', () => ({
   },
 }));
 
+vi.mock('expo-secure-store', () => ({}));
+
 const place = (id: string, name: string) => ({ id, name, latitude: 51.5, longitude: -0.1, radius: 150, accuracy: 0, savedAt: 0 });
 
 describe('saved places', () => {

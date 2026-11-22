@@ -1,14 +1,10 @@
-import type { Entry, Measure, Rollup } from '@/types/mnemo';
+import { ROLLUPS, type Entry, type Measure, type Rollup } from '@/types/mnemo';
 import { nfc } from '@/utils/text';
 
 // The AI only extracts numbers; checking they were really said and all totals, averages and trends run on-device as arithmetic.
 
-export const ROLLUPS: Rollup[] = ['sum', 'latest', 'average', 'compare'];
-
-const MAX_ITEMS = 30;
+export const MAX_MEASURES = 30;
 const MAX_VALUE = 1e12;
-
-// ─── Reading numbers out of text ────────────────────────────────
 
 // First code point of each script's 0–9 run, so "৪০" reads as 40.
 const DIGIT_ZEROS = [
@@ -29,8 +25,6 @@ function toAsciiDigits(text: string): string {
     return zero === undefined ? ch : String(code - zero);
   });
 }
-
-// ─── Number words: English, Bangla and Banglish ────────────────
 
 type Word =
   | { kind: 'unit'; value: number }
@@ -243,7 +237,7 @@ export function scanNumbers(tokens: string[]): NumberSpan[] {
 }
 
 /** Separators are ambiguous ("1,200" vs "12,50"), so both readings are kept; "k" means thousands. */
-export function numbersIn(text: string): number[] {
+function numbersIn(text: string): number[] {
   const ascii = toAsciiDigits(text);
   const values = new Set<number>();
   const token = /(\d[\d.,]*)(\s*[kK]\b)?/g;
@@ -265,8 +259,6 @@ export function numbersIn(text: string): number[] {
   return [...values];
 }
 
-// ─── Units ──────────────────────────────────────────────────────
-
 // A three-letter unit is money only if listed here, so "min" or "hrs" never get a currency symbol.
 const CURRENCIES = new Set(
   (
@@ -287,18 +279,16 @@ function normalizeUnit(raw: unknown): string | undefined {
   return CURRENCIES.has(unit.toUpperCase()) ? unit.toUpperCase() : unit;
 }
 
-/** The key two measures share when they track the same thing. */
 export function metricKey(metric: string): string {
   return metric.trim().toLowerCase().replace(/\s+/g, ' ');
 }
 
-// ─── Which way money went ───────────────────────────────────────
 // Money counts when it's paid (docs/plans/2026-11-root-fixes.md, B1). Besides "spent" and
 // "received", money can be owed by you ("owe"), owed to you ("lent"), or still to pay
 // ("planned"). Those three are open, not something that happened: they are listed on their
 // thread while it's open and never added into what was spent.
 
-export const OPEN_MONEY = ['owe', 'lent', 'planned'] as const;
+const OPEN_MONEY = ['owe', 'lent', 'planned'] as const;
 
 /**
  * Money the reading couldn't place (no payment word, no list, no thread that tracks money): not
@@ -317,7 +307,6 @@ export function numbersToShow<T extends { metric: string }>(summaries: T[], thre
   return threadOpen ? summaries : summaries.filter((s) => countsAsHappened(s.metric));
 }
 
-// ─── What's worth showing (docs/plans/2026-11-root-fixes.md, B3) ───
 // A summary repeats the note unless it adds something: a total of one value is that value, a
 // breakdown into one group is the total again. One rule for the thread and the weekly review.
 
@@ -365,8 +354,6 @@ function cleanText(raw: unknown, max: number): string | undefined {
   return text || undefined;
 }
 
-// ─── Checking what the AI returned ──────────────────────────────
-
 /** Keeps only measures whose value appears in `source`; inferred, converted or summed numbers are dropped. */
 export function verifyMeasures(raw: unknown, source: string): Measure[] {
   if (!Array.isArray(raw)) return [];
@@ -395,12 +382,10 @@ export function verifyMeasures(raw: unknown, source: string): Measure[] {
     if (seen.has(key)) continue;
     seen.add(key);
     out.push(measure);
-    if (out.length >= MAX_ITEMS) break;
+    if (out.length >= MAX_MEASURES) break;
   }
   return out;
 }
-
-// ─── Rolling up a thread ────────────────────────────────────────
 
 export interface MeasurePoint {
   value: number;

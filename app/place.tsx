@@ -1,7 +1,8 @@
 import React from 'react';
-import { ActivityIndicator, KeyboardAvoidingView, Platform, Pressable, ScrollView, View } from 'react-native';
+import { ActivityIndicator, Pressable, ScrollView, View } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
-import { haptic } from '@/utils/haptics';
+import { haptic } from '@/lib/haptics';
+import { generateId } from '@/lib/ids';
 import * as Location from 'expo-location';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -9,6 +10,7 @@ import { MapPicker } from '@/components/map/MapPicker';
 import { WarningList } from '@/components/PlaceWarnings';
 import { Button, IconButton } from '@/components/ui/Button';
 import { Icon } from '@/components/ui/Icon';
+import { KeyboardAvoid } from '@/components/ui/Screen';
 import { Pill } from '@/components/ui/Pill';
 import { Text } from '@/components/ui/Text';
 import { TextInput } from '@/components/ui/TextInput';
@@ -114,7 +116,7 @@ export default function PlaceScreen() {
   const save = async () => {
     setTried(true);
     if (!draft || problem) return;
-    const place: Place = { ...draft, id: existing?.id ?? `place-${Date.now().toString(36)}`, name: name.trim().slice(0, 40) };
+    const place: Place = { ...draft, id: existing?.id ?? generateId('place'), name: name.trim().slice(0, 40) };
     await savePlace(place);
     // Moved or resized: its reminders read where the phone is all over again.
     if (existing && circleChanged(existing, place)) {
@@ -144,7 +146,7 @@ export default function PlaceScreen() {
   };
 
   return (
-    <KeyboardAvoidingView style={{ flex: 1, backgroundColor: colors.bg }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+    <KeyboardAvoid style={{ flex: 1, backgroundColor: colors.bg }}>
       {/* The map, with the pin fixed in the middle: the map moves under it. */}
       <View style={{ height: '48%', minHeight: 260 }}>
         {offline ? (
@@ -208,7 +210,7 @@ export default function PlaceScreen() {
 
         <View className="flex-row flex-wrap gap-2">
           {RADIUS_CHOICES.map((r) => (
-            <Pill key={r} tone={colors.accent} size="md" dot={false} outline={radius !== r} selected={radius === r} onPress={() => setRadius(r)}>
+            <Pill key={r} tone={colors.accent} selected={radius === r} onPress={() => setRadius(r)}>
               {formatMeters(r)} circle
             </Pill>
           ))}
@@ -244,6 +246,6 @@ export default function PlaceScreen() {
           </Pressable>
         ) : null}
       </ScrollView>
-    </KeyboardAvoidingView>
+    </KeyboardAvoid>
   );
 }

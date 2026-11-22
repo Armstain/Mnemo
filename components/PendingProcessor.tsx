@@ -143,7 +143,6 @@ const SEND_AT_ONCE = 2;
 
 let sending = false;
 
-/** Sends waiting notes a couple at a time; stops at the first problem every note would share. */
 type Waiting = Parameters<typeof resolvePendingEntry>;
 
 /** Sends waiting notes a couple at a time; stops at the first problem every note would share. */
@@ -218,7 +217,6 @@ export function PendingProcessor() {
       retryWaitingNow();
       sweep();
     });
-    // A new key: try the waiting notes right away (after it's stored).
     const offKey = onApiKeyChanged(() => setTimeout(sweep, 0));
     return () => {
       cancelled = true;

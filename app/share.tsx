@@ -1,25 +1,28 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, Image, KeyboardAvoidingView, Platform, Pressable, ScrollView, View } from 'react-native';
+import { ActivityIndicator, Image, ScrollView, View } from 'react-native';
 import { router } from 'expo-router';
 import { MotiView } from 'moti';
-import { haptic } from '@/utils/haptics';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { Button, IconButton } from '@/components/ui/Button';
+import { Button } from '@/components/ui/Button';
+import { Surface, useSurfaceStyle } from '@/components/ui/Card';
+import { KeyboardAvoid, ScreenHeader, useSafeTop } from '@/components/ui/Screen';
+import { Pill } from '@/components/ui/Pill';
 import { Eyebrow } from '@/components/ui/Eyebrow';
 import { Icon } from '@/components/ui/Icon';
 import { Text } from '@/components/ui/Text';
 import { TextInput } from '@/components/ui/TextInput';
 import { useMnemoStore } from '@/hooks/use-mnemo-store';
 import { useThemeColors } from '@/hooks/use-theme';
-import { rememberPreview, saveSharedNote } from '@/lib/capture';
+import { rememberPreview, saveNote } from '@/lib/capture';
 import { imageUri, keepImage, type ImageBlock } from '@/lib/images';
 import { fetchLinkPreview, type LinkPreview } from '@/lib/link-preview';
 import { takeIncomingShare, type IncomingShare } from '@/lib/shared';
 import { resumeOrder } from '@/lib/when';
-import { useEnter } from '@/utils/motion';
+import { useEnter } from '@/hooks/use-enter';
 import { noFocusRing } from '@/utils/web';
 import { hostOf } from '@/utils/text';
+import { openSaved } from '@/lib/navigation';
 
 /** Text that is only the shared link adds nothing to keep as text. */
 function textBesides(text: string | undefined, url: string | undefined): string {
@@ -34,6 +37,8 @@ function textBesides(text: string | undefined, url: string | undefined): string 
 export default function ShareScreen() {
   const enter = useEnter();
   const insets = useSafeAreaInsets();
+  const top = useSafeTop();
+  const surface = useSurfaceStyle();
   const colors = useThemeColors();
   const store = useMnemoStore();
   const [share] = useState<IncomingShare | null>(() => takeIncomingShare());
@@ -86,7 +91,7 @@ export default function ShareScreen() {
 
   const save = () => {
     const words = [note.trim(), text.trim()].filter(Boolean).join('\n\n');
-    const saved = saveSharedNote({
+    const saved = saveNote('share', {
       text: words,
       category: 'general',
       threadId: threadId ?? undefined,
@@ -96,25 +101,26 @@ export default function ShareScreen() {
       title: preview?.title ?? share.title,
       store,
     });
-    haptic.success();
-    router.replace(`/(tabs)/context?id=${saved.threadId}`);
+    openSaved(saved);
   };
 
   const host = share.url ? hostOf(share.url) : undefined;
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.bg }}>
-      <KeyboardAvoidingView className="flex-1" behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-        <MotiView
-          {...enter.rise(0)}
-          className="flex-row items-center justify-between px-6 mb-4"
-          style={{ paddingTop: Math.max(insets.top, 16) }}
-        >
-          <IconButton icon="x" label="Cancel" variant="bare" onPress={() => router.back()} />
-          <Text className="flex-1 text-center font-sans-medium text-sm text-fg-secondary mx-3">Save to Mnemo</Text>
-          <Button onPress={save} disabled={keeping} variant="primary" size="sm" icon="check">
-            Save
-          </Button>
+      <KeyboardAvoid className="flex-1">
+        <MotiView {...enter.rise(0)} style={{ paddingTop: top }}>
+          <ScreenHeader
+            onClose={() => router.back()}
+            label="Cancel"
+            title="Save to Mnemo"
+            className="px-6 mb-4"
+            trailing={
+              <Button onPress={save} disabled={keeping} variant="primary" size="sm" icon="check">
+                Save
+              </Button>
+            }
+          />
         </MotiView>
 
         <ScrollView
@@ -122,9 +128,8 @@ export default function ShareScreen() {
           keyboardShouldPersistTaps="handled"
           contentContainerStyle={{ paddingBottom: Math.max(insets.bottom, 24) + 24, gap: 20 }}
         >
-          {/* What came in */}
           {share.url ? (
-            <View className="flex-row items-center rounded-md p-3.5" style={{ backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border }}>
+            <Surface className="flex-row items-center rounded-md p-3.5">
               {preview?.imageUrl ? (
                 <Image source={{ uri: preview.imageUrl }} style={{ width: 56, height: 56, borderRadius: 10, marginRight: 12 }} />
               ) : (
@@ -140,7 +145,7 @@ export default function ShareScreen() {
                   {preview?.site ?? host}
                 </Text>
               </View>
-            </View>
+            </Surface>
           ) : null}
 
           {keeping ? (
@@ -168,7 +173,7 @@ export default function ShareScreen() {
                 accessibilityLabel="Shared text"
                 selectionColor={colors.accent}
                 className="font-sans text-body rounded-sm p-3"
-                style={[{ color: colors.fg, maxHeight: 200, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border }, noFocusRing]}
+                style={[{ color: colors.fg, maxHeight: 200 }, surface, noFocusRing]}
               />
             </View>
           ) : null}
@@ -185,11 +190,10 @@ export default function ShareScreen() {
               accessibilityLabel="Your note"
               selectionColor={colors.accent}
               className="font-sans text-body rounded-sm p-3"
-              style={[{ color: colors.fg, minHeight: 72, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border }, noFocusRing]}
+              style={[{ color: colors.fg, minHeight: 72 }, surface, noFocusRing]}
             />
           </View>
 
-          {/* Which thread */}
           <View>
             <Eyebrow className="mb-2">Goes to</Eyebrow>
             <View className="flex-row flex-wrap gap-2">
@@ -197,39 +201,24 @@ export default function ShareScreen() {
                 (c) => {
                   const on = threadId === c.id;
                   return (
-                    <Pressable
+                    <Pill
                       key={c.id ?? 'new'}
-                      onPress={() => {
-                        haptic.select();
-                        setThreadId(c.id);
-                      }}
-                      accessibilityRole="radio"
-                      accessibilityState={{ selected: on }}
-                      className="flex-row items-center rounded-full px-3.5 h-9 active:opacity-70"
-                      style={{
-                        backgroundColor: on ? colors.accentSoft : colors.surface,
-                        borderWidth: 1,
-                        borderColor: on ? `${colors.accent}40` : colors.border,
-                        maxWidth: '100%',
-                      }}
+                      size="lg"
+                      soft
+                      tone={colors.accent}
+                      icon={c.id === null ? 'plus' : c.id === store.focusThreadId ? 'pin' : undefined}
+                      selected={on}
+                      onPress={() => setThreadId(c.id)}
                     >
-                      {c.id === null ? <Icon name="plus" size={13} color={on ? colors.accent : colors.fgTertiary} /> : null}
-                      {c.id && c.id === store.focusThreadId ? <Icon name="pin" size={13} color={on ? colors.accent : colors.fgTertiary} /> : null}
-                      <Text
-                        className={`font-sans-medium text-sm ${c.id === null || c.id === store.focusThreadId ? 'ml-1.5' : ''}`}
-                        style={{ color: on ? colors.accent : colors.fgSecondary }}
-                        numberOfLines={1}
-                      >
-                        {c.title}
-                      </Text>
-                    </Pressable>
+                      {c.title}
+                    </Pill>
                   );
                 },
               )}
             </View>
           </View>
         </ScrollView>
-      </KeyboardAvoidingView>
+      </KeyboardAvoid>
     </View>
   );
 }

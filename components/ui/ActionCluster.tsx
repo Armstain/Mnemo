@@ -19,17 +19,19 @@ import Animated, {
   withTiming,
   type SharedValue,
 } from 'react-native-reanimated';
-import { haptic } from '@/utils/haptics';
+import { haptic } from '@/lib/haptics';
 import Svg, { Circle } from 'react-native-svg';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { router, useGlobalSearchParams, usePathname } from 'expo-router';
+import { router, usePathname } from 'expo-router';
 
 import { useThemeColors } from '@/hooks/use-theme';
 import { useMnemoStore } from '@/hooks/use-mnemo-store';
+import { useViewingThreadId } from '@/hooks/use-viewing-thread';
+import { captureHref, dumpHref } from '@/lib/routes';
 import { Icon, type IconName } from '@/components/ui/Icon';
 import { useReduceMotion } from '@/hooks/use-accessibility-motion';
 import { useSpeechCapture } from '@/hooks/use-speech-capture';
-import { saveVoiceNote } from '@/lib/capture';
+import { saveNote } from '@/lib/capture';
 import { aiEnabled } from '@/lib/ai-mode';
 import { DUR_BASE, DUR_FAST, EASE_IN_OUT, EASE_OUT, EXIT_QUICK, REDUCED, SPRING_NAV } from '@/utils/motion';
 import { formatDuration } from '@/utils/time';
@@ -39,10 +41,10 @@ import {
   CENTER_BUTTON_RISE,
   NAV_BAR_HEIGHT,
   navBottom,
-} from '@/components/ui/FloatingTabBar';
+} from '@/components/ui/nav-layout';
 import { setCaptureActive } from '@/hooks/use-capture-active';
 import { OpenRing } from '@/components/ui/ThreadRing';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { storage } from '@/lib/storage';
 
 const LONG_PRESS_MS = 320;
 
@@ -89,28 +91,24 @@ export function ActionCluster({ visible = true }: { visible?: boolean }) {
   const store = useMnemoStore();
 
   const pathname = usePathname();
-  const { id: routeId } = useGlobalSearchParams<{ id?: string }>();
-  const { items, focusThreadId, getFocusThreadId } = useMnemoStore();
-  const currentThread =
-    pathname.includes('context') && typeof routeId === 'string'
-      ? items.find((i) => i.id === routeId)
-      : undefined;
+  const viewingId = useViewingThreadId();
+  const { items, focusThreadId, getFocusThreadId } = store;
+  const currentThread = viewingId ? items.find((i) => i.id === viewingId) : undefined;
   const focusThread =
     !currentThread && focusThreadId ? items.find((i) => i.id === focusThreadId) : undefined;
   const target = currentThread ?? focusThread;
-  const threadParams = currentThread ? { threadId: currentThread.id } : {};
 
   const [expanded, setExpanded] = useState(false);
 
   const [showHoldHint, setShowHoldHint] = useState(false);
   useEffect(() => {
-    AsyncStorage.getItem(HOLD_HINT_KEY)
+    storage.get(HOLD_HINT_KEY)
       .then((done) => setShowHoldHint(!done))
       .catch(() => {});
   }, []);
   const retireHoldHint = () => {
     setShowHoldHint(false);
-    AsyncStorage.setItem(HOLD_HINT_KEY, '1').catch(() => {});
+    storage.set(HOLD_HINT_KEY, '1').catch(() => {});
   };
   const [holdPhase, setHoldPhase] = useState<HoldPhase>('idle');
   const [tail, setTail] = useState<Tail>(null);
@@ -166,13 +164,13 @@ export function ActionCluster({ visible = true }: { visible?: boolean }) {
   const goRecordScreen = () => {
     haptic.tap();
     setExpanded(false);
-    router.push({ pathname: '/dump', params: threadParams });
+    router.push(dumpHref(currentThread?.id));
   };
 
   const goNote = () => {
     haptic.tap();
     setExpanded(false);
-    router.push({ pathname: '/capture', params: threadParams });
+    router.push(captureHref(currentThread?.id));
   };
 
   const showTail = (next: Exclude<Tail, null | { kind: 'finishing' }>) => {
@@ -233,7 +231,7 @@ export function ActionCluster({ visible = true }: { visible?: boolean }) {
         showTail({ kind: 'tooShort' });
         return;
       }
-      saveVoiceNote({
+      saveNote('voice', {
         text: words,
         audio,
         category: 'general',

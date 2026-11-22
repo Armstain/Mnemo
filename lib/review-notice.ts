@@ -1,10 +1,11 @@
 import { Platform } from 'react-native';
 
 import { formatValue } from '@/lib/measures';
-import { ANDROID_CHANNEL_ID, ensureAndroidChannel, hasNudgePermission, loadNudgePrefs } from '@/lib/nudges';
-import { Notifications } from '@/lib/notifications';
+import { CHANNELS, ensureChannel, hasNotificationPermission, Notifications, type NotificationData } from '@/lib/notifications';
+import { loadNudgePrefs } from '@/lib/nudges';
 import { reviewLine, weekReview } from '@/lib/review';
-import type { Entry, MnemoItem } from '@/types/mnemo';
+import { reviewHref } from '@/lib/routes';
+import { isOpenStatus, type Entry, type MnemoItem } from '@/types/mnemo';
 
 // One notification a week that opens the weekly review. It goes out at the
 // start of the weekend: Friday morning in Bangladesh, Sunday evening
@@ -23,13 +24,12 @@ function inBangladesh(): boolean {
 }
 
 /** When the weekly review notification goes out, for Settings to say. */
-export function reviewTimeLabel(bangladesh = inBangladesh()): string {
-  return bangladesh ? 'Fridays at 10:00' : 'Sundays at 18:00';
+export function reviewTimeLabel(): string {
+  return inBangladesh() ? 'Fridays at 10:00' : 'Sundays at 18:00';
 }
 
-/** The next weekly review time after `now`. */
-export function nextReviewAt(now = Date.now(), bangladesh = inBangladesh()): number {
-  const [weekday, hour] = bangladesh ? [5, 10] : [0, 18]; // Friday 10:00 or Sunday 18:00
+function nextReviewAt(now = Date.now()): number {
+  const [weekday, hour] = inBangladesh() ? [5, 10] : [0, 18];
   const d = new Date(now);
   d.setHours(hour, 0, 0, 0);
   const ahead = (weekday - d.getDay() + 7) % 7;
@@ -44,22 +44,22 @@ export async function scheduleWeeklyReview(items: MnemoItem[], entries: Entry[])
   try {
     await Notifications.cancelScheduledNotificationAsync(ID);
     const prefs = await loadNudgePrefs();
-    if (!prefs.enabled || !prefs.weekly || !(await hasNudgePermission())) return;
-    // Nothing open and nothing written lately: there's no week to look back on.
-    if (!items.some((t) => t.status === 'active' || t.status === 'paused')) return;
-    await ensureAndroidChannel();
+    if (!prefs.enabled || !prefs.weekly || !(await hasNotificationPermission())) return;
+    if (!items.some((t) => isOpenStatus(t.status))) return;
+    await ensureChannel('nudges');
     const at = nextReviewAt();
     // What the review will show then: this is close enough, and it's
     // re-planned every time the app is used.
     const review = weekReview(items, entries, at);
+    const data: NotificationData = { route: reviewHref };
     await Notifications.scheduleNotificationAsync({
       identifier: ID,
       content: {
         title: 'Your week in Mnemo',
         body: reviewLine(review, (t) => `${t.metric} ${formatValue(t.total, t.unit)}`),
-        data: { route: '/review' },
+        data,
       },
-      trigger: { type: Notifications.SchedulableTriggerInputTypes.DATE, date: new Date(at), channelId: ANDROID_CHANNEL_ID },
+      trigger: { type: Notifications.SchedulableTriggerInputTypes.DATE, date: new Date(at), channelId: CHANNELS.nudges },
     });
   } catch {
     // A missed weekly notification is no loss; the review is always in the app.

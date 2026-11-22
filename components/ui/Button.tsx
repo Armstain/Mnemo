@@ -1,7 +1,7 @@
 import React from 'react';
 import { Pressable, View } from 'react-native';
 import { Text } from '@/components/ui/Text';
-import { haptic } from '@/utils/haptics';
+import { haptic } from '@/lib/haptics';
 
 import { useThemeColors } from '@/hooks/use-theme';
 import { Animated, usePressScale } from '@/hooks/use-press-scale';
@@ -19,8 +19,6 @@ interface ButtonProps {
   /** Trailing icon — usually 'arrowUpRight' or 'chevronRight'. */
   trailingIcon?: IconName;
   fullWidth?: boolean;
-  /** Push label left and trailing icon right — for full-width nav-style buttons. */
-  spread?: boolean;
   disabled?: boolean;
   /** Override the press haptic: quiet and ghost are silent unless true; pass false when onPress plays its own. */
   haptic?: boolean;
@@ -47,7 +45,6 @@ export function Button({
   icon,
   trailingIcon,
   fullWidth = false,
-  spread = false,
   disabled = false,
   haptic: feel = variant !== 'quiet' && variant !== 'ghost',
   onPress,
@@ -102,8 +99,8 @@ export function Button({
           {
             flexDirection: 'row',
             alignItems: 'center',
-            justifyContent: spread ? 'space-between' : 'center',
-            gap: spread ? 0 : 8,
+            justifyContent: 'center',
+            gap: 8,
             height: HEIGHT[size],
             paddingHorizontal: H_PADDING[size],
             backgroundColor: background,
@@ -117,7 +114,7 @@ export function Button({
         {children}
       </Text>
       {trailingIcon ? (
-        <View style={spread ? undefined : { marginLeft: -2 }}>
+        <View style={{ marginLeft: -2 }}>
           <Icon name={trailingIcon} size={ICON_SIZE[size] - 2} stroke={2} color={textColor} />
         </View>
       ) : null}

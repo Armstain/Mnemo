@@ -9,7 +9,7 @@ const A = Haptics.AndroidHaptics;
 
 const ignore = () => {};
 
-export function hapticsOn(): boolean {
+function hapticsOn(): boolean {
   return NATIVE && getPreferences().haptics !== false;
 }
 
@@ -35,3 +35,20 @@ export const haptic = {
     Haptics.performAndroidHapticsAsync(effect).catch(ignore);
   },
 };
+
+/**
+ * Plays the ticks across the done ring's closing (from `start`, lasting
+ * `duration` ms) and the confirm as it closes. With reduced motion there's
+ * nothing closing, so just the confirm, now. Returns a cancel.
+ */
+export function playDone({ start, duration, ticks, reduceMotion }: { start: number; duration: number; ticks: number; reduceMotion: boolean }): () => void {
+  if (reduceMotion) {
+    haptic.success();
+    return ignore;
+  }
+  const timers = Array.from({ length: ticks }, (_, i) =>
+    setTimeout(haptic.select, start + duration * Math.sqrt((i + 1) / (ticks + 1))),
+  );
+  timers.push(setTimeout(haptic.success, start + duration));
+  return () => timers.forEach(clearTimeout);
+}

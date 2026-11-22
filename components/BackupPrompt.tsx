@@ -7,6 +7,7 @@ import { useMnemoStore } from '@/hooks/use-mnemo-store';
 import { useThemeColors } from '@/hooks/use-theme';
 import { autoBackupAvailable, autoBackupOn, dismissBackupNudge, lastBackupAt, useBackupState } from '@/lib/auto-backup';
 import { backupNudge } from '@/lib/backup';
+import { settingsHref } from '@/lib/routes';
 
 const TEXT = {
   failing: { title: 'Backups have stopped', body: "Your notes haven't been backed up for a few days." },
@@ -42,7 +43,7 @@ export function BackupPrompt() {
       iconColor={nudge === 'failing' ? colors.error : undefined}
       title={text.title}
       body={body}
-      onPress={() => router.push('/modal')}
+      onPress={() => router.push(settingsHref)}
       accessibilityLabel={`${text.title}. ${body} Open settings.`}
       // Failing backups can't be waved away: the person believes they're covered.
       onDismiss={nudge === 'failing' ? undefined : dismissBackupNudge}

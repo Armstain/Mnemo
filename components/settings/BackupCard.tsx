@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
+import { Surface } from '@/components/ui/Card';
 import { ActivityIndicator, Platform, View } from 'react-native';
 import { TextInput } from '@/components/ui/TextInput';
 import { Text } from '@/components/ui/Text';
-import { haptic } from '@/utils/haptics';
+import { haptic } from '@/lib/haptics';
 import * as DocumentPicker from 'expo-document-picker';
 import * as Sharing from 'expo-sharing';
 import { File, Paths } from 'expo-file-system';
@@ -174,7 +175,7 @@ export function BackupCard() {
   );
 
   return (
-    <View className="bg-surface rounded-lg p-5 border border-border/50">
+    <Surface tone="soft" className="rounded-lg p-5">
       <View className="flex-row items-center mb-2">
         <Icon name="archive" size={15} color={colors.accent} />
         <Text className="font-sans-semi text-sm text-fg ml-2">Encrypted backup</Text>
@@ -300,7 +301,7 @@ export function BackupCard() {
           </Button>
         </View>
       )}
-    </View>
+    </Surface>
   );
 }
 
@@ -347,7 +348,7 @@ export function AutoBackupCard() {
   };
 
   return (
-    <View className="bg-surface rounded-lg p-5 border border-border/50">
+    <Surface tone="soft" className="rounded-lg p-5">
       <View className="flex-row items-center mb-2">
         <Icon name="repeat" size={15} color={colors.accent} />
         <Text className="font-sans-semi text-sm text-fg ml-2">Automatic backup</Text>
@@ -452,6 +453,6 @@ export function AutoBackupCard() {
           </Button>
         </View>
       )}
-    </View>
+    </Surface>
   );
 }

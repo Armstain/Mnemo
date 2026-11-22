@@ -1,8 +1,6 @@
 import { useSyncExternalStore } from 'react';
 import { Platform } from 'react-native';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Crypto from 'expo-crypto';
-import * as SecureStore from 'expo-secure-store';
 import { Directory, File } from 'expo-file-system';
 
 import {
@@ -14,8 +12,10 @@ import {
   sealBackup,
   type BackupPayload,
 } from '@/lib/backup';
+import { createEmitter } from '@/lib/emitter';
 import { logError } from '@/lib/errors';
 import { imageBase64, imagesOf } from '@/lib/images';
+import { readJson, secureStorage, writeJson } from '@/lib/storage';
 
 // Automatic backups: once a day, when something changed, a sealed `.mnemo`
 // file is written into a folder the person picked (Android's folder picker;
@@ -40,50 +40,41 @@ export interface BackupState {
   /** First failure since the last success, and what went wrong. */
   failingSince?: number;
   lastError?: string;
-  /** When a backup file was last exported by hand. */
   lastManualAt?: number;
   /** "Not now" on Home's backup suggestion. */
   nudgeDismissedAt?: number;
 }
 
 let state: BackupState = {};
-const listeners = new Set<() => void>();
+const changes = createEmitter();
 
 function setState(update: Partial<BackupState>): void {
   state = { ...state, ...update };
-  listeners.forEach((l) => l());
-  AsyncStorage.setItem(STATE_KEY, JSON.stringify(state)).catch(() => {
+  changes.emit();
+  writeJson(STATE_KEY, state).catch(() => {
     // Kept in memory for this session; saved again on the next change.
   });
 }
 
-export const backupStateReady: Promise<void> = (async () => {
+const backupStateReady: Promise<void> = (async () => {
   if (Platform.OS === 'web') return;
   try {
-    const raw = await AsyncStorage.getItem(STATE_KEY);
-    if (raw) state = { ...JSON.parse(raw), ...state };
-    listeners.forEach((l) => l());
+    const saved = (await readJson(STATE_KEY)) as BackupState | null;
+    if (saved) state = { ...saved, ...state };
+    changes.emit();
   } catch {
     // No saved state: backups start off.
   }
 })();
 
 export function useBackupState(): BackupState {
-  return useSyncExternalStore(
-    (l) => {
-      listeners.add(l);
-      return () => listeners.delete(l);
-    },
-    () => state,
-    () => state,
-  );
+  return useSyncExternalStore(changes.on, () => state, () => state);
 }
 
 export function autoBackupOn(s: BackupState = state): boolean {
   return autoBackupAvailable && !!s.folderUri;
 }
 
-/** The latest backup of either kind. */
 export function lastBackupAt(s: BackupState = state): number | undefined {
   return Math.max(s.lastAt ?? 0, s.lastManualAt ?? 0) || undefined;
 }
@@ -119,7 +110,7 @@ export async function turnOnAutoBackup(passphrase: string): Promise<boolean> {
   } catch {
     return false;
   }
-  await SecureStore.setItemAsync(PASSPHRASE_KEY, passphrase);
+  await secureStorage.set(PASSPHRASE_KEY, passphrase);
   const folderName = nameFromUri(folder.uri) || undefined;
   // A new folder starts a new series: the first backup is written at once.
   setState({ folderUri: folder.uri, folderName, lastAt: undefined, lastFingerprint: undefined, failingSince: undefined, lastError: undefined });
@@ -128,7 +119,7 @@ export async function turnOnAutoBackup(passphrase: string): Promise<boolean> {
 
 /** Stops automatic backups. Files already in the folder stay there. */
 export async function turnOffAutoBackup(): Promise<void> {
-  await SecureStore.deleteItemAsync(PASSPHRASE_KEY).catch(() => {});
+  await secureStorage.remove(PASSPHRASE_KEY).catch(() => {});
   setState({ folderUri: undefined, folderName: undefined, failingSince: undefined, lastError: undefined });
 }
 
@@ -148,7 +139,7 @@ export function runAutoBackup(payload: BackupPayload, opts: { force?: boolean } 
     const fingerprint = backupFingerprint(payload.items, payload.entries);
     if (!opts.force && !autoBackupDue(state, fingerprint, payload.items.length)) return 'skipped';
 
-    const passphrase = await SecureStore.getItemAsync(PASSPHRASE_KEY);
+    const passphrase = await secureStorage.get(PASSPHRASE_KEY);
     if (!passphrase) throw new Error('The backup passphrase is missing. Turn automatic backups on again.');
     const text = await sealWithImages(payload, passphrase);
 

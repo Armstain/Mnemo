@@ -8,7 +8,7 @@ import { useThemeColors } from '@/hooks/use-theme';
 import { setPreferences, usePreferences } from '@/lib/preferences';
 import { DEFAULT_LEADS, LEAD_CHOICES } from '@/lib/leads';
 import { calendarAvailable, hasCalendarPermission, requestCalendarPermission } from '@/lib/calendar';
-import { haptic } from '@/utils/haptics';
+import { haptic } from '@/lib/haptics';
 
 /**
  * Settings → Appointments: the heads-ups before somewhere to be ("dentist

@@ -4,7 +4,7 @@ vi.mock('@react-native-async-storage/async-storage', () => ({ default: { getItem
 vi.mock('expo-secure-store', () => ({}));
 
 const { getPreferences, setPreferences } = await import('@/lib/preferences');
-const { isNoConnection } = await import('@/lib/api-key');
+const { isNoConnection } = await import('@/lib/ai-error');
 
 describe('turning Gemini on', () => {
   it('marks what came before as written offline, once per switch', () => {

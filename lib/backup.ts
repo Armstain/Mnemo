@@ -34,7 +34,7 @@ export class BackupError extends Error {
 
 const B64 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
 
-export function toBase64(bytes: Uint8Array): string {
+function toBase64(bytes: Uint8Array): string {
   let out = '';
   for (let i = 0; i < bytes.length; i += 3) {
     const a = bytes[i];
@@ -47,7 +47,7 @@ export function toBase64(bytes: Uint8Array): string {
   return out;
 }
 
-export function fromBase64(text: string): Uint8Array {
+function fromBase64(text: string): Uint8Array {
   const clean = text.replace(/[^A-Za-z0-9+/]/g, '');
   const out = new Uint8Array(Math.floor((clean.length * 3) / 4));
   let o = 0;
@@ -65,7 +65,7 @@ export function fromBase64(text: string): Uint8Array {
 }
 
 // By hand: Hermes doesn't reliably ship TextDecoder.
-export function utf8Encode(text: string): Uint8Array {
+function utf8Encode(text: string): Uint8Array {
   const out: number[] = [];
   for (const ch of text) {
     const cp = ch.codePointAt(0)!;
@@ -77,7 +77,7 @@ export function utf8Encode(text: string): Uint8Array {
   return Uint8Array.from(out);
 }
 
-export function utf8Decode(bytes: Uint8Array): string {
+function utf8Decode(bytes: Uint8Array): string {
   let out = '';
   let chunk: number[] = [];
   const flush = () => {
@@ -209,22 +209,21 @@ export function mergeBackup(
   return { items, entries, added, updated, unchanged };
 }
 
+const pad = (n: number) => String(n).padStart(2, '0');
+const datePart = (now: Date) => `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+
 export function backupFileName(now = new Date()): string {
-  const d = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
-  return `mnemo-backup-${d}.mnemo`;
+  return `mnemo-backup-${datePart(now)}.mnemo`;
 }
 
-export const AUTO_EVERY_MS = DAY_MS;
+const AUTO_EVERY_MS = DAY_MS;
 const AUTO_PREFIX = 'mnemo-auto-';
 const AUTO_NAME = /^mnemo-auto-(\d{4})-(\d{2})-(\d{2})-(\d{6})\.mnemo$/;
 const KEEP_DAILY = 7;
 const KEEP_MONTHLY = 6;
 
-const pad = (n: number) => String(n).padStart(2, '0');
-
 export function autoBackupName(now = new Date()): string {
-  const d = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
-  return `${AUTO_PREFIX}${d}-${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}.mnemo`;
+  return `${AUTO_PREFIX}${datePart(now)}-${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}.mnemo`;
 }
 
 /** Android folder-picker URIs carry only the encoded document id; opaque ids match no Mnemo name, so those files are never deleted. */

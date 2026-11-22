@@ -1,21 +1,22 @@
 import { StatusBar } from 'expo-status-bar';
-import { View, ScrollView, Pressable, ActivityIndicator, Alert, Platform } from 'react-native';
+import { Surface } from '@/components/ui/Card';
+import { View, ScrollView, Pressable, ActivityIndicator, Alert } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
-import * as SecureStore from 'expo-secure-store';
-import { haptic } from '@/utils/haptics';
+import { haptic } from '@/lib/haptics';
 import { MotiView } from 'moti';
 import { Shield } from 'lucide-react-native';
 import { useState } from 'react';
 
 import { Text } from '@/components/ui/Text';
 import { Icon } from '@/components/ui/Icon';
-import { IconButton } from '@/components/ui/Button';
 import { confirmAction } from '@/utils/confirm';
-import { useEnter } from '@/utils/motion';
+import { useEnter } from '@/hooks/use-enter';
 import { useThemeColors, useThemeName } from '@/hooks/use-theme';
 import { useMnemoStore } from '@/hooks/use-mnemo-store';
-import { ONBOARDING_KEY } from '@/app/onboarding';
+import { resetOnboarding } from '@/lib/onboarding';
+import { onboardingHref } from '@/lib/routes';
+import { ScreenHeader, useSafeBottom } from '@/components/ui/Screen';
 
 // What leaves the phone, and when: said plainly, every case.
 const PRIVACY_FACTS = [
@@ -42,6 +43,7 @@ const PRIVACY_FACTS = [
 export default function PrivacyScreen() {
   const enter = useEnter();
   const insets = useSafeAreaInsets();
+  const bottom = useSafeBottom();
   const colors = useThemeColors();
   const theme = useThemeName();
   const { clearAllData } = useMnemoStore();
@@ -57,14 +59,10 @@ export default function PrivacyScreen() {
         setIsClearing(true);
         try {
           await clearAllData();
-          if (Platform.OS === 'web') {
-            localStorage.removeItem(ONBOARDING_KEY);
-          } else {
-            await SecureStore.deleteItemAsync(ONBOARDING_KEY);
-          }
+          await resetOnboarding();
           haptic.success();
           router.dismissAll();
-          router.replace('/onboarding');
+          router.replace(onboardingHref);
         } catch (e) {
           console.error('Failed to clear all data', e);
           haptic.error();
@@ -82,20 +80,18 @@ export default function PrivacyScreen() {
         contentContainerStyle={{
           paddingHorizontal: 24,
           paddingTop: insets.top + 16,
-          paddingBottom: Math.max(insets.bottom, 24) + 48,
+          paddingBottom: bottom + 48,
         }}
         showsVerticalScrollIndicator={false}
       >
-        <View className="flex-row mb-4">
-          <IconButton icon="chevronLeft" label="Back" variant="bare" onPress={() => router.back()} />
-        </View>
+        <ScreenHeader icon="chevronLeft" label="Back" onClose={() => router.back()} className="mb-4" />
 
         <MotiView {...enter.rise(0)} className="mb-8">
           <Text className="text-display font-display text-fg">Privacy</Text>
         </MotiView>
 
         <MotiView {...enter.rise(1)} className="gap-3 mb-10">
-          <View className="bg-surface rounded-lg p-5 border border-border/50">
+          <Surface tone="soft" className="rounded-lg p-5">
             <View className="flex-row items-center mb-2">
               <Shield size={15} color={colors.accent} />
               <Text className="font-sans-semi text-sm text-fg ml-2">Your data</Text>
@@ -104,13 +100,13 @@ export default function PrivacyScreen() {
               Your notes, photos and reminders live only on this phone. Mnemo has no server and no
               account; a backup is a file you keep, locked with your passphrase.
             </Text>
-          </View>
+          </Surface>
 
           {PRIVACY_FACTS.map((fact) => (
-            <View key={fact.title} className="bg-surface rounded-lg p-5 border border-border/50">
+            <Surface key={fact.title} tone="soft" className="rounded-lg p-5">
               <Text className="font-sans-semi text-sm text-fg mb-1.5">{fact.title}</Text>
               <Text className="font-sans text-sm text-fg-secondary leading-relaxed">{fact.body}</Text>
-            </View>
+            </Surface>
           ))}
         </MotiView>
 

@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { aiErrorText, classifyAiError } from '@/lib/api-key';
+import { aiErrorText, classifyAiError, errorText } from '@/lib/ai-error';
 import { describeEmpty, EmptyResponseError, emptyKindOf, topSafety } from '@/lib/empty-response';
 import { processAudioDump, processVoiceDump } from '@/lib/gemini';
 
@@ -98,7 +98,7 @@ describe('an answer with no text', () => {
     const error = await processVoiceDump('call the plumber').catch((e) => e);
     expect(calls).toHaveLength(2);
     expect(error.message).toContain('MAX_TOKENS');
-    expect(emptyKindOf(error)).toBe('truncated');
+    expect(emptyKindOf(errorText(error))).toBe('truncated');
     expect(classifyAiError(error)).toBe('truncated');
   });
 
@@ -124,7 +124,7 @@ describe('an answer with no text', () => {
     behaviour.clear();
     for (const m of ['gemini-3-flash-preview', 'gemini-2.5-flash', 'gemini-2.5-flash-lite']) behaviour.set(m, empty);
     const blank = await processVoiceDump('   ').catch((e) => e);
-    expect(emptyKindOf(blank)).toBe('empty-input');
+    expect(emptyKindOf(errorText(blank))).toBe('empty-input');
     expect(classifyAiError(blank)).toBe('empty');
   });
 
@@ -145,7 +145,7 @@ describe('which safety category fired', () => {
     const error = await processVoiceDump('Remind me when I get to Eastern').catch((e) => e);
     expect(error.message).toMatch(/^The model returned no text \(blocked\) · safety=HARM_CATEGORY_DANGEROUS_CONTENT:HIGH · input: transcript 31 chars · /);
     expect(error.message).toContain('block=PROHIBITED_CONTENT candidates=0');
-    expect(emptyKindOf(error)).toBe('blocked');
+    expect(emptyKindOf(errorText(error))).toBe('blocked');
     expect(classifyAiError(error)).toBe('blocked');
   });
 

@@ -1,31 +1,30 @@
-import { bm25Scored, tokenize } from '@/lib/bm25';
-import { COMMON_WORDS } from '@/lib/lang-packs';
+import { bm25Scored, telling, tokenize } from '@/lib/bm25';
 import { dot } from '@/lib/vector-math';
 import { entryText, newestFirst } from '@/lib/threads';
 import { trackedMetrics } from '@/lib/measures';
-import type { ThreadCandidate, ThreadMatch } from '@/lib/gemini';
-import type { Entry, MnemoItem } from '@/types/mnemo';
+import { createEmitter } from '@/lib/emitter';
+import type { ReminderState } from '@/lib/capture';
+import type { ThreadCandidate, ThreadMatch } from '@/types/filing';
+import { isOpenStatus, type Entry, type MnemoItem } from '@/types/mnemo';
 import { DAY_MS } from '@/utils/time';
 
 // Auto-filing: which thread a quick capture belongs to. See
 // docs/specs/threads.md §3. The model proposes, the device checks.
 
-/** At or above: file it automatically (with Undo). */
 export const ATTACH_CONFIDENCE = 0.8;
 /** At or above (and below ATTACH): suggest the thread instead. */
-export const SUGGEST_CONFIDENCE = 0.5;
+const SUGGEST_CONFIDENCE = 0.5;
 /** A focused thread only lets go of a capture the model is this sure about. */
 const FOCUS_RELEASE_CONFIDENCE = 0.8;
 
 const MAX_CANDIDATES = 12;
-const RECENT_MS = 14 * DAY_MS;
 const SNIPPET_CHARS = 140;
 /** A thread quiet this long is never filed into automatically, only suggested. */
-export const STALE_DAYS = 14;
+const STALE_DAYS = 14;
+const RECENT_MS = STALE_DAYS * DAY_MS;
 /** Focus lapses after this long with nothing new in the thread. */
-export const FOCUS_IDLE_MS = 3 * DAY_MS;
+const FOCUS_IDLE_MS = 3 * DAY_MS;
 
-/** When a thread last got an entry (or was otherwise updated). */
 function lastActivity(thread: MnemoItem, entries: Entry[]): number {
   let latest = thread.updatedAt;
   for (const e of entries) if (e.threadId === thread.id && e.createdAt > latest) latest = e.createdAt;
@@ -72,7 +71,7 @@ export function gatherCandidates(input: {
     (t) =>
       t.id !== input.excludeId &&
       !t.pending &&
-      (t.status === 'active' || t.status === 'paused'),
+      isOpenStatus(t.status),
   );
   const picked = new Map<string, MnemoItem>();
   // Each thread's entries, gathered once (not once per thread).
@@ -110,11 +109,6 @@ export function gatherCandidates(input: {
   });
 }
 
-/** The words in a text that could say what it's about. */
-export function telling(words: string[]): Set<string> {
-  return new Set(words.filter((w) => w.length >= 3 && !/^\d+$/.test(w) && !COMMON_WORDS.has(w)));
-}
-
 /**
  * Offline filing: the open thread a note shares telling words with, if one
  * clearly stands out. Only ever a suggestion (the person taps to move it);
@@ -126,7 +120,7 @@ export function keywordMatch(input: {
   excludeId?: string;
 }): { threadId: string; title: string; reason: string; confidence: number } | null {
   const open = input.threads.filter(
-    (t) => t.id !== input.excludeId && !t.pending && (t.status === 'active' || t.status === 'paused'),
+    (t) => t.id !== input.excludeId && !t.pending && isOpenStatus(t.status),
   );
   const said = telling(tokenize(input.text));
   if (said.size === 0) return null;
@@ -236,7 +230,6 @@ function decide(input: Parameters<typeof decideFiling>[0]): FilingDecision {
   return { action: 'stay' };
 }
 
-/** Cosine similarity of one vector against each candidate's stored vector. */
 export function similarityTo(
   vector: Float32Array,
   threadVectors: Map<string, Float32Array>,
@@ -246,7 +239,6 @@ export function similarityTo(
   return out;
 }
 
-// ─── Telling the UI ─────────────────────────────────────────────
 // Filing happens in the background (lib/capture.ts), outside React; the
 // FilingNotifier component listens here and shows the toast.
 
@@ -270,14 +262,19 @@ export type FilingEvent =
       toThreadId: string;
     };
 
-type Listener = (event: FilingEvent) => void;
-const listeners = new Set<Listener>();
-
-export function onFiling(listener: Listener): () => void {
-  listeners.add(listener);
-  return () => listeners.delete(listener);
+export interface ReminderSetEvent {
+  threadId: string;
+  at: number;
+  /** The thread's reminder before this note set it; all unset for a thread the note began. */
+  before: ReminderState;
 }
 
-export function emitFiling(event: FilingEvent): void {
-  for (const listener of listeners) listener(event);
-}
+const reminderSets = createEmitter<ReminderSetEvent>();
+
+export const onReminderSet = reminderSets.on;
+export const emitReminderSet = reminderSets.emit;
+
+const filings = createEmitter<FilingEvent>();
+
+export const onFiling = filings.on;
+export const emitFiling = filings.emit;

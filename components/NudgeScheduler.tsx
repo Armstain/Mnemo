@@ -2,13 +2,9 @@ import { useEffect, useRef } from 'react';
 import { AppState } from 'react-native';
 import { useMnemoStore } from '@/hooks/use-mnemo-store';
 import { scheduleNudges } from '@/lib/nudges';
-import { rearmReminders } from '@/lib/reminders';
+import { EDIT_SETTLE_MS, rearmReminders } from '@/lib/reminders';
 import { scheduleWeeklyReview } from '@/lib/review-notice';
 
-// Edits arrive in bursts (typing, AI structuring patching several fields),
-// and a replan cancels and reschedules every nudge — wait for it to settle.
-const REPLAN_DEBOUNCE_MS = 1500;
-// Re-setting every reminder on each app switch would be wasteful; this often is plenty.
 const REARM_EVERY_MS = 5 * 60 * 1000;
 
 /**
@@ -39,7 +35,7 @@ export function NudgeScheduler() {
     const handle = setTimeout(() => {
       scheduleNudges(items);
       scheduleWeeklyReview(items, entries);
-    }, REPLAN_DEBOUNCE_MS);
+    }, EDIT_SETTLE_MS);
     return () => clearTimeout(handle);
   }, [items, entries, isLoaded]);
 

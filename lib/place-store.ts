@@ -1,6 +1,7 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useEffect, useState } from 'react';
 
+import { createEmitter } from '@/lib/emitter';
+import { storage, writeJson } from '@/lib/storage';
 import type { Place } from '@/types/mnemo';
 
 // Saved places live on the phone only, in their own small store: a handful
@@ -11,7 +12,8 @@ import type { Place } from '@/types/mnemo';
 const KEY = 'mnemo-places';
 let places: Place[] = [];
 let loaded: Promise<void> | null = null;
-const listeners = new Set<(p: Place[]) => void>();
+let readFailed = false;
+const changes = createEmitter<Place[]>();
 
 function valid(p: unknown): p is Place {
   const x = p as Place;
@@ -23,58 +25,73 @@ function valid(p: unknown): p is Place {
   );
 }
 
+async function read(): Promise<void> {
+  let raw: string | null;
+  try {
+    raw = await storage.get(KEY);
+  } catch {
+    readFailed = true;
+    return;
+  }
+  readFailed = false;
+  let parsed: unknown;
+  try {
+    parsed = raw ? JSON.parse(raw) : [];
+  } catch {
+    parsed = [];
+  }
+  places = Array.isArray(parsed) ? parsed.filter(valid) : [];
+}
+
 /**
  * The saved places, read from storage once. Always resolves to the list as
  * it is now: the first read is cached, not its result, so a screen opened
  * after a place was added or removed never sees the list as it was at launch.
  */
 export function loadPlaces(): Promise<Place[]> {
-  if (!loaded) {
-    loaded = AsyncStorage.getItem(KEY)
-      .then((raw) => {
-        const parsed = raw ? JSON.parse(raw) : [];
-        places = Array.isArray(parsed) ? parsed.filter(valid) : [];
-      })
-      .catch(() => undefined);
-  }
+  if (!loaded) loaded = read();
   return loaded.then(() => places);
 }
 
-/** The places as last loaded; [] until loadPlaces resolves. */
+/** [] until loadPlaces resolves. */
 export function getPlaces(): Place[] {
   return places;
 }
 
 async function commit(next: Place[]): Promise<void> {
   places = next;
-  listeners.forEach((l) => l(next));
-  await AsyncStorage.setItem(KEY, JSON.stringify(next));
+  changes.emit(next);
+  await writeJson(KEY, next);
+}
+
+async function loadForWrite(): Promise<void> {
+  await loadPlaces();
+  if (!readFailed) return;
+  loaded = null;
+  await loadPlaces();
+  if (readFailed) throw new Error("Saved places couldn't be read, so they were left as they are.");
 }
 
 export async function savePlace(place: Place): Promise<void> {
-  await loadPlaces();
+  await loadForWrite();
   await commit([...places.filter((p) => p.id !== place.id), place]);
 }
 
 export async function removePlace(id: string): Promise<void> {
-  await loadPlaces();
+  await loadForWrite();
   await commit(places.filter((p) => p.id !== id));
 }
 
-/** "Clear all data" takes places too. */
 export async function removeAllPlaces(): Promise<void> {
   await commit([]);
 }
 
-/** The saved places, kept current. */
 export function usePlaces(): Place[] {
   const [list, setList] = useState<Place[]>(places);
   useEffect(() => {
-    listeners.add(setList);
+    const off = changes.on(setList);
     loadPlaces().then(setList);
-    return () => {
-      listeners.delete(setList);
-    };
+    return off;
   }, []);
   return list;
 }

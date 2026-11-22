@@ -2,31 +2,29 @@ import React from 'react';
 import { Pressable, ScrollView, View } from 'react-native';
 import { router } from 'expo-router';
 import { MotiView } from 'moti';
-import { haptic } from '@/utils/haptics';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { Button, IconButton } from '@/components/ui/Button';
 import { Eyebrow } from '@/components/ui/Eyebrow';
-import { DoneCheck } from '@/components/ui/DoneCheck';
+import { HeroCard } from '@/components/ui/HeroCard';
+import { ScreenHeader, useSafeBottom, useSafeTop } from '@/components/ui/Screen';
+import { StepList } from '@/components/ui/StepList';
+import { Surface } from '@/components/ui/Card';
 import { Text } from '@/components/ui/Text';
-import { OpenRing } from '@/components/ui/ThreadRing';
 import { ThreadList, ThreadRow } from '@/components/ui/ThreadRow';
+import { QuietActions } from '@/components/thread/QuietActions';
+import { useShowMore } from '@/hooks/use-show-more';
+import { openThread } from '@/lib/navigation';
 import { useReduceMotion } from '@/hooks/use-accessibility-motion';
 import { useCountUp } from '@/hooks/use-count-up';
 import { useMnemoStore } from '@/hooks/use-mnemo-store';
 import { useStepDone } from '@/hooks/use-complete-thread';
 import { useThemeColors } from '@/hooks/use-theme';
-import { useUndoToast } from '@/hooks/use-undo-toast';
 import { formatValue } from '@/lib/measures';
-import { reviewLine, STILL_ON_IT_DAYS, weekReview, type WeekReview } from '@/lib/review';
+import { reviewLine, weekReview, type WeekReview } from '@/lib/review';
 import { formatReminder } from '@/lib/when';
 import { spanLabel } from '@/lib/wrapup';
-import { DUR_BASE, EASE_OUT, useEnter } from '@/utils/motion';
-import { DAY_MS } from '@/utils/time';
-
-const open = (id: string) => router.push(`/(tabs)/context?id=${id}`);
-/** Longer lists show this many until "Show all". */
-const SHOW = 4;
+import { useEnter } from '@/hooks/use-enter';
+import { DUR_BASE, EASE_OUT } from '@/utils/motion';
+import { capitalize } from '@/utils/text';
 
 /**
  * The weekly review: the last seven days and the next, in one place. What
@@ -35,28 +33,26 @@ const SHOW = 4;
  * phone from the notes.
  */
 export default function ReviewScreen() {
-  const insets = useSafeAreaInsets();
+  const top = useSafeTop();
+  const bottom = useSafeBottom();
   const colors = useThemeColors();
   const enter = useEnter();
-  const { items, entries, pauseItem, updateItem, restoreItem } = useMnemoStore();
+  const { items, entries } = useMnemoStore();
   // A step's check: ticks it, or finishes a thread that is one thing to do (lib/done.ts finishModel).
   const stepDone = useStepDone();
-  const { showUndoToast } = useUndoToast();
   const r = React.useMemo(() => weekReview(items, entries), [items, entries]);
   const line = reviewLine(r, (t) => `${t.metric} ${formatValue(t.total, t.unit)}`);
-  const [all, setAll] = React.useState({ steps: false, quiet: false });
+  const more = useShowMore();
   const empty = items.length === 0;
 
   let section = 0;
-  const steps = all.steps ? r.steps : r.steps.slice(0, SHOW);
-  const quiet = all.quiet ? r.quiet : r.quiet.slice(0, SHOW);
+  const steps = more.shown('steps', r.steps);
+  const quiet = more.shown('quiet', r.quiet);
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.bg }}>
-      <ScrollView contentContainerStyle={{ paddingTop: Math.max(insets.top, 16), paddingBottom: Math.max(insets.bottom, 24) + 32 }}>
-        <View className="px-6 flex-row items-center mb-3">
-          <IconButton icon="x" label="Close" variant="bare" onPress={() => router.back()} />
-        </View>
+      <ScrollView contentContainerStyle={{ paddingTop: top, paddingBottom: bottom + 32 }}>
+        <ScreenHeader onClose={() => router.back()} />
 
         <MotiView {...enter.rise(section++)} className="px-6 mb-9">
           <WeekCard r={r} line={line} />
@@ -70,7 +66,6 @@ export default function ReviewScreen() {
           </MotiView>
         ) : null}
 
-        {/* What the numbers came to */}
         {r.totals.length > 0 ? (
           <MotiView {...enter.rise(section++)} className="mb-9">
             <View className="px-6">
@@ -78,31 +73,25 @@ export default function ReviewScreen() {
             </View>
             <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 24, gap: 10 }}>
               {r.totals.map((t) => (
-                <View
-                  key={`${t.metric}|${t.unit}`}
-                  className="rounded-lg px-4 py-3.5"
-                  style={{ backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, minWidth: 148 }}
-                >
+                <Surface key={`${t.metric}|${t.unit}`} className="rounded-lg px-4 py-3.5" style={{ minWidth: 148 }}>
                   <Text className="font-sans-semi text-sm" style={{ color: colors.fgSecondary }}>
-                    {t.metric.charAt(0).toUpperCase() + t.metric.slice(1)}
+                    {capitalize(t.metric)}
                   </Text>
                   <Text className="font-display mt-0.5" style={{ color: colors.fg, fontSize: 26, fontVariant: ['tabular-nums'] }}>
                     {formatValue(t.total, t.unit)}
                   </Text>
-                  {/* "1 entry" says nothing: the count shows only once there's something added up. */}
                   {t.count > 1 ? (
                     <Text className="font-sans text-sm" style={{ color: colors.fgTertiary }}>
                       {t.count} entries
                       {t.threads > 1 ? ` · ${t.threads} threads` : ''}
                     </Text>
                   ) : null}
-                </View>
+                </Surface>
               ))}
             </ScrollView>
           </MotiView>
         ) : null}
 
-        {/* Reminders: missed, then coming up */}
         {r.due.length > 0 ? (
           <MotiView {...enter.rise(section++)} className="px-6 mb-9">
             <Eyebrow>{r.due.some((d) => d.missed) ? 'Missed and coming up' : 'Coming up'}</Eyebrow>
@@ -116,119 +105,56 @@ export default function ReviewScreen() {
                   trailing={formatReminder(at)}
                   trailingTone={missed ? colors.error : colors.accent}
                   last={i === r.due.length - 1}
-                  onPress={() => open(item.id)}
+                  onPress={() => openThread(item.id)}
                 />
               ))}
             </ThreadList>
           </MotiView>
         ) : null}
 
-        {/* Steps to tick off */}
         {r.steps.length > 0 ? (
           <MotiView {...enter.rise(section++)} className="px-6 mb-9">
-            <Eyebrow
-              action={r.steps.length > SHOW ? (all.steps ? 'Fewer' : `All ${r.steps.length}`) : undefined}
-              onAction={() => setAll((a) => ({ ...a, steps: !a.steps }))}
-            >
-              Next steps
-            </Eyebrow>
-            <View className="rounded-lg overflow-hidden" style={{ backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border }}>
-              {steps.map((t, i) => (
-                <MotiView
-                  key={t.id}
-                  {...enter.row(i)}
-                  className="flex-row items-center pl-4 pr-3 py-3"
-                  style={i > 0 ? { borderTopWidth: 1, borderTopColor: colors.border } : undefined}
-                >
-                  <Pressable onPress={() => open(t.id)} className="flex-1 mr-3 active:opacity-70" accessibilityRole="button">
-                    <Text className="font-sans-medium text-body" style={{ color: colors.fg }} numberOfLines={2}>
-                      {t.nextStep}
-                    </Text>
-                    <Text className="font-sans text-sm mt-0.5" style={{ color: colors.fgTertiary }} numberOfLines={1}>
-                      {t.title}
-                    </Text>
-                  </Pressable>
-                  <DoneCheck
-                    onDone={() => stepDone(t.id)}
-                    label={`Mark done: ${t.nextStep}`}
-                    restColor={colors.accentSoft}
-                  />
-                </MotiView>
-              ))}
-            </View>
+            <Eyebrow {...more.eyebrow('steps', r.steps.length)}>Next steps</Eyebrow>
+            <StepList
+              steps={steps.map((t) => ({ id: t.id, text: t.nextStep ?? '', title: t.title }))}
+              onOpen={openThread}
+              onDone={stepDone}
+            />
           </MotiView>
         ) : null}
 
-        {/* Gone quiet: wrap up, keep going, or pause */}
         {r.quiet.length > 0 ? (
           <MotiView {...enter.rise(section++)} className="px-6 mb-9">
-            <Eyebrow
-              action={r.quiet.length > SHOW ? (all.quiet ? 'Fewer' : `All ${r.quiet.length}`) : undefined}
-              onAction={() => setAll((a) => ({ ...a, quiet: !a.quiet }))}
-            >
-              Gone quiet
-            </Eyebrow>
+            <Eyebrow {...more.eyebrow('quiet', r.quiet.length)}>Gone quiet</Eyebrow>
             <View className="gap-3">
               {quiet.map(({ item, days }, i) => (
-                <MotiView
-                  key={item.id}
-                  {...enter.row(i)}
-                  className="rounded-lg p-4"
-                  style={{ backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border }}
-                >
-                  <Pressable onPress={() => open(item.id)} accessibilityRole="button" className="flex-row items-start active:opacity-70">
-                    <View className="flex-1 mr-3">
-                      <Text className="font-sans-semi text-body" style={{ color: colors.fg }} numberOfLines={2}>
-                        {item.title}
-                      </Text>
-                      {item.nextStep || item.whereLeftOff ? (
-                        <Text className="font-sans text-sm mt-0.5" style={{ color: colors.fgSecondary }} numberOfLines={2}>
-                          {item.nextStep ? `Next: ${item.nextStep}` : item.whereLeftOff}
+                <MotiView key={item.id} {...enter.row(i)}>
+                  <Surface className="rounded-lg p-4">
+                    <Pressable onPress={() => openThread(item.id)} accessibilityRole="button" className="flex-row items-start active:opacity-70">
+                      <View className="flex-1 mr-3">
+                        <Text className="font-sans-semi text-body" style={{ color: colors.fg }} numberOfLines={2}>
+                          {item.title}
                         </Text>
-                      ) : null}
-                    </View>
-                    <View className="rounded-full px-2.5 py-1" style={{ backgroundColor: colors.surfaceHigh }}>
-                      <Text className="font-sans-semi text-xs" style={{ color: colors.accentWarm, fontVariant: ['tabular-nums'] }}>
-                        {days} days
-                      </Text>
-                    </View>
-                  </Pressable>
-                  <View className="flex-row flex-wrap gap-2 mt-3.5">
-                    <Button variant="tonal" size="sm" icon="check" onPress={() => router.push(`/wrapup?id=${item.id}&from=review`)}>
-                      Wrap up
-                    </Button>
-                    <Button
-                      variant="quiet"
-                      size="sm"
-                      onPress={() => {
-                        haptic.select();
-                        // Not activity: it shouldn't jump to the top of Home.
-                        updateItem(item.id, { quietUntil: Date.now() + STILL_ON_IT_DAYS * DAY_MS }, { touch: false });
-                        showUndoToast(`Won't ask about it for a month`, () => restoreItem(item));
-                      }}
-                    >
-                      Still on it
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      icon="pause"
-                      onPress={() => {
-                        haptic.select();
-                        pauseItem(item.id);
-                        showUndoToast(`Paused ${item.title}`, () => restoreItem(item));
-                      }}
-                    >
-                      Pause
-                    </Button>
-                  </View>
+                        {item.nextStep || item.whereLeftOff ? (
+                          <Text className="font-sans text-sm mt-0.5" style={{ color: colors.fgSecondary }} numberOfLines={2}>
+                            {item.nextStep ? `Next: ${item.nextStep}` : item.whereLeftOff}
+                          </Text>
+                        ) : null}
+                      </View>
+                      <View className="rounded-full px-2.5 py-1" style={{ backgroundColor: colors.surfaceHigh }}>
+                        <Text className="font-sans-semi text-xs" style={{ color: colors.accentWarm, fontVariant: ['tabular-nums'] }}>
+                          {days} days
+                        </Text>
+                      </View>
+                    </Pressable>
+                    <QuietActions item={item} from="review" className="mt-3.5" />
+                  </Surface>
                 </MotiView>
               ))}
             </View>
           </MotiView>
         ) : null}
 
-        {/* Finished */}
         {r.finished.length > 0 ? (
           <MotiView {...enter.rise(section++)} className="px-6 mb-9">
             <Eyebrow>Finished this week</Eyebrow>
@@ -241,7 +167,7 @@ export default function ReviewScreen() {
                   detail="Done"
                   trailing={new Date(t.completedAt ?? t.updatedAt).toLocaleDateString(undefined, { weekday: 'short' })}
                   last={i === r.finished.length - 1}
-                  onPress={() => open(t.id)}
+                  onPress={() => openThread(t.id)}
                 />
               ))}
             </ThreadList>
@@ -256,7 +182,6 @@ export default function ReviewScreen() {
   );
 }
 
-/** The week at a glance: dates, one line, notes per day, and three counts. */
 function WeekCard({ r, line }: { r: WeekReview; line: string }) {
   const colors = useThemeColors();
   const reduceMotion = useReduceMotion();
@@ -265,10 +190,7 @@ function WeekCard({ r, line }: { r: WeekReview; line: string }) {
   const dayName = (ts: number) => new Date(ts).toLocaleDateString('en-US', { weekday: 'short' });
 
   return (
-    <View className="rounded-xl overflow-hidden" style={{ backgroundColor: colors.hero, padding: 22 }}>
-      <View pointerEvents="none" style={{ position: 'absolute', top: -56, right: -56, opacity: 0.09 }}>
-        <OpenRing size={220} color={colors.onHero} core={false} weight={0.11} />
-      </View>
+    <HeroCard>
       <Eyebrow tone={colors.heroAccent} className="mb-1.5">
         Your week
       </Eyebrow>
@@ -279,7 +201,6 @@ function WeekCard({ r, line }: { r: WeekReview; line: string }) {
         {line}
       </Text>
 
-      {/* Notes per day; today in the accent. */}
       <View
         className="flex-row items-end mt-6"
         style={{ gap: 8, height: 76 }}
@@ -330,7 +251,7 @@ function WeekCard({ r, line }: { r: WeekReview; line: string }) {
         {/* Only when there's something: a row of zeros reads like a telling-off. */}
         {ticked > 0 ? <Stat value={ticked} label="ticked off" /> : <View className="flex-1" />}
       </View>
-    </View>
+    </HeroCard>
   );
 }
 

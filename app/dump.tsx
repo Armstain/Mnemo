@@ -1,10 +1,10 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { View, Alert, ScrollView, KeyboardAvoidingView, Platform } from 'react-native';
+import { View, Alert, ScrollView } from 'react-native';
 import { TextInput } from '@/components/ui/TextInput';
 import { Text } from '@/components/ui/Text';
 import { router, useLocalSearchParams } from 'expo-router';
 import { MotiView } from 'moti';
-import { haptic } from '@/utils/haptics';
+import { haptic } from '@/lib/haptics';
 import { Easing } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -12,16 +12,20 @@ import { useCaptureTarget } from '@/hooks/use-capture-target';
 import { useSpeechCapture } from '@/hooks/use-speech-capture';
 import { useMnemoStore } from '@/hooks/use-mnemo-store';
 import { useThemeColors } from '@/hooks/use-theme';
-import { saveVoiceNote } from '@/lib/capture';
+import { saveNote } from '@/lib/capture';
 import { mayAutostart } from '@/lib/launch-key';
 import { FocusDestination } from '@/components/ui/FocusDestination';
-import { Button, IconButton } from '@/components/ui/Button';
+import { Button } from '@/components/ui/Button';
+import { Surface } from '@/components/ui/Card';
+import { KeyboardAvoid, ScreenHeader, useSafeTop } from '@/components/ui/Screen';
 import { Eyebrow } from '@/components/ui/Eyebrow';
 import { CategoryPicker } from '@/components/ui/CategoryPicker';
 import { RecordButton } from '@/components/ui/RecordButton';
-import { EASE_IN_OUT, useEnter } from '@/utils/motion';
+import { useEnter } from '@/hooks/use-enter';
+import { EASE_IN_OUT } from '@/utils/motion';
 import { noFocusRing } from '@/utils/web';
 import type { Category } from '@/types/mnemo';
+import { openSaved } from '@/lib/navigation';
 
 const WAVEFORM_BARS = 14;
 const SAMPLE_MS = 80;
@@ -36,6 +40,7 @@ type Phase = 'ready' | 'listening' | 'review';
 export default function DumpScreen() {
   const enter = useEnter();
   const insets = useSafeAreaInsets();
+  const top = useSafeTop();
   const store = useMnemoStore();
   const colors = useThemeColors();
 
@@ -89,9 +94,8 @@ export default function DumpScreen() {
     // Recorded for Gemini: nothing to read over yet, so it's saved now and
     // written out on the thread.
     if (audio.length > 0) {
-      const saved = saveVoiceNote({ text: '', audio, category, threadId: targetThread?.id, filing: target.filing, store });
-      haptic.success();
-      router.replace(`/(tabs)/context?id=${saved.threadId}`);
+      const saved = saveNote('voice', { text: '', audio, category, threadId: targetThread?.id, filing: target.filing, store });
+      openSaved(saved);
       return;
     }
     // "Record more" appends to what's already there.
@@ -107,9 +111,8 @@ export default function DumpScreen() {
   function save() {
     const text = draft.trim();
     if (!text) return;
-    const saved = saveVoiceNote({ text, category, threadId: targetThread?.id, filing: target.filing, store });
-    haptic.success();
-    router.replace(`/(tabs)/context?id=${saved.threadId}`);
+    const saved = saveNote('voice', { text, category, threadId: targetThread?.id, filing: target.filing, store });
+    openSaved(saved);
   }
 
   function close() {
@@ -121,28 +124,26 @@ export default function DumpScreen() {
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.bg }}>
-      <KeyboardAvoidingView className="flex-1 px-6" behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-        {/* Header — same shape as the Write screen: close, title, balance */}
-        <MotiView
-          {...enter.fade(0)}
-          className="flex-row items-center justify-between mb-4"
-          style={{ paddingTop: Math.max(insets.top, 16) }}
-        >
-          <IconButton icon="x" label="Close" variant="bare" onPress={close} />
-          <Text className="flex-1 text-center font-sans-medium text-sm text-fg-secondary mx-3" numberOfLines={1}>
-            {targetThread ? `Add to ${targetThread.title}` : 'Voice note'}
-          </Text>
-          <View style={{ width: 44, alignItems: 'center' }}>
-            {listening && (
-              <MotiView
-                from={{ opacity: 0.4 }}
-                animate={{ opacity: 1 }}
-                transition={{ type: 'timing', duration: 900, loop: true, repeatReverse: true, easing: EASE_IN_OUT }}
-              >
-                <View className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: colors.error }} />
-              </MotiView>
-            )}
-          </View>
+      <KeyboardAvoid className="flex-1 px-6">
+        <MotiView {...enter.fade(0)} className="mb-4" style={{ paddingTop: top }}>
+          <ScreenHeader
+            onClose={close}
+            className=""
+            title={targetThread ? `Add to ${targetThread.title}` : 'Voice note'}
+            trailing={
+              <View style={{ width: 44, alignItems: 'center' }}>
+                {listening && (
+                  <MotiView
+                    from={{ opacity: 0.4 }}
+                    animate={{ opacity: 1 }}
+                    transition={{ type: 'timing', duration: 900, loop: true, repeatReverse: true, easing: EASE_IN_OUT }}
+                  >
+                    <View className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: colors.error }} />
+                  </MotiView>
+                )}
+              </View>
+            }
+          />
         </MotiView>
 
         {phase === 'ready' && (
@@ -162,13 +163,9 @@ export default function DumpScreen() {
         )}
 
         {phase === 'review' ? (
-          // The words, ready to fix before saving.
           <View className="flex-1">
             <Eyebrow className="mb-2.5">What you said</Eyebrow>
-            <View
-              className="flex-1 rounded-lg px-5 pt-4 pb-3"
-              style={{ backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border }}
-            >
+            <Surface className="flex-1 rounded-lg px-5 pt-4 pb-3">
               <TextInput
                 value={draft}
                 onChangeText={setDraft}
@@ -179,7 +176,7 @@ export default function DumpScreen() {
                 className="flex-1 font-sans text-fg"
                 style={[{ fontSize: 17, lineHeight: 27 }, noFocusRing]}
               />
-            </View>
+            </Surface>
             <Text className="font-sans text-sm mt-2.5" style={{ color: colors.fgTertiary }}>
               Fix any misheard words; only this text is saved.
             </Text>
@@ -226,7 +223,6 @@ export default function DumpScreen() {
           </View>
         )}
 
-        {/* Actions */}
         <View className="gap-3 pt-4" style={{ paddingBottom: Math.max(insets.bottom, 24) + 12 }}>
           {phase === 'ready' && (
             <Button onPress={startListening} variant="primary" size="lg" fullWidth icon="mic">
@@ -254,7 +250,7 @@ export default function DumpScreen() {
             </View>
           )}
         </View>
-      </KeyboardAvoidingView>
+      </KeyboardAvoid>
     </View>
   );
 }

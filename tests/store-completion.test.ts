@@ -14,14 +14,14 @@ vi.mock('expo-constants', () => ({ default: {} }));
 vi.mock('expo-file-system', () => ({ Directory: class {}, File: class {}, Paths: {} }));
 vi.mock('@/lib/db', () => ({ initDb: async () => [], countItems: async () => 0, getAllItems: async () => [], insertItem: async () => [], insertItems: async () => [], updatePartialItem: async () => [], deleteItemRow: async () => [], deleteAllItems: async () => [], ensureEntriesForItems: async () => [], getAllEntries: async () => [], insertEntry: async () => [], deleteEntryRow: async () => [], saveThreadsAndEntries: async () => [] }));
 vi.mock('@/lib/reminders', () => ({
+  REMINDER_FIELDS: ['dueDate', 'status', 'title', 'repeat', 'nextStep', 'whereLeftOff', 'laterSteps'],
   syncReminderForItem: async (i: { id: string; status: string; dueDate?: number }) => void reminders.push({ id: i.id, status: i.status, dueDate: i.dueDate }),
   cancelReminder: async () => {},
   cancelAllReminders: async () => {},
 }));
-vi.mock('@/lib/capture', () => ({ deleteAllRecordings: () => {} }));
+vi.mock('@/lib/voice-audio', () => ({ deleteAllAudio: () => {} }));
 vi.mock('@/lib/images', () => ({ deleteAllImages: () => {}, forgetImages: () => {}, restoreImage: () => {} }));
 vi.mock('@/lib/place-store', () => ({ removeAllPlaces: async () => {} }));
-vi.mock('@/hooks/use-undo-toast', () => ({ UNDO_WINDOW_MS: 5000 }));
 vi.spyOn(console, 'error').mockImplementation(() => {});
 
 const { MnemoStoreProvider, useMnemoStore } = await import('@/hooks/use-mnemo-store');

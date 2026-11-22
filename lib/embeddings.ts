@@ -1,6 +1,8 @@
 import { getAIClient, modelCatalog, refreshModels } from '@/lib/gemini';
 import { getPreferences } from '@/lib/preferences';
-import { isMissingModel, pickEmbeddingModel } from '@/lib/model-pick';
+import { pickEmbeddingModel } from '@/lib/model-pick';
+import { isMissingModel } from '@/lib/ai-error';
+import { searchableText } from '@/lib/bm25';
 import type { MnemoItem } from '@/types/mnemo';
 
 // gemini-embedding-2 (verified against this key's live /v1beta/models
@@ -9,7 +11,7 @@ import type { MnemoItem } from '@/types/mnemo';
 // dot product is exact cosine similarity, and 768 floats is 3KB/note
 // instead of 12KB at the model's default 3072.
 /** The model the app prefers; `embeddingModel()` is what's actually used. */
-export const EMBEDDING_MODEL = 'gemini-embedding-2';
+const EMBEDDING_MODEL = 'gemini-embedding-2';
 
 /** This key's embedding model: the preferred one if it's there, else the newest. */
 export async function embeddingModel(): Promise<string> {
@@ -40,17 +42,13 @@ export const EMBEDDING_DIMS = 768;
 
 export type EmbeddingTaskType = 'RETRIEVAL_DOCUMENT' | 'RETRIEVAL_QUERY';
 
-/**
- * The text actually embedded for a note — mirrors the field set
- * `lib/bm25.ts` already indexes, so keyword and vector search see the same
- * note and neither ranks on information the other ignores.
- */
+/** The same text keyword search indexes, so neither ranking uses information the other ignores. */
 export function embeddableText(
   item: Pick<MnemoItem, 'title' | 'content' | 'nextStep' | 'whereLeftOff' | 'category'> & {
     tags?: string[];
   },
 ): string {
-  return `${item.title} ${item.content} ${item.nextStep ?? ''} ${item.whereLeftOff ?? ''} ${item.tags?.join(' ') ?? ''} ${item.category}`.trim();
+  return searchableText(item).trim();
 }
 
 /** Defensive re-normalization on write — the model's output is already unit-length, but a future model swap silently changing that shouldn't break similarity scoring. */
@@ -64,13 +62,10 @@ function normalize(vector: Float32Array): Float32Array {
   return out;
 }
 
-/** Float32Array -> raw bytes, for the SQLite BLOB column. */
 export function toBlob(vector: Float32Array): Uint8Array {
   const normalized = normalize(vector);
   return new Uint8Array(normalized.buffer, normalized.byteOffset, normalized.byteLength);
 }
-
-export { dot } from '@/lib/vector-math';
 
 /**
  * Embeds one piece of text. `RETRIEVAL_DOCUMENT` for notes being stored,

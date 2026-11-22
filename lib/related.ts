@@ -1,5 +1,4 @@
-import { tokenize } from '@/lib/bm25';
-import { telling } from '@/lib/filing';
+import { idf, telling, tokenize } from '@/lib/bm25';
 import { isCurrency, metricKey } from '@/lib/measures';
 import { dot } from '@/lib/vector-math';
 import { nfc } from '@/utils/text';
@@ -27,7 +26,6 @@ export interface RelatedThread {
   reason: string;
 }
 
-/** How much each sign counts towards the whole. */
 const WEIGHT = { filing: 0.9, links: 0.9, words: 1, tags: 0.7, place: 0.6, measures: 0.4, together: 0.5, meaning: 0.7 };
 
 /** A thread's words are judged on its most telling few, so a long thread isn't penalised for everything else it holds. */
@@ -67,9 +65,7 @@ const COMMON_SITES = new Set(
 );
 
 interface Term {
-  /** As written, for showing. */
   surface: string;
-  /** How often it appears. */
   count: number;
   inTitle: boolean;
   /** Written with a capital in the middle of a sentence: a person, a place, a shop. */
@@ -199,7 +195,6 @@ export interface RelatedOptions {
   limit?: number;
 }
 
-/** A few threads clearly connected to this one, each with the reason, best first. */
 export function relatedLocally(self: MnemoItem, items: MnemoItem[], options: RelatedOptions = {}): RelatedThread[] {
   const { places = [], vectors, limit = 3 } = options;
   const open = items.filter((i) => i.id !== self.id && i.status !== 'archived' && !i.pending);
@@ -219,9 +214,8 @@ export function relatedLocally(self: MnemoItem, items: MnemoItem[], options: Rel
     for (const site of p.sites) bump(siteIn, site);
   }
   const widespread = (count: number) => n >= WIDESPREAD_FROM && count / n > WIDESPREAD_SHARE;
-  const rarity = (count: number) => Math.log((n - count + 0.5) / (count + 0.5) + 1);
+  const rarity = (count: number) => idf(count, n);
 
-  /** A thread's most telling words, each with how much it counts. */
   const weighed = new Map<string, { weights: Map<string, number>; norm: number }>();
   const weigh = (item: MnemoItem) => {
     const done = weighed.get(item.id);
@@ -248,7 +242,6 @@ export function relatedLocally(self: MnemoItem, items: MnemoItem[], options: Rel
   for (const item of open) {
     const theirs = profileOf(item);
     const theirHistory = histories.get(item.id);
-    /** Each sign that showed, with how much it adds and how to say it. */
     const signs: { score: number; reason: string }[] = [];
 
     // A note was suggested from one into the other.

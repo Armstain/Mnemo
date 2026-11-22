@@ -1,20 +1,14 @@
-// ─── Mnemo Core Types ───────────────────────────────────────────
 // The data model for the Personal Continuity App.
 // Every field works offline. AI fields are optional enhancements.
 
 export type ItemType = 'note' | 'checklist' | 'voice';
 
-export type Category =
-  | 'work'
-  | 'personal'
-  | 'study'
-  | 'shopping'
-  | 'health'
-  | 'ideas'
-  | 'errands'
-  | 'general';
+export const CATEGORIES = ['general', 'work', 'personal', 'study', 'shopping', 'health', 'ideas', 'errands'] as const;
+export type Category = (typeof CATEGORIES)[number];
 
 export type ItemStatus = 'active' | 'paused' | 'completed' | 'archived';
+
+export const isOpenStatus = (status: ItemStatus): boolean => status === 'active' || status === 'paused';
 
 /**
  * What a thread is, as opposed to what it's about (its category): something
@@ -22,7 +16,8 @@ export type ItemStatus = 'active' | 'paused' | 'completed' | 'archived';
  * keeping. Unset when it's none of these clearly (a phone number, a receipt).
  * See lib/kind.ts for how it's read and how it changes as a thread grows.
  */
-export type ThreadKind = 'project' | 'task' | 'idea';
+export const KINDS = ['project', 'task', 'idea'] as const;
+export type ThreadKind = (typeof KINDS)[number];
 
 /**
  * How a reminder comes back. Stored as written here, in one text column:
@@ -115,6 +110,7 @@ export interface PlaceReminder {
   caughtLate?: boolean;
 }
 
+
 export interface LaterStep {
   at: number;
   step?: string;
@@ -188,7 +184,6 @@ export interface MnemoItem {
   /** Timestamp of last time user tapped "Resume" on this item. */
   lastResumedAt?: number;
 
-  // ─── AI Enhancement (optional) ────────────────────────────────
   aiSummary?: AISummary;
   overview?: ThreadOverview;
 
@@ -198,13 +193,13 @@ export interface MnemoItem {
   pendingAudioUri?: string;
 }
 
-// ─── Entries & blocks ───────────────────────────────────────────
 // One capture inside a thread. See docs/specs/threads.md.
 
 export type EntrySource = 'voice' | 'text' | 'share';
 
 /** How values of one measure combine across a thread. */
-export type Rollup = 'sum' | 'latest' | 'average' | 'compare';
+export const ROLLUPS = ['sum', 'latest', 'average', 'compare'] as const;
+export type Rollup = (typeof ROLLUPS)[number];
 
 /**
  * One number someone reported: money spent, a distance, their weight, a
@@ -290,7 +285,6 @@ export interface Entry {
   pendingAudioUri?: string;
 }
 
-// ─── Legacy type (for migration) ────────────────────────────────
 export interface LegacyContextDump {
   id: string;
   title: string;

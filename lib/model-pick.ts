@@ -56,7 +56,6 @@ export function pickTextModels(models: ModelInfo[], limit = 1): string[] {
   return [...full, ...ranked.filter(small).slice(0, 1)];
 }
 
-/** A text-to-speech model, newest first, flash before pro. */
 export function pickTtsModel(models: ModelInfo[]): string | undefined {
   return models
     .filter((m) => m.actions.includes('generateContent') && /tts/.test(m.name.toLowerCase()))
@@ -74,81 +73,4 @@ export function pickEmbeddingModel(models: ModelInfo[], preferred: string): stri
   return names
     .filter((n) => n.includes('embedding'))
     .sort((a, b) => Number(!a.startsWith('gemini')) - Number(!b.startsWith('gemini')) || version(b) - version(a) || b.localeCompare(a))[0];
-}
-
-/** A model that isn't there (renamed, retired, not on this key): worth trying the next. */
-export function isMissingModel(e: unknown): boolean {
-  const text = e instanceof Error ? e.message : String(e);
-  return /\b404\b|NOT_FOUND|is not found|not supported for (generateContent|embedContent)/i.test(text);
-}
-
-/** Google's "busy" answers: 503 high demand, and 504 when it ran out of time on its side. */
-export const OVERLOADED_PATTERN = /\b50[34]\b|UNAVAILABLE|DEADLINE_EXCEEDED|high demand|overloaded/i;
-
-/**
- * Google answering "high demand" (503) or "deadline exceeded" (504) for one
- * model: another model, or the same one a moment later, usually still works.
- */
-export function isOverloaded(e: unknown): boolean {
-  const text = e instanceof Error ? e.message : String(e);
-  return OVERLOADED_PATTERN.test(text);
-}
-
-/** The nth (1-based) Sunday of a month, as a UTC day of month. */
-function nthSunday(year: number, month: number, n: number): number {
-  const firstDow = new Date(Date.UTC(year, month, 1)).getUTCDay();
-  return 1 + ((7 - firstDow) % 7) + (n - 1) * 7;
-}
-
-/** US Pacific offset from UTC in hours at `at`: -7 on daylight time (2nd Sunday of March to 1st Sunday of November), else -8. */
-function pacificOffsetHours(at: number): number {
-  const y = new Date(at).getUTCFullYear();
-  const start = Date.UTC(y, 2, nthSunday(y, 2, 2), 10); // 2:00 PST = 10:00 UTC
-  const end = Date.UTC(y, 10, nthSunday(y, 10, 1), 9); // 2:00 PDT = 09:00 UTC
-  return at >= start && at < end ? -7 : -8;
-}
-
-/**
- * When Google's daily free quota next resets: midnight Pacific, as a
- * timestamp (the caller shows it in the phone's own time zone).
- */
-export function nextDailyReset(now = Date.now()): number {
-  const offset = pacificOffsetHours(now) * 3_600_000;
-  const pacificDay = Math.floor((now + offset) / 86_400_000);
-  const reset = (pacificDay + 1) * 86_400_000 - offset;
-  // Across a clock change the offset differs by an hour: use the one in force at the reset.
-  const exact = (pacificDay + 1) * 86_400_000 - pacificOffsetHours(reset) * 3_600_000;
-  return exact;
-}
-
-/** How long a model sits out after its day's allowance runs out, before it's tried again. */
-export const DAILY_QUOTA_PAUSE_MS = 60 * 60_000;
-/** When Google doesn't say how long to wait. */
-const DEFAULT_QUOTA_PAUSE_MS = 60_000;
-
-/**
- * What a 429 is about, or undefined for any other error: `daily` when the
- * day's allowance is spent (it resets at midnight Pacific), else a
- * per-minute limit with the wait Google names ("Please retry in 37.5s"),
- * if it names one.
- */
-export function quotaInfo(e: unknown): { daily: boolean; retryMs?: number } | undefined {
-  const text = e instanceof Error ? e.message : String(e);
-  if (!/\b429\b|RESOURCE_EXHAUSTED|quota/i.test(text)) return undefined;
-  if (/PerDay|per day|daily/i.test(text)) return { daily: true };
-  const wait = text.match(/retry in (\d+(?:\.\d+)?)\s*s/i) ?? text.match(/"retryDelay"\s*:\s*"(\d+(?:\.\d+)?)s"/);
-  return { daily: false, retryMs: wait ? Math.ceil(Number(wait[1]) * 1000) : undefined };
-}
-
-/**
- * A model out of quota (429), and how long to leave it alone; undefined for
- * any other error. Google's free tier counts each model separately, so
- * another model usually still answers. A day's allowance gets an hour's
- * rest (it's checked again cheaply after); a per-minute one, the wait
- * Google names.
- */
-export function quotaPause(e: unknown): number | undefined {
-  const info = quotaInfo(e);
-  if (!info) return undefined;
-  return info.daily ? DAILY_QUOTA_PAUSE_MS : (info.retryMs ?? DEFAULT_QUOTA_PAUSE_MS);
 }

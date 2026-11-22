@@ -2,21 +2,12 @@
 // GeofenceOutcomes.kt), and how to say it. Pure: the binding is lib/geofence-native.ts.
 // See docs/plans/2026-11-root-fixes.md, A.
 
-export type GeofenceState =
-  | 'ok'
-  | 'refused'
-  | 'no-permission'
-  | 'no-provider'
-  | 'dropped'
-  | 'failed'
-  | 'unknown'
-  | 'off';
+const STATES = ['ok', 'refused', 'no-permission', 'no-provider', 'dropped', 'failed', 'unknown', 'off'] as const;
+type GeofenceState = (typeof STATES)[number];
 
 export interface GeofenceOutcome {
   state: GeofenceState;
-  /** Places it was asked to watch. */
   count?: number;
-  /** When Android answered (ms). */
   at?: number;
   /** Set by Android restoring the task (after a restart, an update, or a background start), not by the app. */
   restored?: boolean;
@@ -26,14 +17,14 @@ export interface GeofenceOutcome {
 }
 
 /** Play Services' codes (GeofenceStatusCodes). */
-export const GEOFENCE_NOT_AVAILABLE = 1000;
+const GEOFENCE_NOT_AVAILABLE = 1000;
 const TOO_MANY = [1001, 1002];
 const NO_PERMISSION = 1004;
 
 /** Which setting a refusal points at, so the right fix is offered (and a problem already shown isn't said twice). */
 export type OutcomeCause = 'accuracy' | 'background' | 'services' | 'other';
 
-export interface OutcomeProblem {
+interface OutcomeProblem {
   cause: OutcomeCause;
   text: string;
 }
@@ -97,8 +88,7 @@ export function outcomeReport(o: GeofenceOutcome | null, now = Date.now()): stri
 export function asOutcome(raw: unknown): GeofenceOutcome | null {
   if (!raw || typeof raw !== 'object') return null;
   const r = raw as Record<string, unknown>;
-  const states: GeofenceState[] = ['ok', 'refused', 'no-permission', 'no-provider', 'dropped', 'failed', 'unknown', 'off'];
-  if (!states.includes(r.state as GeofenceState)) return null;
+  if (!STATES.includes(r.state as GeofenceState)) return null;
   const num = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : undefined);
   return {
     state: r.state as GeofenceState,

@@ -8,7 +8,7 @@ import Animated, {
   withSpring,
   withTiming,
 } from 'react-native-reanimated';
-import { haptic } from '@/utils/haptics';
+import { haptic } from '@/lib/haptics';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router, usePathname } from 'expo-router';
 
@@ -17,6 +17,13 @@ import { useReduceMotion } from '@/hooks/use-accessibility-motion';
 import { closeCapture, useCaptureActive } from '@/hooks/use-capture-active';
 import { Icon, type IconName } from '@/components/ui/Icon';
 import { Text } from '@/components/ui/Text';
+import {
+  BUTTON_CENTER_Y,
+  CAPTURE_RING_SIZE,
+  CENTER_BUTTON_RISE,
+  NAV_BAR_HEIGHT,
+  navBottom,
+} from '@/components/ui/nav-layout';
 
 // Two tabs either side of the capture button (ActionCluster), which sits in
 // a notch in the middle of the bar. Search lives inside Library.
@@ -25,20 +32,8 @@ const TABS = [
   { name: 'Library', icon: 'library' as IconName, route: '/(tabs)/library' },
 ] as const;
 
-// ─── Geometry ───────────────────────────────────────────────────
-// Shared with ActionCluster so the button lands exactly in the notch.
-
-/** Bar height (excludes the gap below it, see navBottom). */
-export const NAV_BAR_HEIGHT = 64;
-/** Diameter of the capture button. */
-export const CAPTURE_BUTTON_SIZE = 56;
-/** Diameter of the brand ring around it; the notch is shaped for this. */
-export const CAPTURE_RING_SIZE = CAPTURE_BUTTON_SIZE + 14;
 /** Fully round ends: the bar is a capsule. */
 const CORNER = 32;
-/** Centre of the button, measured down from the bar's top edge (negative: above it). */
-const BUTTON_CENTER_Y = -5;
-
 // The notch is a circle around the button, the same gap all the way round
 // the ring, eased into the top edge by two small round shoulders. Even
 // spacing is what makes it read as cradling the button rather than as a
@@ -53,24 +48,6 @@ const SHOULDER_R = 14;
 const SHOULDER_DX = Math.sqrt((NOTCH_R + SHOULDER_R) ** 2 - (SHOULDER_R - BUTTON_CENTER_Y) ** 2);
 /** Half the notch's opening along the bar's top edge. */
 const NOTCH_HALF = SHOULDER_DX;
-/** How far the capture button rises above the bar's top edge. */
-export const CENTER_BUTTON_RISE = CAPTURE_BUTTON_SIZE / 2 - BUTTON_CENTER_Y;
-
-/**
- * Distance from the screen's bottom edge to the bar: clear of the system
- * gesture bar / home indicator with room to breathe, so the bar floats
- * instead of resting on it. Everything stacked on the bar uses this too.
- */
-export function navBottom(insetBottom: number): number {
-  return Math.max(insetBottom + 12, 20);
-}
-
-// Scroll-content bottom padding (added to the safe inset) that clears the
-// floating bar, its gap above the inset, the button rising out of it, and
-// a standard 16dp margin.
-export const NAV_CLEARANCE = NAV_BAR_HEIGHT + CENTER_BUTTON_RISE + 12 + 16;
-// Kept as its own name for Home.
-export const CONTENT_BOTTOM_CLEARANCE = NAV_CLEARANCE;
 
 /** The bar's outline: a capsule with a notch cradling the capture button. */
 function barPath(w: number, h: number): string {
@@ -114,7 +91,7 @@ function onTab(item: (typeof TABS)[number], pathname: string): boolean {
   return item.route === '/' ? pathname === '/' : pathname.includes(item.route.replace('/(tabs)/', ''));
 }
 
-export function activeTabIndex(pathname: string): number {
+function activeTabIndex(pathname: string): number {
   const found = TABS.findIndex((item) => onTab(item, pathname));
   if (found !== -1) lastTabIndex = found;
   return lastTabIndex;

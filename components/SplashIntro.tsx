@@ -11,7 +11,8 @@ import Animated, {
 } from 'react-native-reanimated';
 import Svg, { Circle, Path } from 'react-native-svg';
 import { Text } from '@/components/ui/Text';
-import { PALETTE, useThemeName } from '@/hooks/use-theme';
+import { useThemeName } from '@/hooks/use-theme';
+import { PALETTE } from '@/utils/palette';
 import { useReduceMotion } from '@/hooks/use-accessibility-motion';
 import { EASE_IN_OUT, EASE_OUT } from '@/utils/motion';
 

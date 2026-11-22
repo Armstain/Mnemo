@@ -33,7 +33,6 @@ function clean(text: string | undefined, max: number): string | undefined {
   return flat.length > max ? `${flat.slice(0, max - 1)}…` : flat;
 }
 
-/** Reads the preview fields out of a page's HTML. */
 export function parsePreview(html: string, pageUrl: string): LinkPreview {
   const head = html.slice(0, MAX_HTML);
   const meta = (key: string): string | undefined => {
@@ -59,7 +58,6 @@ export function parsePreview(html: string, pageUrl: string): LinkPreview {
   };
 }
 
-/** Fetches a page and reads its preview; null if it can't. */
 export async function fetchLinkPreview(url: string): Promise<LinkPreview | null> {
   // Browsers block reading other sites' pages; the web build goes without.
   if (Platform.OS === 'web' || !/^https?:\/\//i.test(url)) return null;

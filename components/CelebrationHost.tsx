@@ -15,7 +15,7 @@ import { Text } from '@/components/ui/Text';
 import { useReduceMotion } from '@/hooks/use-accessibility-motion';
 import { useThemeColors } from '@/hooks/use-theme';
 import { onCelebrate, type Celebration } from '@/lib/done';
-import { playDone } from '@/utils/done-haptics';
+import { playDone } from '@/lib/haptics';
 import { EASE_OUT } from '@/utils/motion';
 
 // A task finished. Mnemo's mark is an open ring, a loop not yet closed;

@@ -9,6 +9,7 @@ import { Platform, View } from 'react-native';
 import { useMnemoStore } from '@/hooks/use-mnemo-store';
 import { getLaunchKey, recordNowHref } from '@/lib/launch-key';
 import { useThemeColors } from '@/hooks/use-theme';
+import { threadHref } from '@/lib/routes';
 
 // Long-press-the-app-icon shortcuts. iOS draws SF Symbols; Android loads
 // the vector drawables of the same names that plugins/with-shortcut-icons.js
@@ -19,7 +20,6 @@ const SHORTCUT_ICONS = {
   resume: Platform.OS === 'ios' ? 'symbol:play.fill' : 'shortcut_resume',
 };
 
-/** Keeps the home-screen quick actions current, and routes them when tapped. */
 function useCaptureShortcuts() {
   // Must live in a sub-layout, not the root layout — it navigates on
   // launch, which the root can't do before its navigator mounts.
@@ -56,7 +56,7 @@ function useCaptureShortcuts() {
         title: Platform.OS === 'ios' ? 'Resume' : 'Resume last thread',
         subtitle: latest.title,
         icon: SHORTCUT_ICONS.resume,
-        params: { href: `/(tabs)/context?id=${latest.id}` },
+        params: { href: threadHref(latest.id) },
       });
     }
     QuickActions.setItems(actions).catch(() => {
@@ -93,10 +93,8 @@ export default function TabLayout() {
         <Tabs.Screen name="context" options={{ title: 'Detail', href: null }} />
       </Tabs>
 
-      {/* Content fades out behind the bar instead of showing through its notch. */}
       <BottomFade />
       <FloatingTabBar />
-      {/* The capture button sits in the middle of the tab bar on every tab. */}
       <ActionCluster />
     </View>
   );

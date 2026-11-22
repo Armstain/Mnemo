@@ -1,23 +1,12 @@
-import type { LaterStep, MnemoItem } from '@/types/mnemo';
-import { DAY_MS } from '@/utils/time';
+import type { LaterStep, MnemoItem, Repeat } from '@/types/mnemo';
+import { addDays, atTime as at, DAY_MS } from '@/utils/time';
 import { nextOccurrence, repeatLabel } from '@/lib/repeat';
+
+export type { Repeat };
 
 // Reminder times: the quick choices offered, the next time a repeating one
 // comes round, and how a reminder reads. Pure, so it's easy to test.
 
-export type Repeat = NonNullable<MnemoItem['repeat']>;
-
-function at(day: Date, hour: number, minute = 0): Date {
-  const d = new Date(day);
-  d.setHours(hour, minute, 0, 0);
-  return d;
-}
-
-function addDays(day: Date, n: number): Date {
-  const d = new Date(day);
-  d.setDate(d.getDate() + n);
-  return d;
-}
 
 // The first time after `now` a repeating reminder comes round, and how a repeat reads (lib/repeat.ts).
 export { nextOccurrence, repeatLabel };
@@ -97,8 +86,6 @@ export function formatReminder(ts: number, now = Date.now()): string {
             : d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
   return hasTime(ts) ? `${day}, ${timeOf(ts)}` : day;
 }
-
-// ─── Which thread to pick back up ───────────────────────────────
 
 const HALF_LIFE_MS = 3 * DAY_MS;
 

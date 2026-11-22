@@ -18,7 +18,6 @@ export function splitAudio(joined: string | undefined): string[] {
   return (joined ?? '').split('\n').filter(Boolean);
 }
 
-/** Moves a just-made recording out of the cache into the app's folder. */
 export function keepRecording(tempUri: string): string {
   if (Platform.OS === 'web') return tempUri;
   try {
@@ -59,7 +58,6 @@ async function blobBase64(blob: Blob): Promise<string> {
   });
 }
 
-/** The recordings that are still there, read for sending. */
 export async function loadAudio(uris: string[]): Promise<Audio[]> {
   const out: Audio[] = [];
   for (const uri of uris) {
@@ -91,7 +89,6 @@ export function deleteAudio(uris: string[] | string | undefined): void {
   }
 }
 
-/** "Clear all data": every recording still waiting. */
 export function deleteAllAudio(): void {
   try {
     new Directory(Paths.document, FOLDER).delete();

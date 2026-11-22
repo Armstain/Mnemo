@@ -1,8 +1,32 @@
-import { stemOf } from '@/lib/lang-packs';
+import { COMMON_WORDS, stemOf } from '@/lib/lang-packs';
 import type { MnemoItem } from '@/types/mnemo';
+import { nfc } from '@/utils/text';
 
-const K1 = 1.5; // Term frequency saturation — controls how quickly TF effect diminishes
-const B = 0.75;  // Document length normalization — 0 = no length norm, 1 = full length norm
+export const K1 = 1.5;
+export const B = 0.75;
+const RRF_K = 60;
+
+export const rrfScore = (rank: number): number => 1 / (RRF_K + rank + 1);
+
+export const idf = (docsWith: number, docs: number): number => Math.log((docs - docsWith + 0.5) / (docsWith + 0.5) + 1);
+
+export function termCounts(tokens: string[]): Map<string, number> {
+  const counts = new Map<string, number>();
+  for (const t of tokens) counts.set(t, (counts.get(t) ?? 0) + 1);
+  return counts;
+}
+
+export function searchableText(
+  item: Pick<MnemoItem, 'title' | 'content' | 'nextStep' | 'whereLeftOff' | 'category'> & { tags?: string[] },
+): string {
+  return `${item.title} ${item.content} ${item.nextStep ?? ''} ${item.whereLeftOff ?? ''} ${item.tags?.join(' ') ?? ''} ${item.category}`;
+}
+
+/** The words in a text that could say what it's about. */
+export function telling(words: string[]): Set<string> {
+  return new Set(words.filter((w) => w.length >= 3 && !/^\d+$/.test(w) && !COMMON_WORDS.has(w)));
+}
+
 /** A word that only starts with what was typed counts this much of a whole match. */
 const PREFIX_WEIGHT = 0.7;
 
@@ -23,13 +47,7 @@ const GAP = gapPattern();
  * Bangla and digits. Punctuation splits words; Bangla vowel signs don't.
  */
 export function tokenize(text: string): string[] {
-  let normal = text.toLowerCase();
-  try {
-    normal = normal.normalize('NFC');
-  } catch {
-    // Older engines: compare as typed.
-  }
-  return normal
+  return nfc(text.toLowerCase())
     .replace(GAP, ' ')
     .replace(/[\u0964\u0965]/g, ' ')
     .split(/\s+/)
@@ -43,14 +61,12 @@ export interface ScoredItem {
 }
 
 interface IndexedDoc {
-  /** How often each word appears. */
   tf: Map<string, number>;
   length: number;
 }
 
 interface Corpus {
   docs: IndexedDoc[];
-  /** How many documents each word appears in. */
   df: Map<string, number>;
   avgdl: number;
 }
@@ -64,12 +80,8 @@ const corpusCache = new WeakMap<MnemoItem[], Corpus>();
 function indexDoc(item: MnemoItem): IndexedDoc {
   const cached = docCache.get(item.id);
   if (cached && cached.updatedAt === item.updatedAt) return cached.doc;
-  const tokens = tokenize(
-    `${item.title} ${item.content} ${item.nextStep ?? ''} ${item.whereLeftOff ?? ''} ${item.tags?.join(' ') ?? ''} ${item.category} ${item.searchTerms?.join(' ') ?? ''}`,
-  );
-  const tf = new Map<string, number>();
-  for (const t of tokens) tf.set(t, (tf.get(t) ?? 0) + 1);
-  const doc = { tf, length: tokens.length };
+  const tokens = tokenize(`${searchableText(item)} ${item.searchTerms?.join(' ') ?? ''}`);
+  const doc = { tf: termCounts(tokens), length: tokens.length };
   docCache.set(item.id, { updatedAt: item.updatedAt, doc });
   return doc;
 }
@@ -102,10 +114,7 @@ export function bm25Scored(query: string, documents: MnemoItem[]): ScoredItem[] 
 
   const { docs, df, avgdl } = corpusOf(documents);
   const N = documents.length;
-  const idfOf = (term: string) => {
-    const ni = df.get(term) ?? 0;
-    return Math.log((N - ni + 0.5) / (ni + 0.5) + 1);
-  };
+  const idfOf = (term: string) => idf(df.get(term) ?? 0, N);
 
   // The last word may be half typed: "passp" also counts words it starts,
   // a little less than the whole word would.

@@ -13,7 +13,7 @@ import Svg, { Circle } from 'react-native-svg';
 import { Icon } from '@/components/ui/Icon';
 import { useReduceMotion } from '@/hooks/use-accessibility-motion';
 import { useThemeColors } from '@/hooks/use-theme';
-import { playDone } from '@/utils/done-haptics';
+import { playDone } from '@/lib/haptics';
 import { EASE_OUT } from '@/utils/motion';
 
 const AnimatedCircle = Animated.createAnimatedComponent(Circle);

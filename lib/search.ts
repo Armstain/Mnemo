@@ -1,34 +1,13 @@
-import { embedText, embeddingModel, dot } from '@/lib/embeddings';
+import { embedText, embeddingModel } from '@/lib/embeddings';
 import { getChunkVectors, getVectors } from '@/lib/db';
-import { bm25Scored } from '@/lib/bm25';
+import { bm25Scored, rrfScore } from '@/lib/bm25';
 import { relatedLocally, type RelatedOptions, type RelatedThread } from '@/lib/related';
-import { chunkEntries, retrieve, type Hit, type RetrieveOptions } from '@/lib/retrieve';
+import { chunkEntries, MIN_SIMILARITY, retrieve, type Hit, type RetrieveOptions } from '@/lib/retrieve';
+import { dot } from '@/lib/vector-math';
 import type { Entry, MnemoItem } from '@/types/mnemo';
 
-// The standard constant from the original Reciprocal Rank Fusion paper —
-// dampens the impact of rank 1 vs rank 2 so one retriever's top pick
-// doesn't automatically dominate.
-const RRF_K = 60;
-
-// Cap the vector side to its best matches before fusing. Without this, a
-// long tail of low-similarity notes (every embedded note has *some*
-// similarity to any query) would all enter the fusion and dilute results
-// that keyword search found precisely.
+/** The vector side is capped to its best matches before fusing, so a long tail of weak matches doesn't dilute what keyword search found precisely. */
 const VECTOR_TOP_K = 30;
-
-// Query-to-document cosine similarity has a high floor — it is NOT close
-// to 0 for unrelated content, because query/document embeddings share
-// general language structure regardless of topic. Calibrated against
-// gemini-embedding-2 (768 dims, RETRIEVAL_QUERY vs RETRIEVAL_DOCUMENT):
-// clearly unrelated notes scored 0.56-0.62, a strongly relevant note
-// scored 0.75. Below this floor, *everything* embedded scores as a
-// "match" regardless of topic — which is exactly the bug where searching
-// "software" surfaced unrelated notes: with no threshold, `vectorRank`
-// returned its top 30 by score no matter how low that score was, and
-// those all entered the RRF fusion below. Biased toward precision (fewer
-// false positives) since BM25 already catches literal keyword matches
-// that this filters out — nothing is lost, only the weak semantic boost.
-const QUERY_MIN_SIMILARITY = 0.65;
 
 // The search box and "Ask your notes" ask about the same words moments
 // apart: the question is embedded once.
@@ -49,7 +28,7 @@ async function embedQuery(query: string): Promise<Float32Array> {
 
 /**
  * Ranks items by embedding similarity to the query, best first, excluding
- * anything below `QUERY_MIN_SIMILARITY`. Returns `[]` — never throws — if
+ * anything below `MIN_SIMILARITY`. Returns `[]` — never throws — if
  * there are no vectors yet, nothing clears the bar, or the query embed
  * fails (offline, rate-limited); `hybridSearch` degrades to pure BM25 in
  * that case, same as the rest of the AI layer's contract.
@@ -65,7 +44,7 @@ async function vectorRank(query: string, items: MnemoItem[]): Promise<MnemoItem[
       const vector = vectors.get(item.id);
       return vector ? { doc: item, score: dot(queryVector, vector) } : null;
     })
-    .filter((x): x is { doc: MnemoItem; score: number } => x !== null && x.score >= QUERY_MIN_SIMILARITY)
+    .filter((x): x is { doc: MnemoItem; score: number } => x !== null && x.score >= MIN_SIMILARITY)
     .sort((a, b) => b.score - a.score)
     .slice(0, VECTOR_TOP_K)
     .map(({ doc }) => doc);
@@ -85,7 +64,7 @@ function reciprocalRankFusion(rankings: MnemoItem[][]): MnemoItem[] {
   for (const ranking of rankings) {
     ranking.forEach((doc, rank) => {
       byId.set(doc.id, doc);
-      scores.set(doc.id, (scores.get(doc.id) ?? 0) + 1 / (RRF_K + rank + 1));
+      scores.set(doc.id, (scores.get(doc.id) ?? 0) + rrfScore(rank));
     });
   }
 
@@ -126,7 +105,7 @@ export type { RelatedThread } from '@/lib/related';
 export async function relatedThreads(
   itemId: string,
   items: MnemoItem[],
-  options: Pick<RelatedOptions, 'entries' | 'places' | 'limit'> = {},
+  options: Pick<RelatedOptions, 'entries' | 'places'> = {},
 ): Promise<RelatedThread[]> {
   const self = items.find((i) => i.id === itemId);
   if (!self) return [];
@@ -144,7 +123,7 @@ export async function relatedThreads(
 }
 
 /** How many passages answer a question: enough to answer from, few enough to keep the request small. */
-export const PASSAGES = 6;
+const PASSAGES = 6;
 
 /**
  * "What did I say about X": the passages of these threads that best answer
@@ -153,7 +132,7 @@ export const PASSAGES = 6;
  * nothing leaves the phone. Never throws: without vectors, or offline, it
  * is the keyword ranking.
  */
-export async function findPassages(query: string, items: MnemoItem[], entries: Entry[], limit = PASSAGES): Promise<Hit[]> {
+export async function findPassages(query: string, items: MnemoItem[], entries: Entry[]): Promise<Hit[]> {
   const chunks = chunkEntries(items, entries);
   let vectors: RetrieveOptions = {};
   try {
@@ -165,5 +144,5 @@ export async function findPassages(query: string, items: MnemoItem[], entries: E
   } catch {
     // Search by meaning is off, or there's no connection.
   }
-  return retrieve(query, chunks, { ...vectors, limit });
+  return retrieve(query, chunks, { ...vectors, limit: PASSAGES });
 }

@@ -6,6 +6,8 @@ vi.mock('@react-native-async-storage/async-storage', () => ({
   default: { getItem: async (k: string) => saved.get(k) ?? null, setItem: async (k: string, v: string) => void saved.set(k, v) },
 }));
 
+vi.mock('expo-secure-store', () => ({}));
+
 describe('the Resume card flight on a slow phone', () => {
   it('reads 60 fps as fine and under 40 fps as slow, given enough frames', () => {
     expect(framesLookSlow(16.7 * 28, 28)).toBe(false);

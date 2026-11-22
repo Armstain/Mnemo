@@ -6,7 +6,7 @@ import { useThemeColors } from '@/hooks/use-theme';
 import { useReduceMotion } from '@/hooks/use-accessibility-motion';
 import { motion, BREATHE_DURATION, EASE_IN_OUT } from '@/utils/motion';
 
-export function Bone({
+function Bone({
   width,
   height = 12,
 }: {

@@ -2,6 +2,7 @@ import React from 'react';
 import { View } from 'react-native';
 import { TextInput } from '@/components/ui/TextInput';
 
+import { useSurfaceStyle } from '@/components/ui/Card';
 import { Eyebrow } from '@/components/ui/Eyebrow';
 import { useThemeColors } from '@/hooks/use-theme';
 import { noFocusRing } from '@/utils/web';
@@ -17,6 +18,7 @@ interface LabeledInputProps {
 /** A labelled single field — the same look on every form in the app. */
 export function LabeledInput({ label, value, onChangeText, placeholder, multiline = true }: LabeledInputProps) {
   const colors = useThemeColors();
+  const surface = useSurfaceStyle();
   return (
     <View>
       <Eyebrow className="mb-2">{label}</Eyebrow>
@@ -29,7 +31,8 @@ export function LabeledInput({ label, value, onChangeText, placeholder, multilin
         multiline={multiline}
         className="font-sans text-body rounded-sm px-4 py-3"
         style={[
-          { color: colors.fg, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border },
+          { color: colors.fg },
+          surface,
           noFocusRing,
         ]}
       />

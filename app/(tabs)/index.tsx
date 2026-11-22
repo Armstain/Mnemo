@@ -4,7 +4,7 @@ import { Text } from '@/components/ui/Text';
 import { MotiView } from 'moti';
 import { useMnemoStore } from '@/hooks/use-mnemo-store';
 import { PulseHome } from '@/components/ui/PulseHome';
-import { useEnter } from '@/utils/motion';
+import { useEnter } from '@/hooks/use-enter';
 
 export default function HomeScreen() {
   const enter = useEnter();

@@ -1,4 +1,5 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { createEmitter } from '@/lib/emitter';
+import { storage } from '@/lib/storage';
 
 // The Resume card opening into its thread: Home hands the card's place on
 // screen to an overlay (components/CardFlightHost), which grows a copy of
@@ -19,50 +20,35 @@ export interface Rect {
 
 export interface Flight {
   threadId: string;
-  /** The card, in window coordinates. */
   from: Rect;
-  /** The card title's box, in window coordinates. */
   titleFrom: Rect;
   title: string;
   /** The reason chip, faded out as the card opens. */
   chip?: string;
 }
 
-type Listener = (flight: Flight) => void;
-const listeners = new Set<Listener>();
-
-export function launchFlight(flight: Flight): void {
-  listeners.forEach((l) => l(flight));
-}
-
-export function onFlight(listener: Listener): () => void {
-  listeners.add(listener);
-  return () => listeners.delete(listener);
-}
+const flights = createEmitter<Flight>();
+export const launchFlight = flights.emit;
+export const onFlight = flights.on;
 
 // ─── Where the thread's title is ───────────────────────────────
 
-type TargetListener = (threadId: string, rect: Rect) => void;
-const targetListeners = new Set<TargetListener>();
+const targets = createEmitter<{ threadId: string; rect: Rect }>();
 
 /** The thread screen, once its title is laid out. */
 export function reportFlightTarget(threadId: string, rect: Rect): void {
-  targetListeners.forEach((l) => l(threadId, rect));
+  targets.emit({ threadId, rect });
 }
-
-export function onFlightTarget(listener: TargetListener): () => void {
-  targetListeners.add(listener);
-  return () => targetListeners.delete(listener);
-}
+export const onFlightTarget = targets.on;
 
 // ─── Is this phone keeping up? ─────────────────────────────────
 
 const SLOW_KEY = 'mnemo.cardFlight.slow';
 
 /** A flight slower than this on average reads as stutter (about 40 fps). */
-export const SLOW_FRAME_MS = 25;
+const SLOW_FRAME_MS = 25;
 /** Slow flights in a row before giving up: one can be a busy moment. */
-export const SLOW_STRIKES = 2;
+const SLOW_STRIKES = 2;
 
 let slow: boolean | null = null;
 let strikes = 0;
@@ -71,7 +57,7 @@ let strikes = 0;
 export async function loadFlightPerformance(): Promise<boolean> {
   if (slow === null) {
     try {
-      slow = (await AsyncStorage.getItem(SLOW_KEY)) === '1';
+      slow = (await storage.get(SLOW_KEY)) === '1';
     } catch {
       slow = false;
     }
@@ -103,6 +89,6 @@ export function recordFlight(totalMs: number, frames: number): void {
   strikes += 1;
   if (strikes >= SLOW_STRIKES) {
     slow = true;
-    AsyncStorage.setItem(SLOW_KEY, '1').catch(() => {});
+    storage.set(SLOW_KEY, '1').catch(() => {});
   }
 }

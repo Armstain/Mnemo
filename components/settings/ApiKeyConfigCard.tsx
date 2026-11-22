@@ -1,4 +1,5 @@
 import { View, Pressable } from 'react-native';
+import { Surface } from '@/components/ui/Card';
 import { TextInput } from '@/components/ui/TextInput';
 import { Text } from '@/components/ui/Text';
 import { Key, Eye, EyeOff, AlertCircle } from 'lucide-react-native';
@@ -116,8 +117,7 @@ export function ApiKeyConfigCard({ provider = GEMINI }: { provider?: KeyProvider
   };
 
   return (
-    <View className="bg-surface rounded-lg p-5 border border-border/50 gap-4">
-      {/* Header */}
+    <Surface tone="soft" className="rounded-lg p-5 gap-4">
       <View className="flex-row items-center justify-between">
         <View className="flex-row items-center">
           <Key size={16} color={colors.accent} strokeWidth={2} />
@@ -132,7 +132,6 @@ export function ApiKeyConfigCard({ provider = GEMINI }: { provider?: KeyProvider
         <Text className="font-sans text-sm text-fg-secondary leading-relaxed -mt-1">{provider.note}</Text>
       ) : null}
 
-      {/* Input Field */}
       <View className="gap-1.5">
         <View className="flex-row items-center bg-surface-warm rounded-md border border-border/60 px-3.5 py-2">
           <TextInput
@@ -165,7 +164,6 @@ export function ApiKeyConfigCard({ provider = GEMINI }: { provider?: KeyProvider
         </View>
       </View>
 
-      {/* Test / Feedback Message */}
       {testResult && (
         <View
           className="p-3 rounded-md flex-row items-start gap-2 border"
@@ -188,7 +186,6 @@ export function ApiKeyConfigCard({ provider = GEMINI }: { provider?: KeyProvider
         </View>
       )}
 
-      {/* Action Buttons */}
       <View className="flex-row items-center gap-2 pt-1">
         <Button onPress={handleSave} disabled={isSaving} variant="primary" size="sm" className="flex-1" icon="check">
           {isSaving ? 'Saving...' : 'Save'}
@@ -209,7 +206,6 @@ export function ApiKeyConfigCard({ provider = GEMINI }: { provider?: KeyProvider
         )}
       </View>
 
-      {/* Link to get key */}
       <Pressable
         onPress={openGoogleAIStudio}
         className="flex-row items-center justify-between pt-2 border-t border-border/40"
@@ -222,6 +218,6 @@ export function ApiKeyConfigCard({ provider = GEMINI }: { provider?: KeyProvider
           <Icon name="arrowUpRight" size={12} color={colors.accent} />
         </View>
       </Pressable>
-    </View>
+    </Surface>
   );
 }

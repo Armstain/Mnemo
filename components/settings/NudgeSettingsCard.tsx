@@ -1,7 +1,9 @@
-import { View, Platform, Switch, Linking } from 'react-native';
+import { View, Platform, Linking } from 'react-native';
+import { ToggleSwitch } from '@/components/ui/ToggleRow';
+import { Surface } from '@/components/ui/Card';
 import { Text } from '@/components/ui/Text';
 import { Bell } from 'lucide-react-native';
-import { haptic } from '@/utils/haptics';
+import { haptic } from '@/lib/haptics';
 import { useEffect, useState } from 'react';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { Button } from '@/components/ui/Button';
@@ -10,7 +12,6 @@ import { useThemeColors } from '@/hooks/use-theme';
 import { useMnemoStore } from '@/hooks/use-mnemo-store';
 import {
   NUDGE_TIMES,
-  hasNudgePermission,
   loadNudgePrefs,
   requestNudgePermission,
   saveNudgePrefs,
@@ -19,6 +20,7 @@ import {
   type NudgePrefs,
   type NudgeTime,
 } from '@/lib/nudges';
+import { hasNotificationPermission } from '@/lib/notifications';
 import { reviewTimeLabel, scheduleWeeklyReview } from '@/lib/review-notice';
 
 const NUDGE_TIME_KEYS = Object.keys(NUDGE_TIMES) as NudgeTime[];
@@ -37,7 +39,7 @@ export function NudgeSettingsCard() {
 
   useEffect(() => {
     loadNudgePrefs().then(setPrefs);
-    hasNudgePermission().then(setGranted);
+    hasNotificationPermission().then(setGranted);
   }, []);
 
   const apply = async (next: NudgePrefs) => {
@@ -79,20 +81,13 @@ export function NudgeSettingsCard() {
   const customAt = prefs.custom ? new Date(0, 0, 1, prefs.custom.hour, prefs.custom.minute) : new Date(0, 0, 1, 9, 0);
 
   return (
-    <View className="bg-surface rounded-lg p-5 border border-border/50 gap-4">
+    <Surface tone="soft" className="rounded-lg p-5 gap-4">
       <View className="flex-row items-center justify-between">
         <View className="flex-row items-center flex-1 mr-3">
           <Bell size={15} color={colors.accent} strokeWidth={2} />
           <Text className="font-sans-semi text-sm text-fg ml-2">Gentle nudges</Text>
         </View>
-        <Switch
-          value={isOn}
-          onValueChange={handleToggle}
-          accessibilityLabel="Gentle nudges"
-          trackColor={{ false: colors.border, true: colors.accent }}
-          thumbColor={Platform.OS === 'android' ? colors.surfaceLowest : undefined}
-          ios_backgroundColor={colors.border}
-        />
+        <ToggleSwitch value={isOn} onValueChange={handleToggle} label="Gentle nudges" />
       </View>
 
       {isOn && (
@@ -101,9 +96,6 @@ export function NudgeSettingsCard() {
             <Pill
               key={key}
               tone={colors.accent}
-              size="md"
-              dot={false}
-              outline={prefs.time !== key}
               selected={prefs.time === key}
               onPress={() => apply({ ...prefs, time: key })}
             >
@@ -112,9 +104,6 @@ export function NudgeSettingsCard() {
           ))}
           <Pill
             tone={colors.accent}
-            size="md"
-            dot={false}
-            outline={prefs.time !== 'custom'}
             selected={prefs.time === 'custom'}
             onPress={() => setPickingTime(true)}
           >
@@ -163,14 +152,7 @@ export function NudgeSettingsCard() {
               {reviewTimeLabel()}
             </Text>
           </View>
-          <Switch
-            value={prefs.weekly}
-            onValueChange={(weekly) => apply({ ...prefs, weekly })}
-            accessibilityLabel="Weekly review"
-            trackColor={{ false: colors.border, true: colors.accent }}
-            thumbColor={Platform.OS === 'android' ? colors.surfaceLowest : undefined}
-            ios_backgroundColor={colors.border}
-          />
+          <ToggleSwitch value={prefs.weekly} onValueChange={(weekly) => apply({ ...prefs, weekly })} label="Weekly review" />
         </View>
       )}
 
@@ -185,6 +167,6 @@ export function NudgeSettingsCard() {
         </View>
       )}
 
-    </View>
+    </Surface>
   );
 }

@@ -1,4 +1,5 @@
-import type { MnemoItem, Place, PlaceReminder, PlaceRepeat } from '@/types/mnemo';
+import { isOpenStatus, type MnemoItem, type Place, type PlaceReminder, type PlaceRepeat } from '@/types/mnemo';
+import { DAY_MS } from '@/utils/time';
 
 // A place is a circle, never narrower than MIN_RADIUS or the fix accuracy it was saved with.
 // Set while inside: arriving counts only after leaving first, and vice versa. Pure logic; phone side is lib/geofence.ts.
@@ -6,7 +7,7 @@ import type { MnemoItem, Place, PlaceReminder, PlaceRepeat } from '@/types/mnemo
 /** Smaller than this, phones fire late, early, or not at all. */
 export const MIN_RADIUS = 150;
 export const RADIUS_CHOICES = [150, 300, 500];
-export const POOR_FIX = 100;
+const POOR_FIX = 100;
 /** iOS watches at most 20 places per app (Android 100); one limit for both. */
 export const MAX_WATCHED = 20;
 
@@ -63,7 +64,7 @@ export function circleChanged(a: Place, b: Place): boolean {
 }
 
 export function isArmed(t: Pick<MnemoItem, 'place' | 'status'>): t is Pick<MnemoItem, 'status'> & { place: PlaceReminder } {
-  return !!t.place && !t.place.firedAt && (t.status === 'active' || t.status === 'paused');
+  return !!t.place && !t.place.firedAt && isOpenStatus(t.status);
 }
 
 export function placeLabel(r: Pick<PlaceReminder, 'on' | 'repeat' | 'days'>, place?: Pick<Place, 'name'>): string {
@@ -160,7 +161,6 @@ export function weekendDays(timeZone?: string, locale?: string): number[] {
   return [6, 0];
 }
 
-/** This phone's weekend. */
 export function phoneWeekend(): number[] {
   try {
     const o = Intl.DateTimeFormat().resolvedOptions();
@@ -251,7 +251,7 @@ export function afterCrossing(r: PlaceReminder, now: number, rang: boolean, late
 // (`lastFiredAt`); marking it done (`doneAt`) completes that occurrence only. A one-shot
 // reminder has a single occurrence, the ring that set `firedAt`.
 
-export type Occurrence =
+type Occurrence =
   /** Nothing today: it hasn't rung, or its last ring was on an earlier day (a lapsed one is not still due). */
   | { state: 'none' }
   /** Rang today and not marked done. */
@@ -259,7 +259,6 @@ export type Occurrence =
   /** Today's is done: it rang and was marked done, or (repeating) was done before it rang. */
   | { state: 'done'; at?: number; doneAt: number };
 
-/** Today's occurrence of a place reminder, in the phone's local day. */
 export function occurrenceOf(r: Pick<PlaceReminder, 'repeat' | 'firedAt' | 'lastFiredAt' | 'doneAt'>, now = Date.now()): Occurrence {
   const ring = r.repeat ? r.lastFiredAt : r.firedAt;
   const at = ring !== undefined && localDay(ring) === localDay(now) ? ring : undefined;
@@ -284,7 +283,6 @@ export function completeOccurrence(r: PlaceReminder, now: number): PlaceReminder
 /** Marks a notification as a place reminder's (lib/geofence.ts), so its buttons act on that reminder only (components/ReminderActions.tsx). */
 export const PLACE_NOTIFICATION = 'place';
 
-/** A place reminder that rings again after it rings (as opposed to once). */
 export function repeatsAtPlace(t: Pick<MnemoItem, 'place' | 'status'>): boolean {
   return isArmed(t) && !!t.place.repeat;
 }
@@ -335,7 +333,7 @@ export function readPlaceDays(text: string): number[] | undefined {
 }
 
 /** "every weekday when I get to the office": how a place reminder repeats, or undefined (once). */
-export function readPlaceSchedule(text: string): Pick<PlaceReminder, 'repeat' | 'days'> | undefined {
+function readPlaceSchedule(text: string): Pick<PlaceReminder, 'repeat' | 'days'> | undefined {
   const days = readPlaceDays(text);
   if (days) return days.length === 7 ? { repeat: 'always' } : { repeat: 'days', days };
   if (WEEKDAYS.test(text)) return { repeat: 'weekdays' };

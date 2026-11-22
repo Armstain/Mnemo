@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { EmptyResponseError, describeEmpty } from '@/lib/empty-response';
-import { retryProblemText } from '@/lib/api-key';
+import { retryProblemText } from '@/lib/ai-error';
 
 // The phone's storage, in memory: what the sweep remembers across restarts.
 const disk = vi.hoisted(() => new Map<string, string>());

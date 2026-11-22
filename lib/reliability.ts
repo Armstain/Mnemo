@@ -1,10 +1,10 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { requireOptionalNativeModule } from 'expo';
 import { Linking, Platform, Vibration } from 'react-native';
 
-import { Notifications, notificationsAvailable } from '@/lib/notifications';
-import { ANDROID_CHANNEL_ID, ensureAndroidChannel } from '@/lib/reminders';
+import { CHANNELS, ensureChannel, Notifications, notificationsAvailable } from '@/lib/notifications';
 import { judge, STRICT, type CheckState, type NativeStatus } from '@/lib/reliability-rules';
+import { remindersCheckHref } from '@/lib/routes';
+import { readJson, storage, writeJson } from '@/lib/storage';
 
 export type { CheckState };
 
@@ -14,7 +14,6 @@ export type { CheckState };
 // reminders back or drop them. Some of that can be read
 // (modules/mnemo-reliability), some can't, and the only real proof is a
 // test reminder arriving with the app closed. This file is all three.
-
 
 interface NativeReliability {
   status(): NativeStatus;
@@ -49,7 +48,6 @@ export function strictPhone(): string | null {
   if (!STRICT[maker]) return null;
   return STRICT[brand] ?? STRICT[maker];
 }
-
 
 export interface ReminderHealth {
   /** False in Expo Go on Android and on the web: no reminders there at all. */
@@ -134,7 +132,7 @@ export const openSettings = {
 export async function allowNotifications(canAsk: boolean): Promise<void> {
   if (canAsk) {
     try {
-      await ensureAndroidChannel(); // Android 13 only prompts once a channel exists.
+      await ensureChannel('reminders'); // Android 13 only prompts once a channel exists.
       const r = await Notifications.requestPermissionsAsync();
       if (r.granted || r.canAskAgain) return;
     } catch {
@@ -147,7 +145,6 @@ export async function allowNotifications(canAsk: boolean): Promise<void> {
 // ─── The test reminder ──────────────────────────────────────────
 
 export const TEST_ID = 'mnemo-reminder-test';
-export const TEST_ROUTE = '/reminders-check';
 const TEST_KEY = 'mnemo-reminder-test';
 const SETUP_KEY = 'mnemo-reminder-setup';
 /** How long after it was due before asking whether it came. */
@@ -164,8 +161,7 @@ export interface TestState {
 
 export async function loadTest(): Promise<TestState | null> {
   try {
-    const raw = await AsyncStorage.getItem(TEST_KEY);
-    return raw ? (JSON.parse(raw) as TestState) : null;
+    return (await readJson(TEST_KEY)) as TestState | null;
   } catch {
     return null;
   }
@@ -173,17 +169,17 @@ export async function loadTest(): Promise<TestState | null> {
 
 async function saveTest(t: TestState | null): Promise<void> {
   try {
-    if (t) await AsyncStorage.setItem(TEST_KEY, JSON.stringify(t));
-    else await AsyncStorage.removeItem(TEST_KEY);
+    if (t) await writeJson(TEST_KEY, t);
+    else await storage.remove(TEST_KEY);
   } catch {
     // Only affects what the check screen remembers.
   }
 }
 
-/** Schedules a real reminder, on the reminders channel, `delayMs` from now. */
+/** A real reminder, on the reminders channel, `delayMs` from now. */
 export async function sendTestReminder(delayMs = 60_000): Promise<TestState | null> {
   try {
-    await ensureAndroidChannel();
+    await ensureChannel('reminders');
     const fireAt = Date.now() + delayMs;
     await Notifications.cancelScheduledNotificationAsync(TEST_ID).catch(() => {});
     await Notifications.scheduleNotificationAsync({
@@ -191,9 +187,9 @@ export async function sendTestReminder(delayMs = 60_000): Promise<TestState | nu
       content: {
         title: 'Test reminder from Mnemo',
         body: 'It arrived. Tap to finish the check.',
-        data: { route: TEST_ROUTE, test: true },
+        data: { route: remindersCheckHref, test: true },
       },
-      trigger: { type: Notifications.SchedulableTriggerInputTypes.DATE, date: new Date(fireAt), channelId: ANDROID_CHANNEL_ID },
+      trigger: { type: Notifications.SchedulableTriggerInputTypes.DATE, date: new Date(fireAt), channelId: CHANNELS.reminders },
     });
     const t = { fireAt };
     await saveTest(t);
@@ -203,7 +199,6 @@ export async function sendTestReminder(delayMs = 60_000): Promise<TestState | nu
   }
 }
 
-/** The test reminder was seen: tapped, shown while the app was open, or found in the tray. */
 export async function markTestArrived(): Promise<void> {
   const t = await loadTest();
   if (!t || t.arrivedAt || t.seenOpen) return;
@@ -244,8 +239,7 @@ export interface SetupState {
 
 export async function loadSetup(): Promise<SetupState> {
   try {
-    const raw = await AsyncStorage.getItem(SETUP_KEY);
-    return raw ? (JSON.parse(raw) as SetupState) : {};
+    return ((await readJson(SETUP_KEY)) as SetupState | null) ?? {};
   } catch {
     return {};
   }
@@ -253,7 +247,7 @@ export async function loadSetup(): Promise<SetupState> {
 
 export async function markSetup(update: SetupState): Promise<void> {
   try {
-    await AsyncStorage.setItem(SETUP_KEY, JSON.stringify({ ...(await loadSetup()), ...update }));
+    await writeJson(SETUP_KEY, { ...(await loadSetup()), ...update });
   } catch {
     // The prompt may show again; nothing worse.
   }

@@ -1,4 +1,4 @@
-import type { Category, MnemoItem, ThreadKind } from '@/types/mnemo';
+import { KINDS, type Category, type MnemoItem, type ThreadKind } from '@/types/mnemo';
 
 // Project, task or idea: what a thread *is*, next to what it's about (its
 // category). Kept deliberately light:
@@ -14,16 +14,18 @@ import type { Category, MnemoItem, ThreadKind } from '@/types/mnemo';
 //   category (lib/capture.ts), and Home uses kind only to sort what's next.
 //   A kind set by hand before that (`pinned.kind`) is still kept.
 
-export const KINDS: ThreadKind[] = ['project', 'task', 'idea'];
-
-
 /** A kind as stored or as Gemini said it; anything else (including "note") is no kind. */
 export function asKind(raw: unknown): ThreadKind | undefined {
-  return typeof raw === 'string' && (KINDS as string[]).includes(raw) ? (raw as ThreadKind) : undefined;
+  return typeof raw === 'string' && (KINDS as readonly string[]).includes(raw) ? (raw as ThreadKind) : undefined;
+}
+
+/** An idea is filed under Ideas: one place for them, not a kind and a category that disagree. */
+export function ideaCategory(category: Category | undefined, kind: ThreadKind | undefined): Category | undefined {
+  return kind === 'idea' && (!category || category === 'general') ? 'ideas' : category;
 }
 
 /** Notes it takes for an untyped thread, or an idea being acted on, to count as a project. */
-export const PROJECT_NOTES = 3;
+const PROJECT_NOTES = 3;
 /** A task takes more: a to-do that keeps getting notes is usually still one to-do. */
 const TASK_TO_PROJECT_NOTES = 5;
 /** Lists that grow (shopping, errands) stay tasks however many notes they get. */
@@ -48,7 +50,6 @@ export function kindOf(
   return guess;
 }
 
-// ─── Reading it from the words (offline) ────────────────────────
 // English, Bangla and Banglish, like the rest of lib/understand.ts.
 
 const IDEA =

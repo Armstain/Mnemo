@@ -6,9 +6,7 @@ import { catchUp, onPlaceReminderChange, syncGeofences, watchWhileOpen } from '@
 import { usePlaces } from '@/lib/place-store';
 import { isArmed } from '@/lib/places';
 import { usePreferences } from '@/lib/preferences';
-
-// Edits come in bursts; set the watch list once they settle.
-const SYNC_DEBOUNCE_MS = 1500;
+import { EDIT_SETTLE_MS } from '@/lib/reminders';
 
 /**
  * Invisible, at the app root next to NudgeScheduler. Keeps the phone's
@@ -19,7 +17,6 @@ const SYNC_DEBOUNCE_MS = 1500;
 export function PlaceReminderSync() {
   const { items, isLoaded, updateItem } = useMnemoStore();
   const places = usePlaces();
-  // Turning place reminders on or off sets (or clears) the watch list.
   const { places: on } = usePreferences();
   const latest = useRef(items);
   latest.current = items;
@@ -27,15 +24,14 @@ export function PlaceReminderSync() {
   latestPlaces.current = places;
 
   // The background task and late catches write to the database; the store follows.
-  useEffect(() => onPlaceReminderChange((id, place) => updateItem(id, { place }, { touch: false })), [updateItem]);
+  useEffect(() => onPlaceReminderChange(({ itemId, place }) => updateItem(itemId, { place }, { touch: false })), [updateItem]);
 
   useEffect(() => {
     if (!isLoaded) return;
     const handle = setTimeout(() => {
       syncGeofences(items, places);
-      // A reminder just set: where is the phone now, inside the place or not?
       if (items.some((t) => isArmed(t) && t.place?.insideAtSet === undefined)) catchUp(items);
-    }, SYNC_DEBOUNCE_MS);
+    }, EDIT_SETTLE_MS);
     return () => clearTimeout(handle);
   }, [items, places, isLoaded, on]);
 

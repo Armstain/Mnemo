@@ -1,8 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { bm25Search, tokenize } from '@/lib/bm25';
-import { telling } from '@/lib/filing';
+import { bm25Search, telling, tokenize } from '@/lib/bm25';
 import { chunkEntries, queryTerms, retrieve } from '@/lib/retrieve';
 import { cleanSearchTerms } from '@/lib/search-terms';
 import { deriveThreadCache } from '@/lib/threads';
