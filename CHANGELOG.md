@@ -12,6 +12,9 @@ All notable changes to Mnemo, newest first. Versions match `app.json`. Everythin
 
 - **The problem report explains voice notes too:** how notes are taken (recorded for Gemini, or heard by the phone), and for the last 30: how long, how many words, the recognizer's own errors, a recording the phone cut short, and how each was written out. Counts and codes only, never the words.
 
+### Changed
+- **A quieter Home.** At most one notice sits above the Resume card at a time: a Gemini problem first, then checking reminders, a place reminder at risk, then backups. The "notes written by Flash-Lite" notice and the Browse chips are gone; the Library tab already browses by kind.
+
 ### Fixed
 - **Voice notes heard by the phone no longer stop listening during pauses.** Every few seconds of silence ended a session, and four in a row stopped listening for good while the screen still said "Listening…". Pauses now just restart; only real errors count, and if listening does stop, the screen says so.
 - **A voice note whose recording couldn't be read** no longer ends up as a blank note: it says so, and it's in the problem report.
