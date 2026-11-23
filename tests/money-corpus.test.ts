@@ -42,26 +42,6 @@ const normal = (s: string) => s.split(',').map((p) => p.trim().replace(/\s+/g, '
 describe('the money corpus', () => {
   const cases = load();
   const results = cases.map((c) => ({ ...c, got: readMoney(c.text), right: readMoney(c.text) === normal(c.expected) }));
-  const right = results.filter((r) => r.right).length;
-  /** Read as "amount" where it meant something else: not counted, nothing miscounted. */
-  const unsorted = (r: { got: string; expected: string }) => {
-    const got = r.got.split(', ');
-    const want = normal(r.expected).split(', ');
-    return got.length === want.length && got.every((g, i) => g === want[i] || (g.startsWith('amount ') && g.split(' ')[1] === want[i].split(' ')[1]));
-  };
-
-  it('prints the score', () => {
-    const misses = results.filter((r) => !r.right);
-    const safe = misses.filter(unsorted).length;
-    const lines = misses.map(
-      (r) => `  ${r.knownGap ? 'gap ' : 'MISS'}${unsorted(r) ? ' (unsorted)' : ' (miscounted)'} :${r.line}  ${r.text}\n         wanted ${r.expected}\n         read   ${r.got}`,
-    );
-    console.log(
-      `money corpus: ${right}/${results.length} read right (${Math.round((100 * right) / results.length)}%), ` +
-        `${safe} left unsorted, ${misses.length - safe} miscounted\n${lines.join('\n')}`,
-    );
-    expect(results.length).toBeGreaterThan(0);
-  });
 
   it('every line not marked as a known gap reads right', () => {
     const regressions = results.filter((r) => !r.right && !r.knownGap).map((r) => `:${r.line} ${r.text} — wanted ${r.expected}, read ${r.got}`);
