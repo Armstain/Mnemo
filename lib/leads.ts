@@ -21,10 +21,6 @@ export const DEFAULT_LEADS: Lead[] = ['eve', 60];
 
 const MINUTE = 60_000;
 
-export function isLead(value: unknown): value is Lead {
-  return LEAD_CHOICES.some((c) => c.lead === value);
-}
-
 /** Only the known choices, in the order they're offered, each once. */
 export function cleanLeads(leads: unknown): Lead[] {
   if (!Array.isArray(leads)) return [];
