@@ -1,8 +1,7 @@
-import React from 'react';
 import { Platform } from 'react-native';
 import { router } from 'expo-router';
 
-import { HomeBanner } from '@/components/ui/HomeBanner';
+import type { HomeBannerProps } from '@/components/ui/HomeBanner';
 import { useMnemoStore } from '@/hooks/use-mnemo-store';
 import { useThemeColors } from '@/hooks/use-theme';
 import { autoBackupAvailable, autoBackupOn, dismissBackupNudge, lastBackupAt, useBackupState } from '@/lib/auto-backup';
@@ -19,7 +18,7 @@ const TEXT = {
  * Home, when notes are at risk (lib/backup.ts, backupNudge): no backup for a
  * couple of weeks, or automatic backups failing. Opens Settings.
  */
-export function BackupPrompt() {
+export function useBackupBanner(): HomeBannerProps | null {
   const colors = useThemeColors();
   const { items, isLoaded } = useMnemoStore();
   const backup = useBackupState();
@@ -37,16 +36,14 @@ export function BackupPrompt() {
   const text = TEXT[nudge];
   const body = nudge === 'failing' && backup.lastError ? backup.lastError : text.body;
 
-  return (
-    <HomeBanner
-      icon="archive"
-      iconColor={nudge === 'failing' ? colors.error : undefined}
-      title={text.title}
-      body={body}
-      onPress={() => router.push(settingsHref)}
-      accessibilityLabel={`${text.title}. ${body} Open settings.`}
-      // Failing backups can't be waved away: the person believes they're covered.
-      onDismiss={nudge === 'failing' ? undefined : dismissBackupNudge}
-    />
-  );
+  return {
+    icon: 'archive',
+    iconColor: nudge === 'failing' ? colors.error : undefined,
+    title: text.title,
+    body,
+    onPress: () => router.push(settingsHref),
+    accessibilityLabel: `${text.title}. ${body} Open settings.`,
+    // Failing backups can't be waved away: the person believes they're covered.
+    onDismiss: nudge === 'failing' ? undefined : dismissBackupNudge,
+  };
 }

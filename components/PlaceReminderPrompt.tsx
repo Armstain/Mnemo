@@ -1,7 +1,7 @@
 import React from 'react';
 import { router, useFocusEffect } from 'expo-router';
 
-import { HomeBanner } from '@/components/ui/HomeBanner';
+import type { HomeBannerProps } from '@/components/ui/HomeBanner';
 import { useMnemoStore } from '@/hooks/use-mnemo-store';
 import { useThemeColors } from '@/hooks/use-theme';
 import { placeHealth, placeProblems, type PlaceProblem } from '@/lib/geofence';
@@ -15,7 +15,7 @@ import { usePreferences } from '@/lib/preferences';
  * the phone won't let Mnemo watch, its place overlaps another, or one
  * already went off late. Never shown with place reminders off.
  */
-export function PlaceReminderPrompt() {
+export function usePlaceReminderBanner(): HomeBannerProps | null {
   const colors = useThemeColors();
   const { items } = useMnemoStore();
   const places = usePlaces();
@@ -45,15 +45,13 @@ export function PlaceReminderPrompt() {
   const n = armed.length;
   const title = first?.key === 'late' ? 'A place reminder went off late' : `${n === 1 ? 'A place reminder' : `${n} place reminders`} may not go off as expected`;
   const body = first ? first.text : `${tangled!.name}'s circle overlaps another place.`;
-  return (
-    <HomeBanner
-      icon="mapPin"
-      iconColor={colors.accentWarm}
-      title={title}
-      body={body}
-      onPress={() => (first?.fix && first.key !== 'late' ? first.fix() : tangled ? router.push(placeHref(tangled.id)) : router.push(settingsHref))}
-      // A real problem stays until it's fixed; this only hides it until the app opens again.
-      onDismiss={() => setHidden(true)}
-    />
-  );
+  return {
+    icon: 'mapPin',
+    iconColor: colors.accentWarm,
+    title,
+    body,
+    onPress: () => (first?.fix && first.key !== 'late' ? first.fix() : tangled ? router.push(placeHref(tangled.id)) : router.push(settingsHref)),
+    // A real problem stays until it's fixed; this only hides it until the app opens again.
+    onDismiss: () => setHidden(true),
+  };
 }

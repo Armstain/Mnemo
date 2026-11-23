@@ -8,9 +8,10 @@ import Svg, { Defs, RadialGradient, Rect, Stop } from 'react-native-svg';
 
 import { Card, useSurfaceStyle } from '@/components/ui/Card';
 import { FocusPill } from '@/components/ui/FocusPill';
-import { ReminderSetupPrompt } from '@/components/ReminderSetupPrompt';
-import { PlaceReminderPrompt } from '@/components/PlaceReminderPrompt';
-import { BackupPrompt } from '@/components/BackupPrompt';
+import { HomeBanner } from '@/components/ui/HomeBanner';
+import { useReminderSetupBanner } from '@/components/ReminderSetupPrompt';
+import { usePlaceReminderBanner } from '@/components/PlaceReminderPrompt';
+import { useBackupBanner } from '@/components/BackupPrompt';
 import { Button, IconButton } from '@/components/ui/Button';
 import { Icon, type IconName } from '@/components/ui/Icon';
 import { Eyebrow } from '@/components/ui/Eyebrow';
@@ -20,7 +21,7 @@ import { formatReminder, nextOccurrence, resumeOrder, resumeReason, type ResumeR
 import { NAV_CLEARANCE } from '@/components/ui/nav-layout';
 import { useMnemoStore } from '@/hooks/use-mnemo-store';
 import { useThemeColors } from '@/hooks/use-theme';
-import { useAiNotice, useAiProblem, useAiProblemDetail, type AiProblem } from '@/lib/ai-mode';
+import { useAiProblem, useAiProblemDetail, type AiProblem } from '@/lib/ai-mode';
 import { usePreferences } from '@/lib/preferences';
 import { formatCompactDistance, DAY_MS } from '@/utils/time';
 import { sameWords } from '@/utils/text';
@@ -34,7 +35,7 @@ import { useUndoToast } from '@/hooks/use-undo-toast';
 import { usePlaces } from '@/lib/place-store';
 import { placeLabel, repeatsAtPlace, routineState, routineWhen, type RoutineState } from '@/lib/places';
 import { haptic } from '@/lib/haptics';
-import { CATEGORIES, type MnemoItem, type Place } from '@/types/mnemo';
+import { type MnemoItem, type Place } from '@/types/mnemo';
 import { captureHref, dumpHref, libraryHref, reviewHref, settingsHref, welcomeHref } from '@/lib/routes';
 import { openThread } from '@/lib/navigation';
 
@@ -276,7 +277,10 @@ export function PulseHome() {
   const enter = useEnter();
   const aiProblem = useAiProblem();
   const aiProblemText = useAiProblemDetail() ?? (aiProblem ? AI_PROBLEM_TEXT[aiProblem] : '');
-  const aiNotice = useAiNotice();
+  const reminderBanner = useReminderSetupBanner();
+  const placeBanner = usePlaceReminderBanner();
+  const backupBanner = useBackupBanner();
+  const banner = aiProblem ? null : (reminderBanner ?? placeBanner ?? backupBanner);
   const insets = useSafeAreaInsets();
   const { items, entries, getActiveItems, focusThreadId, setFocusThread, completePlaceOccurrence } = useMnemoStore();
   const savedPlaces = usePlaces();
@@ -285,7 +289,6 @@ export function PulseHome() {
   const focusThread = focusThreadId ? items.find((i) => i.id === focusThreadId) : undefined;
   const colors = useThemeColors();
   const surface = useSurfaceStyle();
-  const categories = useCategories();
 
   const now = Date.now();
   // Routines (repeating place reminders) wait for their place: listed under "At places", and on
@@ -333,11 +336,6 @@ export function PulseHome() {
     .filter((r) => r.at < now + COMING_UP_DAYS * DAY_MS)
     .sort((a, b) => a.at - b.at);
   const dueSoon = (i: MnemoItem) => !!i.dueDate && i.dueDate < now + COMING_UP_DAYS * DAY_MS;
-
-  const categoryCounts = CATEGORIES.map((key) => ({
-    key,
-    count: items.filter((i) => i.category === key && i.status !== 'archived').length,
-  })).filter((c) => c.count > 0);
 
   const openCount = activeItems.length;
   const dueThisWeek = activeItems.filter((i) => i.dueDate && i.dueDate < now + COMING_UP_DAYS * DAY_MS).length;
@@ -422,12 +420,7 @@ export function PulseHome() {
             Capturing into <Text className="font-sans-semi">{focusThread.title}</Text>
           </FocusPill>
         ) : null}
-        {/* Strict phones: a one-time nudge to check reminders will arrive. */}
-        <ReminderSetupPrompt />
-        {/* A place reminder waiting that may not go off, and why. */}
-        <PlaceReminderPrompt />
-        {/* No backup in a while, or automatic backups stopped working. */}
-        <BackupPrompt />
+        {banner ? <HomeBanner {...banner} /> : null}
         {/* Gemini stopped answering for a reason the person can fix. */}
         {aiProblem ? (
           <Pressable
@@ -445,19 +438,6 @@ export function PulseHome() {
               Fix
             </Text>
           </Pressable>
-        ) : null}
-        {/* Every Flash model is resting: notes are being written by Flash-Lite. */}
-        {aiNotice && !aiProblem ? (
-          <View
-            accessibilityRole="alert"
-            className="flex-row items-center rounded-lg px-4 py-3 mt-4"
-            style={surface}
-          >
-            <Icon name="sparkles" size={16} color={colors.accentWarm} />
-            <Text className="flex-1 font-sans text-sm leading-snug ml-3" style={{ color: colors.fgSecondary }}>
-              {aiNotice}
-            </Text>
-          </View>
         ) : null}
       </MotiView>
 
@@ -621,41 +601,6 @@ export function PulseHome() {
                 />
               ))}
             </ThreadList>
-          </MotiView>
-        )}
-
-        {/* Browse — only categories that hold something */}
-        {categoryCounts.length > 0 && (
-          <MotiView {...enter.rise(4)} {...enter.reflow()}>
-            <Eyebrow action="Library" onAction={() => router.push(libraryHref())}>
-              Browse
-            </Eyebrow>
-            <View className="flex-row flex-wrap gap-2">
-              {categoryCounts.map(({ key, count }) => {
-                const config = categories[key];
-                const CategoryIcon = config.icon;
-                return (
-                  <Pressable
-                    key={key}
-                    onPress={() => router.push(libraryHref(key))}
-                    accessibilityRole="button"
-                    accessibilityLabel={`${config.label}, ${count} ${count === 1 ? 'note' : 'notes'}`}
-                    className="flex-row items-center rounded-full pl-2 pr-3.5 h-10 active:opacity-70"
-                    style={surface}
-                  >
-                    <View className="w-6 h-6 rounded-full items-center justify-center mr-2" style={{ backgroundColor: config.bgTint }}>
-                      <CategoryIcon size={12} color={config.color} strokeWidth={2.2} />
-                    </View>
-                    <Text className="font-sans-medium text-sm" style={{ color: colors.fg }}>
-                      {config.label}
-                    </Text>
-                    <Text className="font-sans text-sm ml-1.5" style={{ color: colors.fgTertiary }}>
-                      {count}
-                    </Text>
-                  </Pressable>
-                );
-              })}
-            </View>
           </MotiView>
         )}
       </View>

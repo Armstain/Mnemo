@@ -2,7 +2,7 @@ import React from 'react';
 import { Platform } from 'react-native';
 import { router, useFocusEffect } from 'expo-router';
 
-import { HomeBanner } from '@/components/ui/HomeBanner';
+import type { HomeBannerProps } from '@/components/ui/HomeBanner';
 import { useMnemoStore } from '@/hooks/use-mnemo-store';
 import { hasNotificationPermission, notificationsAvailable } from '@/lib/notifications';
 import { loadNudgePrefs } from '@/lib/nudges';
@@ -16,7 +16,7 @@ import { isOpenStatus } from '@/types/mnemo';
  * only for someone relying on them: a reminder set, or nudges on. Gone for
  * good after a test reminder arrives or "Not now".
  */
-export function ReminderSetupPrompt() {
+export function useReminderSetupBanner(): HomeBannerProps | null {
   const { items } = useMnemoStore();
   const strict = Platform.OS === 'android' && notificationsAvailable ? strictPhone() : null;
   const [show, setShow] = React.useState(false);
@@ -39,16 +39,14 @@ export function ReminderSetupPrompt() {
   );
 
   if (!strict || !show) return null;
-  return (
-    <HomeBanner
-      icon="clock"
-      title="Make sure reminders reach you"
-      body={`${strict} phones can hold them back. A minute to check.`}
-      onPress={() => router.push(remindersCheckHref)}
-      onDismiss={() => {
-        setShow(false);
-        markSetup({ dismissedAt: Date.now() });
-      }}
-    />
-  );
+  return {
+    icon: 'clock',
+    title: 'Make sure reminders reach you',
+    body: `${strict} phones can hold them back. A minute to check.`,
+    onPress: () => router.push(remindersCheckHref),
+    onDismiss: () => {
+      setShow(false);
+      markSetup({ dismissedAt: Date.now() });
+    },
+  };
 }

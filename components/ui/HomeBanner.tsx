@@ -8,6 +8,17 @@ import { Text } from '@/components/ui/Text';
 import { useThemeColors } from '@/hooks/use-theme';
 import { useEnter } from '@/hooks/use-enter';
 
+export type HomeBannerProps = {
+  icon: IconName;
+  iconColor?: string;
+  title: string;
+  body: string;
+  onPress: () => void;
+  accessibilityLabel?: string;
+  /** Without it there's no "Not now": the notice stays until it's dealt with. */
+  onDismiss?: () => void;
+};
+
 /**
  * A one-line notice on Home that leads somewhere (Settings, a check):
  * an icon, what it's about, a line of why, and an optional "Not now".
@@ -20,16 +31,7 @@ export function HomeBanner({
   onPress,
   accessibilityLabel,
   onDismiss,
-}: {
-  icon: IconName;
-  iconColor?: string;
-  title: string;
-  body: string;
-  onPress: () => void;
-  accessibilityLabel?: string;
-  /** Without it there's no "Not now": the notice stays until it's dealt with. */
-  onDismiss?: () => void;
-}) {
+}: HomeBannerProps) {
   const colors = useThemeColors();
   const enter = useEnter();
   const surface = useSurfaceStyle();
