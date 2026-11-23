@@ -5,6 +5,7 @@ All notable changes to Mnemo, newest first. Versions match `app.json`. Everythin
 ## [Unreleased]
 
 ### Added
+- **Live debug (hidden).** Tap the version in Settings → About seven times. It shows notes waiting for Gemini (with why, and Send all now), Android's answer about places, where the phone is against each watched place ("would ring now"), and the place, voice and error logs as they're written, newest first. Hide it again from the screen itself.
 - **Routines on Home.** A repeating place reminder ("every weekday when I get to the office") is listed under **At places** with where and when it next rings, instead of as a thread going cold. On a day it rang and isn't done, it's the top card with "Rang 10:02 at Office" and a **Done for today** button; once done, it says so and when it's next.
 - **The problem report explains a missed place reminder.** It lists each place reminder as Mnemo sees it (inside or outside, since when, last rang) and the last 30 place events: what Android sent, when the places were set, what opening the app caught, and why a crossing didn't ring (already counted inside, back within the hour, not one of its days, done today). Short ids only, no titles or coordinates. Times are local.
 
