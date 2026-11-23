@@ -30,7 +30,7 @@ vi.mock('@/lib/groq', () => ({ hasGroq: () => false, transcribeAudio: async () =
 vi.mock('@/lib/errors', () => ({ logError: (where: string) => void logged.push(where) }));
 vi.mock('@/lib/ai-mode', () => ({ aiEnabled: () => true, setAiProblem: () => {} }));
 vi.mock('@/lib/preferences', () => ({ getPreferences: () => ({ places: false, speechLang: 'en-US' }), setPreferences: () => {} }));
-vi.mock('@/lib/place-store', () => ({ getPlaces: () => [] }));
+vi.mock('@/lib/place-store', () => ({ getPlaces: () => [], loadPlaces: async () => [] }));
 vi.mock('@/lib/gemini', () => {
   class AiOffError extends Error {}
   const answer = { title: 'Milk', notes: 'Buy milk', links: [], tags: [], summary: { leftOff: '', nextSteps: [], resources: [] }, transcript: 'Buy milk' };
