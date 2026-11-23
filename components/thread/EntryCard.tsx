@@ -15,7 +15,7 @@ import { summarizeMeasures } from '@/lib/measures';
 import { MoveSheet } from '@/components/thread/MoveSheet';
 import { useMnemoStore } from '@/hooks/use-mnemo-store';
 import { useUndoToast } from '@/hooks/use-undo-toast';
-import { isStructuring } from '@/lib/capture';
+import { isStructuring, waitingProblem } from '@/lib/capture';
 import { useAiProblem } from '@/lib/ai-mode';
 import { entryText } from '@/lib/threads';
 import { useThemeColors } from '@/hooks/use-theme';
@@ -175,6 +175,7 @@ export function EntryCard({
   const [draft, setDraft] = React.useState(text);
   const source = SOURCE[entry.source];
   const waitingForVoice = entry.pending && entry.blocks.length === 0;
+  const stuck = entry.pending ? waitingProblem(entry.id) : null;
 
   // Ticking a box outside Edit is just a tick; inside Edit, every change
   // is a correction (see `correct`).
@@ -267,12 +268,13 @@ export function EntryCard({
             disabled={!onRetry}
             hitSlop={8}
             accessibilityRole="button"
-            accessibilityLabel="Waiting to process. Tap to try now."
-            className="flex-row items-center rounded-full px-2.5 h-7 mr-1 active:opacity-70"
-            style={{ backgroundColor: colors.surfaceHigh }}
+            accessibilityLabel={`${stuck ? `Not written out yet: ${stuck.text}.` : 'Waiting to process.'} Tap to try now.`}
+            className="flex-row items-center rounded-full px-2.5 h-7 mr-1 active:opacity-70 shrink"
+            style={{ backgroundColor: stuck ? colors.errorSoft : colors.surfaceHigh }}
           >
-            <Text className="font-sans-medium text-xs" style={{ color: colors.fgSecondary }}>
-              {aiProblem ? 'Waiting to be tidied' : 'Processing'}
+            <Text className="font-sans-medium text-xs" style={{ color: stuck ? colors.error : colors.fgSecondary }} numberOfLines={1}>
+              {/* After a couple of failed tries, why: a note waiting all day shouldn't just say "Processing". */}
+              {stuck ? `Not yet: ${stuck.text}` : aiProblem ? 'Waiting to be tidied' : 'Processing'}
               {onRetry ? ' · Retry' : ''}
             </Text>
           </Pressable>

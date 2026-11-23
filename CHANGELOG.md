@@ -13,6 +13,8 @@ All notable changes to Mnemo, newest first. Versions match `app.json`. Everythin
 ### Fixed
 - **Voice notes heard by the phone no longer stop listening during pauses.** Every few seconds of silence ended a session, and four in a row stopped listening for good while the screen still said "Listening…". Pauses now just restart; only real errors count, and if listening does stop, the screen says so.
 - **A voice note whose recording couldn't be read** no longer ends up as a blank note: it says so, and it's in the problem report.
+- **A thread stuck on "Being read…".** A note finished without being written out (its recording unreadable) left its thread saying "Being read…" for good. Such threads are now released, and any already stuck are cleared on the next open.
+- **A note that keeps failing to be written out says why.** After two failed tries, its chip says "Not yet: Gemini is busy" (or no connection, daily limit, …) instead of "Processing", and the voice log records the reason once.
 - "Couldn't start recording" with Gemini on now says the mic may be in use, not that speech recognition is missing.
 - Place reminders still set are no longer nudged as "untouched for N days", and don't show as "gone quiet" or as open steps in the weekly review: they're waiting for the place, like a reminder set for a later time.
 

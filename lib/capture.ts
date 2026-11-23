@@ -352,6 +352,20 @@ async function structurePendingEntry(
 }
 
 const inFlight = new Set<string>();
+/** The last reason each voice note couldn't be written out, so the log says it once. */
+const lastVoiceFailure = new Map<string, string>();
+
+/**
+ * A thread shows "Being read…" while it's pending. A note finished on a path that never got as
+ * far as naming the thread left it that way for good: clear it once none of its notes waits.
+ */
+export function releaseThread(store: Pick<CaptureStore, 'snapshot' | 'getThread' | 'updateItem'>, threadId: string): boolean {
+  const thread = store.getThread(threadId);
+  if (!thread?.pending) return false;
+  if (store.snapshot().entries.some((e) => e.threadId === threadId && e.pending)) return false;
+  store.updateItem(threadId, { pending: false });
+  return true;
+}
 
 /** For a Groq-written voice note while Gemini can't tidy it: titles the thread and sets a spoken reminder. */
 async function nameFromWords(store: CaptureStore, threadId: string, words: string): Promise<void> {
@@ -424,7 +438,12 @@ async function structure(entry: PendingEntry, store: CaptureStore): Promise<void
       void noteVoice(`written out by Gemini (${size}): ${wordCount(said ?? processed.notes ?? '')} words`);
     } catch (e) {
       if (e instanceof AiOffError) throw e;
-      void noteVoice(`Gemini couldn't write it out (${size}): ${String((e as Error)?.message ?? e).slice(0, 100)}${hasGroq() ? '; trying Whisper' : '; kept to retry'}`);
+      // Once per reason: a note retried all day would otherwise fill the log with one line.
+      const why = String((e as Error)?.message ?? e).slice(0, 100);
+      if (lastVoiceFailure.get(entry.id) !== why) {
+        lastVoiceFailure.set(entry.id, why);
+        void noteVoice(`Gemini couldn't write it out (${size}): ${why}${hasGroq() ? '; trying Whisper' : '; kept to retry'}`);
+      }
       // Fall back to Groq Whisper if a key exists; otherwise retried later with the recording.
       const words = hasGroq()
         ? await transcribeAudio(sound, { banglaSpeaker: getPreferences().speechLang === 'bn-BD' }).catch((groqError) => {
@@ -459,6 +478,7 @@ async function structure(entry: PendingEntry, store: CaptureStore): Promise<void
       pendingAudioUri: undefined,
       ...(now && !textOf(now) ? { blocks: [...buildBlocks({ text: LOST_RECORDING }), ...now.blocks] } : {}),
     });
+    releaseThread(store, entry.threadId);
     return;
   } else if (entry.pendingRawText || photos.length > 0 || pages.length > 0) {
     transcript = transcript ?? (entry.pendingRawText || undefined);
@@ -468,6 +488,7 @@ async function structure(entry: PendingEntry, store: CaptureStore): Promise<void
     processed = await processVoiceDump(entry.pendingRawText ?? '', ctx, images, pages);
   } else {
     store.updateEntry(entry.id, { pending: false });
+    releaseThread(store, entry.threadId);
     return;
   }
   // Text Gemini read off a photo is not something the person said.
@@ -675,7 +696,7 @@ async function embedThread(store: CaptureStore, threadId: string): Promise<void>
 }
 
 const BACKOFF_MS = [30_000, 60_000, 2 * 60_000, 5 * 60_000, 10 * 60_000, 30 * 60_000];
-const attempts = new Map<string, { count: number; nextAt: number }>();
+const attempts = new Map<string, { count: number; nextAt: number; reason: string }>();
 
 // Same content gets the same block, so the sweep skips it. Kept apart from `attempts`
 // (which "try everything now" clears) and persisted. Keyed on content: an edit lets it through.
@@ -743,6 +764,17 @@ export async function retryEntryNow(entry: PendingEntry, store: CaptureStore): P
   }
 }
 
+/** A few words for the note's chip: why it's still waiting. */
+const SHORT_PROBLEM: Record<string, string> = {
+  busy: 'Gemini is busy',
+  offline: 'no connection, or it timed out',
+  quota: 'daily limit used up',
+  invalid: 'key not accepted',
+  truncated: 'answer cut off',
+  empty: 'Gemini sent nothing back',
+  other: 'Gemini returned an error',
+};
+
 /** Never throws; retries with back-off. Resolves true when every other waiting note would fail the same way, so a sweep stops. */
 export async function resolvePendingEntry(entry: PendingEntry, store: CaptureStore): Promise<boolean> {
   await blockedLoaded;
@@ -775,13 +807,20 @@ export async function resolvePendingEntry(entry: PendingEntry, store: CaptureSto
       return false;
     }
     const count = (previous?.count ?? 0) + 1;
-    attempts.set(entry.id, { count, nextAt: Date.now() + BACKOFF_MS[Math.min(count, BACKOFF_MS.length) - 1] });
+    attempts.set(entry.id, { count, nextAt: Date.now() + BACKOFF_MS[Math.min(count, BACKOFF_MS.length) - 1], reason: SHORT_PROBLEM[problem] });
     if (problem === 'invalid' || problem === 'quota') setAiProblem(problem, problem === 'quota' ? aiErrorText(e) : null);
     // Only the first failure is logged; retries would repeat it.
     const worthLogging = problem === 'other' || problem === 'truncated' || problem === 'empty';
     if (worthLogging && !previous) logError('ai', e);
     return problem === 'invalid' || problem === 'quota' || problem === 'busy' || problem === 'offline';
   }
+}
+
+/** Why a waiting note hasn't been written out yet, after it has failed more than once; null otherwise. */
+export function waitingProblem(entryId: string): { tries: number; text: string } | null {
+  const a = attempts.get(entryId);
+  if (!a || a.count < 2) return null;
+  return { tries: a.count, text: a.reason };
 }
 
 export function retryWaitingNow(): void {

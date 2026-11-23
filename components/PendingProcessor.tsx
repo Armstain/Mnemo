@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { AppState } from 'react-native';
 import { useMnemoStore } from '@/hooks/use-mnemo-store';
-import { finishOnDevice, resolvePendingEntry, retryWaitingNow } from '@/lib/capture';
+import { finishOnDevice, releaseThread, resolvePendingEntry, retryWaitingNow } from '@/lib/capture';
 import { runInPool } from '@/lib/send-queue';
 import { deleteUnusedAudio } from '@/lib/voice-audio';
 import { getPreferences, setPreferences, usePreferences } from '@/lib/preferences';
@@ -194,6 +194,8 @@ export function PendingProcessor() {
         }
         return;
       }
+      // A thread left "Being read…" with nothing of it waiting any more (lib/capture.ts releaseThread).
+      for (const item of items) if (item.pending) releaseThread(current, item.id);
       void sendWaiting(pending, current);
       if (meaningSearchOn()) void embedPassages(items, entries);
       if (!backfilled && meaningSearchOn()) {

@@ -7,6 +7,7 @@ import type { Entry, MnemoItem } from '@/types/mnemo';
 const audio = vi.hoisted(() => ({ clips: [] as { data: string; mimeType: string }[] }));
 const storage = vi.hoisted(() => new Map<string, string>());
 const logged = vi.hoisted(() => [] as string[]);
+const fail = vi.hoisted(() => ({ with: null as string | null }));
 
 vi.mock('@react-native-async-storage/async-storage', () => ({
   default: { getItem: async (k: string) => storage.get(k) ?? null, setItem: async (k: string, v: string) => void storage.set(k, v) },
@@ -33,10 +34,17 @@ vi.mock('@/lib/place-store', () => ({ getPlaces: () => [] }));
 vi.mock('@/lib/gemini', () => {
   class AiOffError extends Error {}
   const answer = { title: 'Milk', notes: 'Buy milk', links: [], tags: [], summary: { leftOff: '', nextSteps: [], resources: [] }, transcript: 'Buy milk' };
-  return { AiOffError, processVoiceDump: async () => answer, processAudioDump: async () => answer };
+  return {
+    AiOffError,
+    processVoiceDump: async () => answer,
+    processAudioDump: async () => {
+      if (fail.with) throw new Error(fail.with);
+      return answer;
+    },
+  };
 });
 
-const { resolvePendingEntry, LOST_RECORDING } = await import('@/lib/capture');
+const { resolvePendingEntry, LOST_RECORDING, releaseThread, retryWaitingNow, waitingProblem } = await import('@/lib/capture');
 const { readVoiceLog } = await import('@/lib/voice-log');
 
 function setup() {
@@ -63,6 +71,8 @@ describe('a voice note whose recording is gone', () => {
     expect(e.pending).toBe(false);
     expect(e.pendingAudioUri).toBeUndefined();
     expect(e.blocks).toEqual([{ kind: 'text', markdown: LOST_RECORDING }]);
+    // Its thread no longer says "Being read…" for ever.
+    expect(state.items[0].pending).toBe(false);
     expect(logged).toContain('voice note');
     expect((await readVoiceLog()).map((l) => l.text)).toContain("LOST: 1 recording couldn't be read");
   });
@@ -74,5 +84,49 @@ describe('a voice note whose recording is gone', () => {
     const texts = (await readVoiceLog()).map((l) => l.text);
     expect(texts.at(-1)).toBe('written out by Gemini (1 clip, 3 KB): 2 words');
     expect(texts.join('\n')).not.toContain('milk');
+  });
+});
+
+describe('a voice note that keeps failing to be written out', () => {
+  it('after two failed tries, says why instead of "Processing"', async () => {
+    audio.clips = [{ data: 'A'.repeat(400), mimeType: 'audio/m4a' }];
+    fail.with = '503 UNAVAILABLE: The model is overloaded';
+    retryWaitingNow();
+    const { state, store } = setup();
+    const start = Date.now();
+    const clock = vi.spyOn(Date, 'now');
+    try {
+      clock.mockReturnValue(start);
+      await resolvePendingEntry(state.entries[0], store as never);
+      expect(waitingProblem('v1')).toBeNull();
+      // Past the first back-off (30 s): tried again, and failed the same way.
+      clock.mockReturnValue(start + 31_000);
+      await resolvePendingEntry(state.entries[0], store as never);
+      expect(waitingProblem('v1')).toEqual({ tries: 2, text: 'Gemini is busy' });
+      expect(state.entries[0].pending).toBe(true);
+    } finally {
+      clock.mockRestore();
+      fail.with = null;
+    }
+  });
+
+  it('the reason is logged once, not on every retry', async () => {
+    const texts = (await readVoiceLog()).map((l) => l.text).filter((t) => t.startsWith("Gemini couldn't"));
+    expect(texts).toHaveLength(1);
+  });
+});
+
+describe('a thread stuck on "Being read…"', () => {
+  it('is released once none of its notes is waiting', () => {
+    const { state, store } = setup();
+    state.entries = state.entries.map((e) => ({ ...e, pending: false }));
+    expect(releaseThread(store as never, 'V')).toBe(true);
+    expect(state.items[0].pending).toBe(false);
+  });
+
+  it('is left alone while a note of it still waits', () => {
+    const { state, store } = setup();
+    expect(releaseThread(store as never, 'V')).toBe(false);
+    expect(state.items[0].pending).toBe(true);
   });
 });
