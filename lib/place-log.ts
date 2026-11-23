@@ -31,30 +31,39 @@ export function stamp(at: number | undefined): string {
   );
 }
 
-let queue: Promise<void> = Promise.resolve();
-
-export async function readPlaceLog(): Promise<PlaceLogEntry[]> {
-  try {
-    const raw = await AsyncStorage.getItem(KEY);
-    const list = raw ? JSON.parse(raw) : [];
-    return Array.isArray(list) ? list.filter((e) => e && Number(e.at) && typeof e.text === 'string') : [];
-  } catch {
-    return [];
-  }
-}
-
-/** Never throws, never blocks a reminder: logging must not be the next problem. */
-export function notePlace(text: string, at = Date.now()): Promise<void> {
-  queue = queue.then(async () => {
+/**
+ * A short, local log for the problem report (lib/errors.ts): what happened, kept so a failure
+ * can be explained afterwards. Never sent anywhere by itself. One per subject (places, voice).
+ */
+export function diagnosticLog(key: string, max = PLACE_LOG_MAX) {
+  let queue: Promise<void> = Promise.resolve();
+  const read = async (): Promise<PlaceLogEntry[]> => {
     try {
-      const log = await readPlaceLog();
-      await AsyncStorage.setItem(KEY, JSON.stringify([...log, { at, text: text.slice(0, 300) }].slice(-PLACE_LOG_MAX)));
+      const raw = await AsyncStorage.getItem(key);
+      const list = raw ? JSON.parse(raw) : [];
+      return Array.isArray(list) ? list.filter((e) => e && Number(e.at) && typeof e.text === 'string') : [];
     } catch {
-      // Nothing to do.
+      return [];
     }
-  });
-  return queue;
+  };
+  /** Never throws, never blocks: logging must not be the next problem. */
+  const note = (text: string, at = Date.now()): Promise<void> => {
+    queue = queue.then(async () => {
+      try {
+        const log = await read();
+        await AsyncStorage.setItem(key, JSON.stringify([...log, { at, text: text.slice(0, 300) }].slice(-max)));
+      } catch {
+        // Nothing to do.
+      }
+    });
+    return queue;
+  };
+  return { read, note };
 }
+
+const placeLog = diagnosticLog(KEY);
+export const readPlaceLog = placeLog.read;
+export const notePlace = placeLog.note;
 
 /** "arrive, weekdays" / "leave, once" / "arrive, days 1,3". */
 function kind(r: PlaceReminder): string {
@@ -68,11 +77,12 @@ function side(r: PlaceReminder): string {
 }
 
 /** One line per place reminder: what Mnemo believes, which decides whether the next crossing rings. */
-export function reminderLines(items: Pick<MnemoItem, 'id' | 'status' | 'place'>[]): string[] {
+export function reminderLines(items: (Pick<MnemoItem, 'id' | 'status' | 'place'> & { updatedAt?: number })[]): string[] {
   const week = Date.now() - 7 * 24 * 60 * 60 * 1000;
   return items
-    // Set ones, and one-offs that rang in the last week (to see one that just went off).
-    .filter((t) => t.place && (isArmed(t) || (t.place.firedAt ?? 0) > week))
+    // Set ones, one-offs that rang in the last week (to see one that just went off), and threads
+    // with one that were finished or archived this week (to see why a place stopped being watched).
+    .filter((t) => t.place && (isArmed(t) || (t.place.firedAt ?? 0) > week || (t.updatedAt ?? 0) > week))
     .map((t) => {
       const r = t.place!;
       const parts = [

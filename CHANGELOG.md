@@ -8,7 +8,12 @@ All notable changes to Mnemo, newest first. Versions match `app.json`. Everythin
 - **Routines on Home.** A repeating place reminder ("every weekday when I get to the office") is listed under **At places** with where and when it next rings, instead of as a thread going cold. On a day it rang and isn't done, it's the top card with "Rang 10:02 at Office" and a **Done for today** button; once done, it says so and when it's next.
 - **The problem report explains a missed place reminder.** It lists each place reminder as Mnemo sees it (inside or outside, since when, last rang) and the last 30 place events: what Android sent, when the places were set, what opening the app caught, and why a crossing didn't ring (already counted inside, back within the hour, not one of its days, done today). Short ids only, no titles or coordinates. Times are local.
 
+- **The problem report explains voice notes too:** how notes are taken (recorded for Gemini, or heard by the phone), and for the last 30: how long, how many words, the recognizer's own errors, a recording the phone cut short, and how each was written out. Counts and codes only, never the words.
+
 ### Fixed
+- **Voice notes heard by the phone no longer stop listening during pauses.** Every few seconds of silence ended a session, and four in a row stopped listening for good while the screen still said "Listening…". Pauses now just restart; only real errors count, and if listening does stop, the screen says so.
+- **A voice note whose recording couldn't be read** no longer ends up as a blank note: it says so, and it's in the problem report.
+- "Couldn't start recording" with Gemini on now says the mic may be in use, not that speech recognition is missing.
 - Place reminders still set are no longer nudged as "untouched for N days", and don't show as "gone quiet" or as open steps in the weekly review: they're waiting for the place, like a reminder set for a later time.
 
 ## [2.0.4] - 2026-11-17

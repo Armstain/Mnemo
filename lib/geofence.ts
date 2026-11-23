@@ -263,7 +263,10 @@ export async function syncGeofences(items: MnemoItem[], places: Place[]): Promis
     const started = native ? native.started(GEOFENCE_TASK) : await Location.hasStartedGeofencingAsync(GEOFENCE_TASK).catch(() => false);
     const watch = await loadWatch();
     if (regions.length === 0) {
-      if (started) await (native ? native.stop(GEOFENCE_TASK) : Location.stopGeofencingAsync(GEOFENCE_TASK));
+      if (started) {
+        await (native ? native.stop(GEOFENCE_TASK) : Location.stopGeofencingAsync(GEOFENCE_TASK));
+        void notePlace(getPreferences().places ? 'stopped watching: no place reminder is set any more' : 'stopped watching: place reminders turned off');
+      }
       if (watch.signature) await writeJson(WATCH_KEY, EMPTY_WATCH);
       return;
     }

@@ -13,6 +13,7 @@ import { useSpeechCapture } from '@/hooks/use-speech-capture';
 import { useMnemoStore } from '@/hooks/use-mnemo-store';
 import { useThemeColors } from '@/hooks/use-theme';
 import { saveNote } from '@/lib/capture';
+import { aiEnabled } from '@/lib/ai-mode';
 import { mayAutostart } from '@/lib/launch-key';
 import { FocusDestination } from '@/components/ui/FocusDestination';
 import { Button } from '@/components/ui/Button';
@@ -66,11 +67,17 @@ export default function DumpScreen() {
     const result = await speech.start();
     if (result !== 'ok') {
       haptic.error();
+      // Recording for Gemini needs only the mic; listening needs the phone's speech recognition.
+      const recording = aiEnabled();
       Alert.alert(
-        result === 'permission-denied' ? 'Microphone is off' : "Can't listen on this phone",
+        result === 'permission-denied' ? 'Microphone is off' : recording ? "Couldn't start recording" : "Can't listen on this phone",
         result === 'permission-denied'
-          ? 'Allow the microphone and speech recognition in Settings.'
-          : "Speech recognition isn't available. On Android it comes with the Google app. You can write the note instead.",
+          ? recording
+            ? 'Allow the microphone in Settings.'
+            : 'Allow the microphone and speech recognition in Settings.'
+          : recording
+            ? 'Another app may be using the microphone (a call, or a recorder). Try again in a moment, or write the note instead.'
+            : "Speech recognition isn't available. On Android it comes with the Google app. You can write the note instead.",
       );
       return;
     }
@@ -198,6 +205,12 @@ export default function DumpScreen() {
                 >
                   {speech.text || (speech.recording ? 'Listening… Mnemo writes it out when you tap Done.' : 'Listening…')}
                 </Text>
+                {speech.stalled ? (
+                  // The phone's recognizer gave up: anything said now isn't heard.
+                  <Text accessibilityRole="alert" className="font-sans-medium text-sm text-center mt-4" style={{ color: colors.error }}>
+                    The phone stopped hearing you. Tap Done to keep what's here, then Say more to go on.
+                  </Text>
+                ) : null}
               </ScrollView>
             ) : (
               <MotiView {...enter.rise(2)} className="mt-10 items-center">

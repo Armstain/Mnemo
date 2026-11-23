@@ -9,6 +9,7 @@ import { onApiKeyChanged } from '@/lib/api-key';
 import { aiErrorText, classifyAiError, isNoConnection } from '@/lib/ai-error';
 import { readJson, writeJson } from '@/lib/storage';
 import { logError } from '@/lib/errors';
+import { noteVoice, wordCount } from '@/lib/voice-log';
 import {
   embedText,
   embeddableText,
@@ -115,6 +116,9 @@ export function appointmentExtras(appointment: boolean | undefined): Pick<MnemoI
 function mergeTags(have: string[], add: string[]): string[] {
   return [...new Set([...have, ...add])].slice(0, MAX_TAGS);
 }
+
+/** Said on a voice note whose recording couldn't be read, instead of leaving it blank. */
+export const LOST_RECORDING = "This voice note's recording couldn't be read, so nothing was written out. Sorry: please say it again.";
 
 function readWords(words: string, extra: { known?: KnownMetric[]; now?: number } = {}) {
   return understand(words, { ...extra, monthFirst: monthFirst(), currency: localCurrency() });
@@ -412,11 +416,15 @@ async function structure(entry: PendingEntry, store: CaptureStore): Promise<void
   const recordings = splitAudio(entry.pendingAudioUri);
   const sound = recordings.length > 0 ? await loadAudio(recordings) : [];
   if (sound.length > 0) {
+    const size = `${sound.length} ${sound.length === 1 ? 'clip' : 'clips'}, ${Math.round(sound.reduce((n, a) => n + a.data.length * 0.75, 0) / 1024)} KB`;
+    if (sound.length < recordings.length) void noteVoice(`write-out: ${recordings.length - sound.length} of ${recordings.length} clips missing`);
     try {
       processed = await processAudioDump(sound.map((a) => ({ data: a.data, mimeType: a.mimeType })), ctx, pages);
       said = processed.transcript?.trim() || undefined;
+      void noteVoice(`written out by Gemini (${size}): ${wordCount(said ?? processed.notes ?? '')} words`);
     } catch (e) {
       if (e instanceof AiOffError) throw e;
+      void noteVoice(`Gemini couldn't write it out (${size}): ${String((e as Error)?.message ?? e).slice(0, 100)}${hasGroq() ? '; trying Whisper' : '; kept to retry'}`);
       // Fall back to Groq Whisper if a key exists; otherwise retried later with the recording.
       const words = hasGroq()
         ? await transcribeAudio(sound, { banglaSpeaker: getPreferences().speechLang === 'bn-BD' }).catch((groqError) => {
@@ -426,6 +434,7 @@ async function structure(entry: PendingEntry, store: CaptureStore): Promise<void
           })
         : '';
       if (!words) throw e;
+      void noteVoice(`written out by Whisper: ${wordCount(words)} words`);
       said = words;
       const nowEntry = store.snapshot().entries.find((x) => x.id === entry.id);
       if (!nowEntry) return deleteAudio(recordings);
@@ -440,7 +449,16 @@ async function structure(entry: PendingEntry, store: CaptureStore): Promise<void
     }
     deleteAudio(recordings);
   } else if (recordings.length > 0 && !entry.pendingRawText) {
-    store.updateEntry(entry.id, { pending: false, pendingAudioUri: undefined });
+    // The recording is gone or unreadable. This used to end the note quietly as an empty one;
+    // say so on the note itself, and in the problem report.
+    void noteVoice(`LOST: ${recordings.length} ${recordings.length === 1 ? 'recording' : 'recordings'} couldn't be read`);
+    logError('voice note', new Error(`recording couldn't be read (${recordings.map((u) => u.split('/').pop()).join(', ')})`));
+    const now = store.snapshot().entries.find((x) => x.id === entry.id);
+    store.updateEntry(entry.id, {
+      pending: false,
+      pendingAudioUri: undefined,
+      ...(now && !textOf(now) ? { blocks: [...buildBlocks({ text: LOST_RECORDING }), ...now.blocks] } : {}),
+    });
     return;
   } else if (entry.pendingRawText || photos.length > 0 || pages.length > 0) {
     transcript = transcript ?? (entry.pendingRawText || undefined);

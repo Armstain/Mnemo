@@ -7,6 +7,7 @@ import { aiEnabled } from '@/lib/ai-mode';
 import { heardLanguage, languageOf } from '@/lib/language';
 import { getPreferences, setPreferences, type SpeechLang } from '@/lib/preferences';
 import { deleteAudio, keepRecording } from '@/lib/voice-audio';
+import { noteVoice, seconds, wordCount } from '@/lib/voice-log';
 
 // Gemini on: record, transcribe afterwards (Whisper fallback; lib/capture), then delete the audio. Offline: live recognition, nothing recorded.
 
@@ -24,8 +25,17 @@ let nextId = 1;
 
 const STOP_TIMEOUT_MS = 2500;
 
-// Consecutive empty restarts mean the recognizer is failing, not pausing.
+// Consecutive failed sessions (a real error, not silence) mean the recognizer is failing, not pausing.
 const MAX_RESTARTS = 4;
+// Silence ends a session on most phones (every few seconds of thinking). That's a pause, not a
+// failure, so it restarts without counting against MAX_RESTARTS, up to this many in one note.
+const MAX_SILENT_RESTARTS = 120;
+// The recognizer's codes for "heard nothing": a pause in talking.
+const SILENCE = new Set(['no-speech', 'speech-timeout']);
+// Restarting the instant a session failed often fails again as "busy" or "client".
+const RETRY_DELAY_MS = 300;
+// A recording much shorter than the time spent talking was cut off (a call, another app taking the mic).
+const CUT_SHORT = 0.7;
 
 const DETECT_CONFIDENCE = 0.8;
 
@@ -66,6 +76,15 @@ export function useSpeechCapture(options: { onLevel?: (level: number) => void } 
   const detected = useRef<SpeechLang | null>(null);
   const tried = useRef(new Set<SpeechLang>());
   const restarts = useRef(0);
+  const silentRestarts = useRef(0);
+  /** This session's error code, if it ended with one. */
+  const sessionError = useRef<string | null>(null);
+  /** Every recognizer error in this note, counted, for the voice log. */
+  const errorsSeen = useRef(new Map<string, number>());
+  const startedAt = useRef(0);
+  const firstLang = useRef<SpeechLang>('en-US');
+  /** Listening stopped for good while the screen still says it's listening. */
+  const [stalled, setStalled] = useState(false);
   const stopWaiter = useRef<((words: string) => void) | null>(null);
   const onLevel = useRef(options.onLevel);
   onLevel.current = options.onLevel;
@@ -86,19 +105,41 @@ export function useSpeechCapture(options: { onLevel?: (level: number) => void } 
   /** Stops the recorder; the file, or null if there's nothing worth keeping. */
   const endRecording = useCallback(async (keep: boolean): Promise<string | null> => {
     stopLevels();
-    const long = Date.now() - recordingSince.current >= MIN_RECORDING_MS;
+    const talked = Date.now() - recordingSince.current;
+    const long = talked >= MIN_RECORDING_MS;
+    let recorded = 0;
+    let wasRecording = true;
+    try {
+      const status = recorder.getStatus();
+      recorded = status.durationMillis ?? 0;
+      wasRecording = status.isRecording;
+    } catch {
+      // No status: the log just says less.
+    }
     try {
       await recorder.stop();
     } catch {
       // Already stopped.
     }
     const uri = recorder.uri;
-    if (!uri) return null;
+    const what = `recorded ${seconds(talked)}`;
+    if (!uri) {
+      if (keep) void noteVoice(`${what}: no recording file came back`);
+      return null;
+    }
     if (!keep || !long) {
+      if (keep) void noteVoice(`${what}: too short, dropped`);
       deleteAudio([uri]);
       return null;
     }
-    return keepRecording(uri);
+    // Android stops a recording when another app takes the mic, or a call comes in.
+    const cut = recorded > 0 && recorded < talked * CUT_SHORT;
+    const kept = keepRecording(uri);
+    void noteVoice(
+      `${what}, file ${seconds(recorded)}${cut || !wasRecording ? ' (CUT SHORT: the phone stopped the recording)' : ''}` +
+        `${kept === uri ? ' · stays in cache (move failed)' : ''}`,
+    );
+    return kept;
   }, [recorder]);
 
   const startRecording = useCallback(async (): Promise<ListenStart> => {
@@ -124,6 +165,7 @@ export function useSpeechCapture(options: { onLevel?: (level: number) => void } 
   }, [recorder]);
 
   const begin = useCallback(() => {
+    sessionError.current = null;
     tried.current.add(lang.current);
     ExpoSpeechRecognitionModule.start({
       lang: lang.current,
@@ -184,6 +226,8 @@ export function useSpeechCapture(options: { onLevel?: (level: number) => void } 
 
   useSpeechRecognitionEvent('error', (event) => {
     if (!mine()) return;
+    sessionError.current = event.error;
+    errorsSeen.current.set(event.error, (errorsSeen.current.get(event.error) ?? 0) + 1);
     if (event.error === 'language-not-supported' && wanted.current && !stopWaiter.current) {
       const next = other(lang.current);
       if (!tried.current.has(next)) {
@@ -196,6 +240,16 @@ export function useSpeechCapture(options: { onLevel?: (level: number) => void } 
     }
     // Silence ends the session on some phones; 'end' restarts it.
   });
+
+  /** One line per note: how long, what language, how much was heard, and what went wrong. */
+  const logRecognized = (words: string, how: string) => {
+    const errors = [...errorsSeen.current].filter(([code]) => code !== 'aborted').map(([code, n]) => (n > 1 ? `${code}×${n}` : code));
+    const langs = firstLang.current === lang.current ? lang.current : `${firstLang.current}→${lang.current}`;
+    void noteVoice(
+      `phone heard (${langs}), ${seconds(Date.now() - startedAt.current)}, ${wordCount(words)} words, ${how}` +
+        `${silentRestarts.current ? `, ${silentRestarts.current} pauses` : ''}${errors.length ? `, errors: ${errors.join(', ')}` : ''}`,
+    );
+  };
 
   const finishRecognizing = () => {
     const words = full();
@@ -211,19 +265,37 @@ export function useSpeechCapture(options: { onLevel?: (level: number) => void } 
   useSpeechRecognitionEvent('end', () => {
     if (!mine()) return;
     keepInterim();
-    if (wanted.current && !stopWaiter.current && restarts.current < MAX_RESTARTS) {
-      // Older Android stops after silence even in continuous mode; a language change also ends it on purpose.
-      restarts.current += 1;
-      try {
-        begin();
+    if (wanted.current && !stopWaiter.current) {
+      // Most phones end a session after a few seconds of silence, even in continuous mode; a
+      // language change also ends it on purpose. Only a real error counts towards giving up.
+      const error = sessionError.current;
+      const pause = !error || SILENCE.has(error) || error === 'aborted';
+      const again = pause ? silentRestarts.current < MAX_SILENT_RESTARTS : restarts.current < MAX_RESTARTS;
+      if (again) {
+        if (pause) silentRestarts.current += 1;
+        else restarts.current += 1;
+        const restart = () => {
+          if (!wanted.current || stopWaiter.current || !mine()) return;
+          try {
+            begin();
+          } catch {
+            setStalled(true);
+          }
+        };
+        if (pause) restart();
+        else setTimeout(restart, RETRY_DELAY_MS);
         return;
-      } catch {
-        // Fall through and finish with what we have.
       }
+      // Gave up while the person is still talking: say so instead of showing "Listening…".
+      setStalled(true);
+      keepInterim();
+      logRecognized(full(), `stopped hearing (screen still open)`);
+      return;
     }
     const resolve = stopWaiter.current;
     stopWaiter.current = null;
     const words = finishRecognizing();
+    if (resolve) logRecognized(words, 'Done tapped');
     resolve?.(words);
   });
 
@@ -231,6 +303,10 @@ export function useSpeechCapture(options: { onLevel?: (level: number) => void } 
     finalText.current = '';
     interim.current = '';
     setText('');
+    setStalled(false);
+    startedAt.current = Date.now();
+    silentRestarts.current = 0;
+    errorsSeen.current = new Map();
     try {
       if (aiEnabled()) {
         engine.current = 'record';
@@ -243,7 +319,10 @@ export function useSpeechCapture(options: { onLevel?: (level: number) => void } 
       }
       engine.current = 'recognize';
       setRecording(false);
-      if (!ExpoSpeechRecognitionModule.isRecognitionAvailable()) return 'unavailable';
+      if (!ExpoSpeechRecognitionModule.isRecognitionAvailable()) {
+        void noteVoice("couldn't start: this phone has no speech recognition");
+        return 'unavailable';
+      }
       const perm = await ExpoSpeechRecognitionModule.requestPermissionsAsync();
       if (!perm.granted) return 'permission-denied';
       owner = id;
@@ -252,12 +331,15 @@ export function useSpeechCapture(options: { onLevel?: (level: number) => void } 
       detected.current = null;
       tried.current = new Set();
       lang.current = getPreferences().speechLang;
+      firstLang.current = lang.current;
       setListening(true);
       begin();
       return 'ok';
-    } catch {
+    } catch (e) {
       wanted.current = false;
       setListening(false);
+      setRecording(false);
+      void noteVoice(`couldn't start ${engine.current === 'record' ? 'recording' : 'listening'}: ${String((e as Error)?.message ?? e).slice(0, 120)}`);
       return 'unavailable';
     }
   }, [begin, id, startRecording]);
@@ -273,7 +355,12 @@ export function useSpeechCapture(options: { onLevel?: (level: number) => void } 
       const uri = await endRecording(true);
       return { words: '', audio: uri ? [uri] : [] };
     }
-    if (!mine()) return { words: full(), audio: [] };
+    // Stopped hearing earlier (stalled), or never ours: what was heard is all there is.
+    if (!mine() || stalled) {
+      const words = mine() ? finishRecognizing() : full();
+      setStalled(false);
+      return { words, audio: [] };
+    }
     const words = await new Promise<string>((resolve) => {
       let done = false;
       const settle = (w: string) => {
@@ -285,7 +372,9 @@ export function useSpeechCapture(options: { onLevel?: (level: number) => void } 
       setTimeout(() => {
         if (done) return;
         stopWaiter.current = null;
-        settle(finishRecognizing());
+        const words = finishRecognizing();
+        logRecognized(words, `Done tapped, recognizer didn't finish in ${seconds(STOP_TIMEOUT_MS)}`);
+        settle(words);
       }, STOP_TIMEOUT_MS);
       try {
         ExpoSpeechRecognitionModule.stop();
@@ -295,7 +384,7 @@ export function useSpeechCapture(options: { onLevel?: (level: number) => void } 
       }
     });
     return { words, audio: [] };
-  }, [endRecording, id]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [endRecording, id, stalled]); // eslint-disable-line react-hooks/exhaustive-deps
 
   /** Stops and throws away whatever was heard or recorded. */
   const cancel = useCallback(() => {
@@ -307,6 +396,7 @@ export function useSpeechCapture(options: { onLevel?: (level: number) => void } 
     setText('');
     setListening(false);
     setRecording(false);
+    setStalled(false);
     if (engine.current === 'record') {
       if (wasListening) void endRecording(false);
       return;
@@ -326,5 +416,5 @@ export function useSpeechCapture(options: { onLevel?: (level: number) => void } 
   cancelRef.current = cancel;
   useEffect(() => () => cancelRef.current(), []);
 
-  return { listening, recording, text, start, stop, cancel };
+  return { listening, recording, text, stalled, start, stop, cancel };
 }
