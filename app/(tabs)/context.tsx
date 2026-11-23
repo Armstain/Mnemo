@@ -130,7 +130,6 @@ export default function ThreadScreen() {
   const [isEditing, setIsEditing] = React.useState(false);
   const [menuOpen, setMenuOpen] = React.useState(false);
   const titleRef = React.useRef<React.ComponentRef<typeof Text>>(null);
-  // Re-measured after the header entrance settles, since it starts low.
   const reportTitlePlace = () => {
     const report = () =>
       titleRef.current?.measureInWindow((x, y, width, height) => reportFlightTarget(id, { x, y, width, height }));
@@ -259,7 +258,6 @@ export default function ThreadScreen() {
     if (!recurring) return finishThread();
     if (placeRepeats) {
       const undo = completePlaceOccurrence(thread.id);
-      // Already done today: the button says so, and nothing happens twice.
       if (!undo) return;
       haptic.success();
       const where = placeLabel(thread.place!, savedPlaces.find((p) => p.id === thread.place!.placeId));
@@ -273,14 +271,12 @@ export default function ThreadScreen() {
     showToast({ message: `Done for now. Next reminder ${next}` });
   };
 
-  // DoneCheck already played ring and haptics. Only shown on a thread that has steps.
   const handleStepDone = () => stepDone(thread.id);
 
   const showDue = !!thread.dueDate && isOpenStatus(thread.status);
   const missed = showDue && !thread.repeat && thread.dueDate! < Date.now();
   const waiting = (thread.laterSteps ?? []).filter((l) => !thread.repeat || l.at > Date.now());
 
-  // Clears the passed reminder only. The step has its own check, and the thread its own Done.
   const handleReminderDismiss = () => {
     haptic.select();
     const { dueDate, laterSteps, nextStep, pinned } = thread;
