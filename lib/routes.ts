@@ -26,3 +26,5 @@ export const privacyHref = '/privacy' as const;
 export const onboardingHref = '/onboarding' as const;
 
 export const welcomeHref = '/welcome' as const;
+
+export const debugHref = '/debug' as const;

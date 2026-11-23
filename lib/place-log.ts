@@ -58,12 +58,17 @@ export function diagnosticLog(key: string, max = PLACE_LOG_MAX) {
     });
     return queue;
   };
-  return { read, note };
+  const clear = (): Promise<void> => {
+    queue = queue.then(() => AsyncStorage.removeItem(key).catch(() => {}));
+    return queue;
+  };
+  return { read, note, clear };
 }
 
 const placeLog = diagnosticLog(KEY);
 export const readPlaceLog = placeLog.read;
 export const notePlace = placeLog.note;
+export const clearPlaceLog = placeLog.clear;
 
 /** "arrive, weekdays" / "leave, once" / "arrive, days 1,3". */
 function kind(r: PlaceReminder): string {

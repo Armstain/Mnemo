@@ -44,6 +44,8 @@ export interface Preferences {
   appointmentLeads?: Lead[];
   /** Appointments heard in a note go into the phone's calendar too (lib/calendar.ts). Off until turned on. */
   appointmentsToCalendar?: boolean;
+  /** The hidden Live debug screen (app/debug.tsx): shown in Settings after 7 taps on the version. */
+  debugTools?: boolean;
 }
 
 /** Long enough for most first names, short enough for the greeting to fit. */

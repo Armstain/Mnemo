@@ -11,19 +11,23 @@ import { MotiView } from 'moti';
 import { Moon, Smartphone, Sun } from 'lucide-react-native';
 import Constants from 'expo-constants';
 import { haptic } from '@/lib/haptics';
-import { Surface } from '@/components/ui/Card';
+import { Surface, useSurfaceStyle } from '@/components/ui/Card';
 import { ToggleRow } from '@/components/ui/ToggleRow';
 import { LinkRow } from '@/components/settings/LinkRow';
 import { useSafeBottom } from '@/components/ui/Screen';
 import { SettingsSection } from '@/components/settings/SettingsSection';
 import { AutoBackupCard, BackupCard } from '@/components/settings/BackupCard';
 import { AiModeCard } from '@/components/settings/AiModeCard';
-import { helpHref, onboardingHref, privacyHref, remindersCheckHref } from '@/lib/routes';
+import { debugHref, helpHref, onboardingHref, privacyHref, remindersCheckHref } from '@/lib/routes';
 import { useThemeColors, useThemeName, useThemePreference, type ThemePreference } from '@/hooks/use-theme';
 import { NudgeSettingsCard } from '@/components/settings/NudgeSettingsCard';
 import { AppointmentsCard } from '@/components/settings/AppointmentsCard';
 import { LocationCard } from '@/components/settings/LocationCard';
 import { ApiKeyConfigCard, GROQ } from '@/components/settings/ApiKeyConfigCard';
+import { tapCounter } from '@/lib/debug';
+
+/** Seven quick taps on the version turn on Live debug (app/debug.tsx). */
+const unlockTap = tapCounter();
 
 const REPO = 'https://github.com/Armstain/Mnemo';
 
@@ -65,6 +69,8 @@ export default function ModalScreen() {
   const theme = useThemeName();
   const { preference, setPreference } = useThemePreference();
   const report = useProblemReport();
+  const { debugTools } = usePreferences();
+  const aboutSurface = useSurfaceStyle('soft');
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.bg }}>
@@ -142,6 +148,7 @@ export default function ModalScreen() {
           </SettingsSection>
 
           <SettingsSection title="Help and feedback" step={2}>
+            {debugTools ? <LinkRow className={ROW} icon="alert" title="Live debug" onPress={() => router.push(debugHref)} /> : null}
             <LinkRow className={ROW} icon="sparkles" title="How Mnemo works" onPress={() => router.push(helpHref)} />
             {Platform.OS !== 'web' ? (
               <LinkRow className={ROW} icon="alert" title="Check that reminders arrive" onPress={() => router.push(remindersCheckHref)} />
@@ -153,10 +160,20 @@ export default function ModalScreen() {
           </SettingsSection>
 
           <SettingsSection title="About" step={2} last>
-            <Surface tone="soft" className="rounded-lg px-5 py-3">
+            {/* Hidden: seven quick taps turn on Live debug. Not announced as a button on purpose. */}
+            <Pressable
+              onPress={() => {
+                if (!unlockTap() || debugTools) return;
+                haptic.success();
+                setPreferences({ debugTools: true });
+              }}
+              accessible={false}
+              className="rounded-lg px-5 py-3"
+              style={aboutSurface}
+            >
               <Text className="font-sans-semi text-sm text-fg">Mnemo v{Constants.expoConfig?.version ?? '1.0.0'}</Text>
               <Text className="font-sans text-sm text-fg-tertiary mt-0.5">Resume your life.</Text>
-            </Surface>
+            </Pressable>
             <LinkRow className={ROW} icon="arrowUpRight" title="Source code" onPress={() => Linking.openURL(REPO)} />
             <LinkRow className={ROW} icon="pin" title="Privacy and your data" onPress={() => router.push(privacyHref)} />
             <LinkRow

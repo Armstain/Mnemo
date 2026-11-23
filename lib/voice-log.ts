@@ -8,6 +8,7 @@ import { diagnosticLog } from '@/lib/place-log';
 const voiceLog = diagnosticLog('mnemo-voice-log');
 export const readVoiceLog = voiceLog.read;
 export const noteVoice = voiceLog.note;
+export const clearVoiceLog = voiceLog.clear;
 
 /** "12 s" / "1 min 5 s". */
 export function seconds(ms: number): string {
