@@ -30,6 +30,7 @@ import { AutoBackup } from '@/components/AutoBackup';
 import { ReminderActions } from '@/components/ReminderActions';
 import { installGlobalErrorLog } from '@/lib/errors';
 import { ShareIntake } from '@/components/ShareIntake';
+import { DebugOverlay } from '@/components/DebugOverlay';
 import { WidgetSync } from '@/components/WidgetSync';
 import { PendingProcessor } from '@/components/PendingProcessor';
 import { FilingNotifier } from '@/components/FilingNotifier';
@@ -218,6 +219,8 @@ function RootLayoutNav() {
           <CardFlightHost />
           {/* Last, so it draws above everything, the toast included. */}
           <CelebrationHost />
+          {/* Live debug's overlay (hidden setting): what Mnemo is doing, over every screen. */}
+          <DebugOverlay />
           <SplashIntro />
         </ThemeProvider>
         </UndoToastProvider>

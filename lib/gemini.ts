@@ -4,6 +4,7 @@ import { isLiteModel, pickTextModels, pickTtsModel, type ModelInfo } from './mod
 import { isMissingModel, isOverloaded, QuotaRestingError, quotaInfo, quotaPause } from './ai-error';
 import { aiEnabled, setAiNotice } from './ai-mode';
 import { describeEmpty, EmptyResponseError, isBlocked, type EmptyAttempt, type InputInfo } from './empty-response';
+import { begin, trace } from './trace';
 import { describePages, type PageContext } from './link-preview';
 import { SEARCH_TERMS_RULE } from './search-terms';
 import { CATEGORIES, KINDS, ROLLUPS } from '@/types/mnemo';
@@ -115,9 +116,14 @@ async function generateText(
   // One pass: a busy or out-of-quota model hands over to the next. Retrying the whole ladder
   // doubled the requests on every busy spell; the waiting note is retried later with back-off.
   const models = await textModels();
+  const what = input?.label ?? 'text';
   for (const model of models) {
-    if (isResting(model)) continue;
+    if (isResting(model)) {
+      trace('gemini', `${model} skipped: resting after a limit`, 'warn');
+      continue;
+    }
     tried = true;
+    const done = begin('gemini', `${model} · ${what}`);
     try {
       const response = await client.models.generateContent({
         model,
@@ -138,6 +144,7 @@ async function generateText(
       }
       if (!response.text || unreadable) {
         const empty = describeEmpty(response, model, unreadable);
+        done('warn', unreadable ? 'answer unreadable, trying next' : `empty answer (${empty.blockReason ?? empty.finishReason ?? 'no text'}), ${isBlocked(empty) ? 'stopping' : 'trying next'}`);
         empties.push(empty);
         lastWasEmpty = true;
         // A safety block is about the content: another model would only spend quota to say the same.
@@ -145,10 +152,13 @@ async function generateText(
         continue;
       }
       noteModelUsed(model, models);
+      const usage = response.usageMetadata;
+      done('ok', `answered${usage?.totalTokenCount ? ` · ${usage.promptTokenCount ?? '?'} in / ${usage.candidatesTokenCount ?? '?'} out tokens` : ''}`);
       return response;
     } catch (e) {
       lastError = e;
       lastWasEmpty = false;
+      done('error', String((e as Error)?.message ?? e).replace(/\s+/g, ' ').slice(0, 120));
       // Missing, busy or out-of-quota models try another; a bad key or no signal fails the same on each.
       const pause = quotaPause(e);
       if (pause !== undefined) resting.set(model, { until: Date.now() + pause, daily: quotaInfo(e)?.daily ?? false });

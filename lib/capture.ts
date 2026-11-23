@@ -10,6 +10,7 @@ import { aiErrorText, classifyAiError, isNoConnection } from '@/lib/ai-error';
 import { readJson, writeJson } from '@/lib/storage';
 import { logError } from '@/lib/errors';
 import { noteVoice, wordCount } from '@/lib/voice-log';
+import { begin, gist, noteTopic, took, trace } from '@/lib/trace';
 import {
   embedText,
   embeddableText,
@@ -212,6 +213,13 @@ export function saveNote(source: Entry['source'], params: NoteInput): { threadId
     if (due) emitReminderSet({ threadId: saved.threadId, at: due, before: reminderState() });
     if (!ai) suggestByKeywords(saved, words, store);
   }
+  trace(
+    noteTopic(saved.entry.id),
+    `saved ${source}${words ? ` ${gist(words)}` : ''}${recorded.length ? ` · ${recorded.length} recording${recorded.length === 1 ? '' : 's'}` : ''}${images.length ? ` · ${images.length} photo${images.length === 1 ? '' : 's'}` : ''}` +
+      ` → ${threadId ? `added to t:${saved.threadId.slice(-4)}` : `new thread t:${saved.threadId.slice(-4)}`}` +
+      `${due ? ' · time reminder' : ''}${place ? ` · place reminder (${place.on})` : ''} · ${ai ? 'queued for Gemini' : 'read on the phone, done'}`,
+    'ok',
+  );
   if (ai) resolvePendingEntry(saved.entry, store);
   enrichLinks(saved.entry.id, store);
   return saved;
@@ -428,7 +436,12 @@ async function structure(entry: PendingEntry, store: CaptureStore): Promise<void
   let shownText = (entry.pendingRawText ?? '').trim();
   let said: string | undefined;
   const recordings = splitAudio(entry.pendingAudioUri);
+  const topic = noteTopic(entry.id);
   const sound = recordings.length > 0 ? await loadAudio(recordings) : [];
+  if (recordings.length > 0) {
+    trace(topic, `read ${sound.length} of ${recordings.length} recording${recordings.length === 1 ? '' : 's'} (${Math.round(sound.reduce((n, a) => n + a.data.length * 0.75, 0) / 1024)} KB)`, sound.length ? 'info' : 'error');
+  }
+  if (matching) trace(topic, `${candidates.length} candidate thread${candidates.length === 1 ? '' : 's'} sent for filing`);
   if (sound.length > 0) {
     const size = `${sound.length} ${sound.length === 1 ? 'clip' : 'clips'}, ${Math.round(sound.reduce((n, a) => n + a.data.length * 0.75, 0) / 1024)} KB`;
     if (sound.length < recordings.length) void noteVoice(`write-out: ${recordings.length - sound.length} of ${recordings.length} clips missing`);
@@ -445,13 +458,16 @@ async function structure(entry: PendingEntry, store: CaptureStore): Promise<void
         void noteVoice(`Gemini couldn't write it out (${size}): ${why}${hasGroq() ? '; trying Whisper' : '; kept to retry'}`);
       }
       // Fall back to Groq Whisper if a key exists; otherwise retried later with the recording.
+      const whisper = hasGroq() ? begin(topic, 'Whisper (Groq) writing it out') : null;
       const words = hasGroq()
         ? await transcribeAudio(sound, { banglaSpeaker: getPreferences().speechLang === 'bn-BD' }).catch((groqError) => {
             // Surfaces in the Settings problem report.
             logError('groq', groqError);
+            whisper?.('error', String((groqError as Error)?.message ?? groqError).slice(0, 100));
             return '';
           })
         : '';
+      if (words) whisper?.('ok', `${wordCount(words)} words ${gist(words)}`);
       if (!words) throw e;
       void noteVoice(`written out by Whisper: ${wordCount(words)} words`);
       said = words;
@@ -491,6 +507,14 @@ async function structure(entry: PendingEntry, store: CaptureStore): Promise<void
     releaseThread(store, entry.threadId);
     return;
   }
+  trace(
+    topic,
+    `Gemini read it: ${gist(processed.title, 40)}${said ? ` · heard ${gist(said)}` : ''} · ${processed.kind ?? 'note'} · ${processed.suggestedCategory ?? '?'}` +
+      `${processed.summary?.nextSteps?.[0] ? ` · next: ${gist(processed.summary.nextSteps[0], 40)}` : ''}` +
+      `${processed.measures?.length ? ` · ${processed.measures.length} amounts` : ''}` +
+      `${processed.thread ? ` · match: ${processed.thread.match}${processed.thread.confidence !== undefined ? ` ${Math.round(processed.thread.confidence * 100)}%` : ''}` : ''}`,
+    'ok',
+  );
   // Text Gemini read off a photo is not something the person said.
   transcript = said ?? transcript ?? (photos.length > 0 ? undefined : processed.transcript);
   const spoken = said ? languageOf(said) : null;
@@ -602,6 +626,15 @@ async function structure(entry: PendingEntry, store: CaptureStore): Promise<void
     });
   }
 
+  {
+    const to = 'threadId' in decision ? store.getThread(decision.threadId) : undefined;
+    trace(
+      topic,
+      decision.action === 'stay'
+        ? 'filing: stays in its own thread'
+        : `filing: ${decision.action}${to ? ` → ${gist(to.title, 40)}` : ''}${'confidence' in decision && decision.confidence !== undefined ? ` (${Math.round(decision.confidence * 100)}%)` : ''}${'reason' in decision && decision.reason ? ` · ${decision.reason}` : ''}`,
+    );
+  }
   if (decision.action === 'attach') {
     const own = store.getThread(now.threadId);
     const before = store.getThread(decision.threadId);
@@ -756,6 +789,7 @@ export async function retryEntryNow(entry: PendingEntry, store: CaptureStore): P
   await blockedLoaded;
   clearBlocked(entry.id);
   attempts.delete(entry.id);
+  trace(noteTopic(entry.id), 'Retry tapped: sending now');
   try {
     await structurePendingEntry(entry, store);
   } catch (e) {
@@ -787,27 +821,38 @@ export async function resolvePendingEntry(entry: PendingEntry, store: CaptureSto
   clearBlocked(entry.id);
   const previous = attempts.get(entry.id);
   if (previous && Date.now() < previous.nextAt) return false;
+  const topic = noteTopic(entry.id);
+  const done = isStructuring(entry.id) ? null : begin(topic, previous ? `processing, try ${previous.count + 1}` : 'processing');
   try {
     await structurePendingEntry(entry, store);
     attempts.delete(entry.id);
     setAiProblem(null);
+    done?.('ok', 'done');
     return false;
   } catch (e) {
-    if (e instanceof AiOffError) return true;
+    const why = String((e as Error)?.message ?? e).replace(/\s+/g, ' ').slice(0, 120);
+    if (e instanceof AiOffError) {
+      done?.('warn', 'Gemini is off: waits');
+      return true;
+    }
     // Nothing reached Gemini, so no back-off.
     if (isNoConnection(e)) {
       attempts.delete(entry.id);
+      done?.('warn', 'no connection: tried again when back online or in a minute');
       return true;
     }
     const problem = classifyAiError(e);
     if (problem === 'blocked') {
+      done?.('warn', 'declined by the safety filter: the phone reads it instead');
       attempts.delete(entry.id);
       logError('ai', e);
       declined(entry.id, store);
       return false;
     }
     const count = (previous?.count ?? 0) + 1;
-    attempts.set(entry.id, { count, nextAt: Date.now() + BACKOFF_MS[Math.min(count, BACKOFF_MS.length) - 1], reason: SHORT_PROBLEM[problem] });
+    const wait = BACKOFF_MS[Math.min(count, BACKOFF_MS.length) - 1];
+    attempts.set(entry.id, { count, nextAt: Date.now() + wait, reason: SHORT_PROBLEM[problem] });
+    done?.('error', `${SHORT_PROBLEM[problem]}: ${why} · next try in ${took(wait)}`);
     if (problem === 'invalid' || problem === 'quota') setAiProblem(problem, problem === 'quota' ? aiErrorText(e) : null);
     // Only the first failure is logged; retries would repeat it.
     const worthLogging = problem === 'other' || problem === 'truncated' || problem === 'empty';

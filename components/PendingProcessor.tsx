@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react';
 import { AppState } from 'react-native';
 import { useMnemoStore } from '@/hooks/use-mnemo-store';
 import { finishOnDevice, releaseThread, resolvePendingEntry, retryWaitingNow } from '@/lib/capture';
+import { trace } from '@/lib/trace';
 import { runInPool } from '@/lib/send-queue';
 import { deleteUnusedAudio } from '@/lib/voice-audio';
 import { getPreferences, setPreferences, usePreferences } from '@/lib/preferences';
@@ -194,6 +195,7 @@ export function PendingProcessor() {
         }
         return;
       }
+      if (pending.length > 0) trace('queue', `${pending.length} note${pending.length === 1 ? '' : 's'} waiting for Gemini`);
       // A thread left "Being read…" with nothing of it waiting any more (lib/capture.ts releaseThread).
       for (const item of items) if (item.pending) releaseThread(current, item.id);
       void sendWaiting(pending, current);

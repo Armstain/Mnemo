@@ -46,6 +46,8 @@ export interface Preferences {
   appointmentsToCalendar?: boolean;
   /** The hidden Live debug screen (app/debug.tsx): shown in Settings after 7 taps on the version. */
   debugTools?: boolean;
+  /** Live debug's floating overlay (components/DebugOverlay.tsx): what Mnemo is doing, over every screen. */
+  debugOverlay?: boolean;
 }
 
 /** Long enough for most first names, short enough for the greeting to fit. */

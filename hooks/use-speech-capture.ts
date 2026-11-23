@@ -8,6 +8,7 @@ import { heardLanguage, languageOf } from '@/lib/language';
 import { getPreferences, setPreferences, type SpeechLang } from '@/lib/preferences';
 import { deleteAudio, keepRecording } from '@/lib/voice-audio';
 import { noteVoice, seconds, wordCount } from '@/lib/voice-log';
+import { gist, trace } from '@/lib/trace';
 
 // Gemini on: record, transcribe afterwards (Whisper fallback; lib/capture), then delete the audio. Offline: live recognition, nothing recorded.
 
@@ -125,16 +126,19 @@ export function useSpeechCapture(options: { onLevel?: (level: number) => void } 
     const what = `recorded ${seconds(talked)}`;
     if (!uri) {
       if (keep) void noteVoice(`${what}: no recording file came back`);
+      if (keep) trace('voice', `${what}: no recording file came back`, 'error');
       return null;
     }
     if (!keep || !long) {
       if (keep) void noteVoice(`${what}: too short, dropped`);
+      if (keep) trace('voice', `${what}: too short, dropped`, 'warn');
       deleteAudio([uri]);
       return null;
     }
     // Android stops a recording when another app takes the mic, or a call comes in.
     const cut = recorded > 0 && recorded < talked * CUT_SHORT;
     const kept = keepRecording(uri);
+    trace('voice', `mic off: ${seconds(talked)} talked, file ${seconds(recorded)}${cut || !wasRecording ? ' · CUT SHORT by the phone' : ''}`, cut || !wasRecording ? 'warn' : 'ok');
     void noteVoice(
       `${what}, file ${seconds(recorded)}${cut || !wasRecording ? ' (CUT SHORT: the phone stopped the recording)' : ''}` +
         `${kept === uri ? ' · stays in cache (move failed)' : ''}`,
@@ -152,6 +156,7 @@ export function useSpeechCapture(options: { onLevel?: (level: number) => void } 
     await recorder.prepareToRecordAsync();
     recorder.record();
     recordingSince.current = Date.now();
+    trace('voice', 'mic on: recording for Gemini', 'ok');
     stopLevels();
     levelTimer.current = setInterval(() => {
       try {
@@ -167,6 +172,7 @@ export function useSpeechCapture(options: { onLevel?: (level: number) => void } 
   const begin = useCallback(() => {
     sessionError.current = null;
     tried.current.add(lang.current);
+    trace('voice', `recognizer listening (${lang.current})`);
     ExpoSpeechRecognitionModule.start({
       lang: lang.current,
       interimResults: true,
@@ -204,6 +210,7 @@ export function useSpeechCapture(options: { onLevel?: (level: number) => void } 
     const said = event.results[0]?.transcript?.trim() ?? '';
     if (said) restarts.current = 0;
     if (event.isFinal) {
+      if (said) trace('voice', `heard ${gist(said)}`, 'ok');
       if (said) finalText.current = [finalText.current, said].filter(Boolean).join(' ');
       interim.current = '';
     } else {
@@ -217,7 +224,10 @@ export function useSpeechCapture(options: { onLevel?: (level: number) => void } 
     const heard = heardLanguage(event.detectedLanguage);
     if (!heard || event.confidence < DETECT_CONFIDENCE) return;
     detected.current = heard;
-    if (heard !== lang.current && !tried.current.has(heard)) moveTo(heard);
+    if (heard !== lang.current && !tried.current.has(heard)) {
+      trace('voice', `language sounds like ${heard} (${Math.round(event.confidence * 100)}%): switching`, 'warn');
+      moveTo(heard);
+    }
   });
 
   useSpeechRecognitionEvent('volumechange', (event) => {
@@ -228,6 +238,7 @@ export function useSpeechCapture(options: { onLevel?: (level: number) => void } 
     if (!mine()) return;
     sessionError.current = event.error;
     errorsSeen.current.set(event.error, (errorsSeen.current.get(event.error) ?? 0) + 1);
+    if (event.error !== 'aborted') trace('voice', `recognizer: ${event.error}${event.message ? ` (${event.message})` : ''}`, SILENCE.has(event.error) ? 'info' : 'error');
     if (event.error === 'language-not-supported' && wanted.current && !stopWaiter.current) {
       const next = other(lang.current);
       if (!tried.current.has(next)) {
@@ -274,6 +285,7 @@ export function useSpeechCapture(options: { onLevel?: (level: number) => void } 
       if (again) {
         if (pause) silentRestarts.current += 1;
         else restarts.current += 1;
+        trace('voice', pause ? 'pause: listening again' : `failed: retrying (${restarts.current} of ${MAX_RESTARTS})`, pause ? 'info' : 'warn');
         const restart = () => {
           if (!wanted.current || stopWaiter.current || !mine()) return;
           try {
@@ -287,6 +299,7 @@ export function useSpeechCapture(options: { onLevel?: (level: number) => void } 
         return;
       }
       // Gave up while the person is still talking: say so instead of showing "Listening…".
+      trace('voice', 'recognizer gave up: nothing more is heard', 'error');
       setStalled(true);
       keepInterim();
       logRecognized(full(), `stopped hearing (screen still open)`);

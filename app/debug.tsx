@@ -1,6 +1,6 @@
 import { StatusBar } from 'expo-status-bar';
 import { useEffect, useState } from 'react';
-import { Platform, Pressable, ScrollView, View } from 'react-native';
+import { Platform, Pressable, ScrollView, Switch, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import * as Clipboard from 'expo-clipboard';
@@ -23,7 +23,61 @@ import { usePlaces } from '@/lib/place-store';
 import { distance, formatMeters, isArmed, onFix, watchedRadius } from '@/lib/places';
 import { setPreferences, usePreferences } from '@/lib/preferences';
 import { clearVoiceLog, readVoiceLog } from '@/lib/voice-log';
-import { haptic } from '@/utils/haptics';
+import { haptic } from '@/lib/haptics';
+import { LEVEL_COLOR } from '@/components/DebugOverlay';
+import { useRunningClock, useTrace } from '@/hooks/use-trace';
+import { clearTrace, took } from '@/lib/trace';
+
+const LIVE_SHOWN = 60;
+
+/** What Mnemo is doing right now and just did: the live trace (lib/trace.ts), newest first. */
+function LiveFeed() {
+  const colors = useThemeColors();
+  const { debugOverlay } = usePreferences();
+  const { events, active } = useTrace();
+  const now = useRunningClock(active.length > 0, 200);
+  return (
+    <View className="mb-6">
+      <View className="flex-row items-center justify-between mb-2">
+        <Eyebrow>Live: what's happening now</Eyebrow>
+        <Pressable onPress={clearTrace} accessibilityRole="button" hitSlop={8} className="h-9 justify-center active:opacity-70">
+          <Text className="font-sans-semi text-sm" style={{ color: colors.accent }}>
+            Clear
+          </Text>
+        </Pressable>
+      </View>
+      <View className="flex-row items-center bg-surface rounded-lg px-4 py-2.5 border border-border/50 mb-2">
+        <Text className="font-sans-medium text-sm text-fg flex-1">Floating overlay on every screen</Text>
+        <Switch
+          value={!!debugOverlay}
+          onValueChange={(v) => setPreferences({ debugOverlay: v })}
+          trackColor={{ true: colors.accent, false: colors.surfaceHigh }}
+          accessibilityLabel="Floating overlay on every screen"
+        />
+      </View>
+      <View className="bg-surface rounded-lg px-4 py-3 border border-border/50 gap-1.5">
+        {active.map((a) => (
+          <Line key={a.id} tone={LEVEL_COLOR.busy}>
+            ▶ {a.topic} {a.text} · {took(now - a.since)}
+          </Line>
+        ))}
+        {events.length === 0 && active.length === 0 ? <Line>Nothing yet. Take a note and watch it here.</Line> : null}
+        {events
+          .slice(-LIVE_SHOWN)
+          .reverse()
+          .map((e) => (
+            <Line key={e.id}>
+              <Text style={{ color: LEVEL_COLOR[e.level], fontWeight: '600' }}>●</Text> {stamp(e.at).slice(11, 19)} {e.topic} {e.text}
+              {e.ms !== undefined ? ` (${took(e.ms)})` : ''}
+            </Line>
+          ))}
+      </View>
+      <Text className="font-sans text-xs mt-1.5" style={{ color: colors.fgTertiary }}>
+        Kept only while the app is open, and never in the problem report.
+      </Text>
+    </View>
+  );
+}
 
 // Live debug: hidden (Settings → About, tap the version 7 times). What the problem report says,
 // but live: the logs as they're written, notes waiting for Gemini, and where the phone is against
@@ -166,6 +220,8 @@ export default function DebugScreen() {
       </View>
 
       <ScrollView className="flex-1 px-5" contentContainerStyle={{ paddingBottom: Math.max(insets.bottom, 24) + 24 }}>
+        <LiveFeed />
+
         <Section title="This phone">
           <Line>
             Mnemo {Constants.expoConfig?.version ?? '?'} · {Platform.OS} {String(Platform.Version)}

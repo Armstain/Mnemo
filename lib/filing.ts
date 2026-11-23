@@ -3,6 +3,7 @@ import { dot } from '@/lib/vector-math';
 import { entryText, newestFirst } from '@/lib/threads';
 import { trackedMetrics } from '@/lib/measures';
 import { createEmitter } from '@/lib/emitter';
+import { trace } from '@/lib/trace';
 import type { ReminderState } from '@/lib/capture';
 import type { ThreadCandidate, ThreadMatch } from '@/types/filing';
 import { isOpenStatus, type Entry, type MnemoItem } from '@/types/mnemo';
@@ -272,7 +273,10 @@ export interface ReminderSetEvent {
 const reminderSets = createEmitter<ReminderSetEvent>();
 
 export const onReminderSet = reminderSets.on;
-export const emitReminderSet = reminderSets.emit;
+export const emitReminderSet = (event: ReminderSetEvent) => {
+  trace(`t:${event.threadId.slice(-4)}`, `reminder set for ${new Date(event.at).toLocaleString()}`, 'ok');
+  reminderSets.emit(event);
+};
 
 const filings = createEmitter<FilingEvent>();
 

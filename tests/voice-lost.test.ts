@@ -77,6 +77,20 @@ describe('a voice note whose recording is gone', () => {
     expect((await readVoiceLog()).map((l) => l.text)).toContain("LOST: 1 recording couldn't be read");
   });
 
+  it('a readable one leaves its steps in the live trace', async () => {
+    const { clearTrace, traceSnapshot } = await import('@/lib/trace');
+    clearTrace();
+    audio.clips = [{ data: 'A'.repeat(4096), mimeType: 'audio/m4a' }];
+    retryWaitingNow();
+    const { state, store } = setup();
+    await resolvePendingEntry(state.entries[0], store as never);
+    const steps = traceSnapshot().events.map((e) => `${e.topic} ${e.text}`);
+    expect(steps[0]).toBe('e:v1 read 1 of 1 recording (3 KB)');
+    expect(steps.some((s) => s.startsWith('e:v1 Gemini read it: “Milk” · heard “Buy milk”'))).toBe(true);
+    expect(steps.at(-1)).toBe('e:v1 processing → done');
+    expect(traceSnapshot().active).toEqual([]);
+  });
+
   it('a readable one is written out, and the log says how much (never what)', async () => {
     audio.clips = [{ data: 'A'.repeat(4096), mimeType: 'audio/m4a' }];
     const { state, store } = setup();
