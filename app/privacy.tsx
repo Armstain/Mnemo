@@ -31,6 +31,10 @@ const PRIVACY_FACTS = [
       "With Smart mode on, a voice note is recorded and sent to Google to be written out (to Groq instead, if you added a Groq key and Google can't), then the recording is deleted from the phone. Offline, nothing is recorded: your phone's speech service turns what you say into text as you talk (on many phones that is Google's, which may process it online). Mnemo never keeps the audio.",
   },
   {
+    title: 'On-device model',
+    body: "Off unless you turn it on (Offline → Name notes on the phone). Then the model file is downloaded once, from Hugging Face, which sees the download like any website. After that it runs on the phone: your notes are never sent anywhere to be named.",
+  },
+  {
     title: 'Links',
     body: 'A link you save is opened by the phone, once, to show its title and picture. That page sees the request like any visit. With Smart mode on, the title and description it gives are sent with your note; the page itself is not.',
   },

@@ -72,6 +72,11 @@ standing in a shop. Mnemo optimises for two moments:
   from other apps; a shared link is categorised from its page, no note needed.
 - 📴 **Works without AI** — the phone reads times, amounts, lists, links and a
   best-guess category on its own.
+- 🧠 **Optional on-device model (Android)** — offline, turn on *Name notes on the
+  phone* and a small model (Qwen3.5-0.8B, a one-time ~533 MB download, size- and
+  SHA-256-checked) gives notes short titles and tags a few seconds after they're
+  saved. It only fills gaps the phone's reader leaves; your words are never
+  rewritten and nothing leaves the phone.
 - 🔒 **Encrypted backups** — passphrase-protected, photos included, nothing uploaded
   anywhere. On Android, a daily automatic backup into a folder you choose, and a
   nudge on Home when your notes haven't been backed up in a while.
@@ -89,6 +94,8 @@ Mnemo is local-first. There is no account, no server, no analytics, no ads.
   filing; the title and description of a link you save, so notes about it make sense;
   link previews fetched by your phone. Voice recordings are deleted once
   transcribed.
+- **The on-device model**, if you turn it on, is downloaded once from Hugging Face;
+  notes are never sent to be named.
 - **What never leaves:** everything else. There is no telemetry — nothing to opt
   out of, because nothing is collected.
 
@@ -103,6 +110,7 @@ Built with Expo (SDK 57) and React Native, in strict TypeScript:
   AsyncStorage; secrets in `expo-secure-store`
 - **Search:** BM25 keyword index + Gemini embeddings (768-dim, stored locally)
 - **Voice:** `expo-audio` recording; Gemini / Groq Whisper / on-device recognition
+- **On-device model:** `llama.rn` (llama.cpp), JSON-schema-constrained output; see `lib/local-ai.ts`
 - **Native:** Android widget, quick actions, share intents, reliability helpers
 
 ## Project structure

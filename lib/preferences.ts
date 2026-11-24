@@ -34,6 +34,11 @@ export interface Preferences {
    * Google a second time (an embedding), which used up the free quota for little gain.
    */
   meaningSearch?: boolean;
+  /**
+   * Offline, a small model on the phone names and tags notes the phone's own reader has read
+   * (lib/local-ai.ts). Off until turned on: it needs a one-time model download (Settings → How Mnemo thinks).
+   */
+  localModel?: boolean;
   /** Place reminders (Settings → Location). Off until turned on: nothing is watched or asked for. */
   places?: boolean;
   /** Vibration feedback on taps and results (Settings → Appearance). On unless turned off. */

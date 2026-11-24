@@ -6,6 +6,7 @@ import { haptic } from '@/lib/haptics';
 import { Surface } from '@/components/ui/Card';
 import { Icon, type IconName } from '@/components/ui/Icon';
 import { ToggleRow } from '@/components/ui/ToggleRow';
+import { LocalModelCard } from '@/components/settings/LocalModelCard';
 import { useThemeColors } from '@/hooks/use-theme';
 import { getActiveApiKey } from '@/lib/api-key';
 import { setPreferences, usePreferences, type AiMode } from '@/lib/preferences';
@@ -93,6 +94,7 @@ export function AiModeCard({ children }: { children?: React.ReactNode }) {
         })}
       </Surface>
 
+      {mode === 'offline' ? <LocalModelCard /> : null}
       {mode === 'gemini' ? <MeaningSearchRow /> : null}
       {mode === 'gemini' ? children : null}
     </View>

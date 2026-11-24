@@ -8,6 +8,7 @@ import { aiEnabled, setAiProblem } from '@/lib/ai-mode';
 import { onApiKeyChanged } from '@/lib/api-key';
 import { aiErrorText, classifyAiError, isNoConnection } from '@/lib/ai-error';
 import { readJson, writeJson } from '@/lib/storage';
+import { polishLater } from '@/lib/local-polish';
 import { logError } from '@/lib/errors';
 import { noteVoice, wordCount } from '@/lib/voice-log';
 import { begin, gist, noteTopic, took, trace } from '@/lib/trace';
@@ -221,6 +222,7 @@ export function saveNote(source: Entry['source'], params: NoteInput): { threadId
     'ok',
   );
   if (ai) resolvePendingEntry(saved.entry, store);
+  else polishLater(saved.entry.id, store);
   enrichLinks(saved.entry.id, store);
   return saved;
 }

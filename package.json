@@ -55,6 +55,7 @@
     "expo-system-ui": "~57.0.4",
     "expo-task-manager": "~57.0.21",
     "expo-web-browser": "~57.0.3",
+    "llama.rn": "0.12.9",
     "lucide-react-native": "^1.8.0",
     "moti": "^0.30.0",
     "punycode": "^2.3.1",

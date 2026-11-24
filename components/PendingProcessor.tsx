@@ -3,6 +3,7 @@ import { AppState } from 'react-native';
 import { useMnemoStore } from '@/hooks/use-mnemo-store';
 import { finishOnDevice, releaseThread, resolvePendingEntry, retryWaitingNow } from '@/lib/capture';
 import { trace } from '@/lib/trace';
+import { polishWaiting } from '@/lib/local-polish';
 import { runInPool } from '@/lib/send-queue';
 import { deleteUnusedAudio } from '@/lib/voice-audio';
 import { getPreferences, setPreferences, usePreferences } from '@/lib/preferences';
@@ -162,7 +163,8 @@ async function sendWaiting(pending: Waiting[0][], store: Waiting[1]): Promise<vo
  * 1. Sends notes still waiting for Gemini, at startup, whenever the app
  *    comes back to the foreground, and every minute while any wait (each
  *    note backs off on its own after a failure; see resolvePendingEntry).
- * 2. Offline, finishes any waiting note with the phone's own reading.
+ * 2. Offline, finishes any waiting note with the phone's own reading, and
+ *    lets the on-device model (if on) name notes it hadn't got to yet.
  * 3. Backfills embeddings for notes that don't have one yet, and for
  *    their passages, except notes written before Gemini was turned on,
  *    until the person agrees.
@@ -193,6 +195,8 @@ export function PendingProcessor() {
         for (const item of items.filter((i) => i.pending && !waiting.some((e) => e.threadId === i.id))) {
           current.updateItem(item.id, { pending: false });
         }
+        // Notes the on-device model hadn't named yet when the app last closed.
+        void polishWaiting(current);
         return;
       }
       if (pending.length > 0) trace('queue', `${pending.length} note${pending.length === 1 ? '' : 's'} waiting for Gemini`);
