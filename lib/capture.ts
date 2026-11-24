@@ -394,6 +394,8 @@ async function nameFromWords(store: CaptureStore, threadId: string, words: strin
   if (Object.keys(updates).length > 0) store.updateItem(threadId, updates);
   if (updates.dueDate) emitReminderSet({ threadId, at: updates.dueDate, before: reminderState(thread) });
 }
+/** Busy tries (about a minute and a half with back-off) before Whisper writes a voice note out instead. */
+const WHISPER_AFTER_BUSY_TRIES = 3;
 /** More photos would be slow and costly. */
 const MAX_PHOTOS_TO_AI = 3;
 
@@ -453,12 +455,23 @@ async function structure(entry: PendingEntry, store: CaptureStore): Promise<void
       void noteVoice(`written out by Gemini (${size}): ${wordCount(said ?? processed.notes ?? '')} words`);
     } catch (e) {
       if (e instanceof AiOffError) throw e;
+      // Whisper's guess becomes the note for good (the recording is deleted after it), and on a
+      // short Bangla clip it often guesses English or Hindi. Gemini busy for a moment is worth
+      // waiting for: the recording is kept and tried again with back-off, and Whisper steps in
+      // only once Gemini has been busy for a few tries, or can't do it at all (quota, key, refusal).
+      const tries = (attempts.get(entry.id)?.count ?? 0) + 1;
+      const transient = !isNoConnection(e) && ['busy', 'offline'].includes(classifyAiError(e));
+      const waitForGemini = !hasGroq() || (transient && tries < WHISPER_AFTER_BUSY_TRIES);
       // Once per reason: a note retried all day would otherwise fill the log with one line.
       const why = String((e as Error)?.message ?? e).slice(0, 100);
       if (lastVoiceFailure.get(entry.id) !== why) {
         lastVoiceFailure.set(entry.id, why);
-        void noteVoice(`Gemini couldn't write it out (${size}): ${why}${hasGroq() ? '; trying Whisper' : '; kept to retry'}`);
+        void noteVoice(
+          `Gemini couldn't write it out (${size}): ${why}` +
+            `${waitForGemini ? (hasGroq() ? '; kept to try Gemini again before Whisper' : '; kept to retry') : '; trying Whisper'}`,
+        );
       }
+      if (waitForGemini) throw e;
       // Fall back to Groq Whisper if a key exists; otherwise retried later with the recording.
       const whisper = hasGroq() ? begin(topic, 'Whisper (Groq) writing it out') : null;
       const words = hasGroq()

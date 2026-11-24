@@ -8,6 +8,7 @@ const audio = vi.hoisted(() => ({ clips: [] as { data: string; mimeType: string 
 const storage = vi.hoisted(() => new Map<string, string>());
 const logged = vi.hoisted(() => [] as string[]);
 const fail = vi.hoisted(() => ({ with: null as string | null }));
+const groq = vi.hoisted(() => ({ on: false, calls: 0 }));
 
 vi.mock('@react-native-async-storage/async-storage', () => ({
   default: { getItem: async (k: string) => storage.get(k) ?? null, setItem: async (k: string, v: string) => void storage.set(k, v) },
@@ -26,7 +27,13 @@ vi.mock('@/lib/voice-audio', () => ({
   loadAudio: async () => audio.clips,
   splitAudio: (uri?: string) => (uri ? uri.split('\n') : []),
 }));
-vi.mock('@/lib/groq', () => ({ hasGroq: () => false, transcribeAudio: async () => '' }));
+vi.mock('@/lib/groq', () => ({
+  hasGroq: () => groq.on,
+  transcribeAudio: async () => {
+    groq.calls += 1;
+    return 'buy milk';
+  },
+}));
 vi.mock('@/lib/errors', () => ({ logError: (where: string) => void logged.push(where) }));
 vi.mock('@/lib/ai-mode', () => ({ aiEnabled: () => true, setAiProblem: () => {} }));
 vi.mock('@/lib/preferences', () => ({ getPreferences: () => ({ places: false, speechLang: 'en-US' }), setPreferences: () => {} }));
@@ -127,6 +134,45 @@ describe('a voice note that keeps failing to be written out', () => {
   it('the reason is logged once, not on every retry', async () => {
     const texts = (await readVoiceLog()).map((l) => l.text).filter((t) => t.startsWith("Gemini couldn't"));
     expect(texts).toHaveLength(1);
+  });
+});
+
+describe('Gemini busy, with a Groq key', () => {
+  async function tries(error: string, times: number) {
+    audio.clips = [{ data: 'A'.repeat(400), mimeType: 'audio/m4a' }];
+    fail.with = error;
+    groq.on = true;
+    groq.calls = 0;
+    retryWaitingNow();
+    const { state, store } = setup();
+    const start = Date.now();
+    const clock = vi.spyOn(Date, 'now');
+    const whisperedOn: number[] = [];
+    try {
+      for (let i = 0; i < times; i++) {
+        // Past each back-off (30 s, 60 s, 2 min…).
+        clock.mockReturnValue(start + i * 10 * 60_000);
+        const before = groq.calls;
+        await resolvePendingEntry(state.entries[0], store as never);
+        if (groq.calls > before) whisperedOn.push(i + 1);
+      }
+    } finally {
+      clock.mockRestore();
+      fail.with = null;
+      groq.on = false;
+    }
+    return { whisperedOn, state };
+  }
+
+  it('keeps the recording for Gemini a few tries before Whisper writes it out', async () => {
+    const { whisperedOn, state } = await tries('503 UNAVAILABLE: This model is currently experiencing high demand', 3);
+    expect(whisperedOn).toEqual([3]);
+    expect(state.entries[0]).toMatchObject({ pending: false, transcript: 'buy milk' });
+  });
+
+  it("Whisper at once when Gemini can't do it at all (quota used up)", async () => {
+    const { whisperedOn } = await tries('429 RESOURCE_EXHAUSTED: quota exceeded for metric generate_content_free_tier_requests', 1);
+    expect(whisperedOn).toEqual([1]);
   });
 });
 

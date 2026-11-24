@@ -44,9 +44,15 @@ export function multipartBody(
   return { body, contentType: `multipart/form-data; boundary=${boundary}` };
 }
 
-async function once(audio: Audio, language?: string): Promise<string> {
+/**
+ * Whisper reads its prompt as text that came just before: a line of Bangla with English mixed in
+ * steers a short clip away from guessing English or Hindi, and keeps English words in English.
+ */
+export const BANGLA_HINT = 'আজকে অফিসে meeting আছে, তারপর বাজারে যেতে হবে।';
+
+async function once(audio: Audio, language?: string, prompt?: string): Promise<string> {
   const { body, contentType } = multipartBody(
-    { model: MODEL, response_format: 'json', ...(language ? { language } : {}) },
+    { model: MODEL, response_format: 'json', ...(language ? { language } : {}), ...(prompt ? { prompt } : {}) },
     audio,
   );
   const controller = new AbortController();
@@ -85,10 +91,11 @@ export async function transcribeAudio(audio: Audio[], { banglaSpeaker = false } 
   if (!hasGroq()) throw new Error('No Groq key');
   const parts: string[] = [];
   for (const a of audio) {
-    let text = await once(a);
+    const hint = banglaSpeaker ? BANGLA_HINT : undefined;
+    let text = await once(a, undefined, hint);
     // Whisper guesses the language from the first seconds and sometimes
     // takes Bangla for Hindi: asked again, as Bangla, for a Bangla speaker.
-    if (banglaSpeaker && looksLikeHindi(text)) text = await once(a, 'bn');
+    if (banglaSpeaker && looksLikeHindi(text)) text = await once(a, 'bn', hint);
     if (text) parts.push(text);
   }
   return parts.join(' ').trim();
