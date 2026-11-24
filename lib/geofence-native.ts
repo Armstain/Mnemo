@@ -13,6 +13,12 @@ interface NativeGeofencing {
   stopGeofencing(task: string): Promise<void>;
   hasStartedGeofencing(task: string): boolean;
   geofenceOutcome(): unknown;
+  geofenceTrace?(): unknown;
+}
+
+export interface TraceEntry {
+  at: number;
+  line: string;
 }
 
 const mod = Platform.OS === 'android' ? requireOptionalNativeModule<Partial<NativeGeofencing>>('MnemoReliability') : null;
@@ -24,6 +30,8 @@ export interface Geofencing {
   started(task: string): boolean;
   /** Android's last answer, stored on the phone; also the one given after a restart. */
   outcome(): GeofenceOutcome | null;
+  /** What the native side heard and did, oldest first, written even when JS never ran. */
+  trace(): TraceEntry[];
 }
 
 export const nativeGeofencing: Geofencing | null = native
@@ -42,6 +50,17 @@ export const nativeGeofencing: Geofencing | null = native
           return asOutcome(native.geofenceOutcome());
         } catch {
           return null;
+        }
+      },
+      trace: () => {
+        try {
+          const raw = native.geofenceTrace?.();
+          if (!Array.isArray(raw)) return [];
+          return raw
+            .filter((e): e is TraceEntry => !!e && typeof e.at === 'number' && typeof e.line === 'string')
+            .map(({ at, line }) => ({ at, line }));
+        } catch {
+          return [];
         }
       },
     }

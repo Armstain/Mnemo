@@ -3,6 +3,7 @@ package expo.modules.mnemoreliability
 import android.content.Context
 import android.os.Handler
 import android.os.Looper
+import org.json.JSONArray
 import org.json.JSONObject
 
 /**
@@ -18,6 +19,8 @@ object GeofenceOutcomes {
   private const val PREFS = "mnemo.geofence"
   private const val KEY = "outcome"
   private const val WAIT_MS = 10_000L
+  private const val TRACE = "trace"
+  private const val TRACE_MAX = 30
 
   /**
    * Set by the module just before it registers. A registration without it was started by the
@@ -29,7 +32,27 @@ object GeofenceOutcomes {
   private val waiting = mutableListOf<(Map<String, Any?>) -> Unit>()
   private val main = Handler(Looper.getMainLooper())
 
+  @Synchronized
+  fun trace(context: Context, line: String) {
+    val prefs = context.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+    val list = prefs.getString(TRACE, null)?.let { runCatching { JSONArray(it) }.getOrNull() } ?: JSONArray()
+    list.put(JSONObject().put("at", System.currentTimeMillis().toDouble()).put("line", line))
+    while (list.length() > TRACE_MAX) list.remove(0)
+    prefs.edit().putString(TRACE, list.toString()).commit()
+  }
+
+  fun readTrace(context: Context): List<Map<String, Any?>> {
+    val raw = context.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString(TRACE, null) ?: return emptyList()
+    return try {
+      val list = JSONArray(raw)
+      (0 until list.length()).map { toMap(list.getJSONObject(it)) }
+    } catch (e: Exception) {
+      emptyList()
+    }
+  }
+
   fun record(context: Context, state: String, count: Int, restored: Boolean, code: Int? = null, message: String? = null) {
+    trace(context, "${if (restored) "restored" else "set"} $count: $state${if (code != null) " ($code)" else ""}")
     val json = JSONObject().apply {
       put("state", state)
       put("count", count)

@@ -64,7 +64,21 @@ class MnemoGeofencingConsumer(context: Context, taskManagerUtils: TaskManagerUti
   }
 
   override fun didReceiveBroadcast(intent: Intent) {
-    val event = GeofencingEvent.fromIntent(intent) ?: return
+    val event = GeofencingEvent.fromIntent(intent)
+    if (event == null) {
+      context?.let { GeofenceOutcomes.trace(it, "heard a broadcast with no geofencing event") }
+      return
+    }
+    context?.let { ctx ->
+      val what = if (event.hasError()) "error ${event.errorCode}" else when (event.geofenceTransition) {
+        Geofence.GEOFENCE_TRANSITION_ENTER -> "enter"
+        Geofence.GEOFENCE_TRANSITION_EXIT -> "exit"
+        else -> "transition ${event.geofenceTransition}"
+      }
+      val ids = event.triggeringGeofences.orEmpty().joinToString(",") { "p:${it.requestId.takeLast(4)}" }
+      val known = event.triggeringGeofences.orEmpty().count { regions.containsKey(it.requestId) }
+      GeofenceOutcomes.trace(ctx, "heard $what $ids (task ${if (task != null) "ready" else "missing"}, $known/${regions.size} known)")
+    }
     if (event.hasError()) {
       // Android stopped watching (usually "not available": location accuracy turned off). Its
       // geofences are gone until set again; say so, and tell the JS task as expo-location does.
@@ -91,14 +105,23 @@ class MnemoGeofencingConsumer(context: Context, taskManagerUtils: TaskManagerUti
   }
 
   override fun didExecuteJob(jobService: JobService, params: JobParameters): Boolean {
-    val current = task ?: return false
-    for (item in taskManagerUtils.extractDataFromJobParams(params)) {
+    val ctx = context?.applicationContext
+    val current = task ?: run {
+      ctx?.let { GeofenceOutcomes.trace(it, "job ran without a task") }
+      return false
+    }
+    val items = taskManagerUtils.extractDataFromJobParams(params)
+    ctx?.let { GeofenceOutcomes.trace(it, "job ran: ${items.size} for JS") }
+    for (item in items) {
       val region = Bundle()
       region.putAll(item.getPersistableBundle("region"))
       val bundle = Bundle()
       bundle.putInt("eventType", item.getInt("eventType"))
       bundle.putBundle("region", region)
-      current.execute(bundle, null) { jobService.jobFinished(params, false) }
+      current.execute(bundle, null) {
+        ctx?.let { GeofenceOutcomes.trace(it, "JS finished") }
+        jobService.jobFinished(params, false)
+      }
     }
     // Still running: the callback above finishes the job once JS is done.
     return true

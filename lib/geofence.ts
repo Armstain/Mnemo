@@ -465,10 +465,12 @@ export async function placeReport(): Promise<string> {
     const android = nativeGeofencing ? `\n${outcomeReport(nativeGeofencing.outcome())}` : '';
     const reminders = reminderLines(await getAllItems().catch(() => []));
     const log = logLines(await readPlaceLog());
+    const trace = nativeGeofencing ? nativeGeofencing.trace().map((e) => `${stamp(e.at)} ${e.line}`) : null;
     return [
       `Places watched: ${count}${count ? ` since ${when(watch?.since)} (set again on every launch)` : ''} · last place event: ${event ? `${event.event} ${when(event.at)}` : 'never'}${android}`,
       `Place reminders: ${reminders.length ? `\n${reminders.join('\n')}` : 'none'}`,
       `Place log (last ${log.length}): ${log.length ? `\n${log.join('\n')}` : 'empty'}`,
+      ...(trace ? [`Android side (last ${trace.length}): ${trace.length ? `\n${trace.join('\n')}` : 'empty'}`] : []),
     ].join('\n');
   } catch {
     return 'Places: unreadable';
