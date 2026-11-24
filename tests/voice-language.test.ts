@@ -24,6 +24,11 @@ describe('which language a voice note is in', () => {
     expect(languageOf('ok')).toBeNull();
   });
 
+  it('Bangla written out as Hindi still counts as Bangla, so listening never switches to English over it', () => {
+    expect(languageOf('कल सुबह डॉक्टर के पास जाना है')).toBe('bn-BD');
+    expect(languageOf('कल सुबह doctor के पास जाना है')).toBe('bn-BD');
+  });
+
   it('Bangla written out as Hindi is caught, so it can be asked for again as Bangla', () => {
     expect(looksLikeHindi('कल सुबह डॉक्टर के पास जाना है')).toBe(true);
     expect(looksLikeHindi('কাল সকালে ডাক্তারের কাছে যেতে হবে')).toBe(false);

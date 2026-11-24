@@ -2,10 +2,16 @@ import type { SpeechLang } from '@/lib/preferences';
 
 const BENGALI = /[\u0980-\u09FF]/g;
 const LATIN = /[A-Za-z]/g;
+const DEVANAGARI = /[\u0900-\u097F]/g;
 
-/** Which language a text is mostly in, by script (null if too short to tell). */
+/**
+ * Which language a text is mostly in, by script (null if too short to tell). Hindi script counts
+ * as Bangla: Mnemo only listens in Bangla and English, so Devanagari is Bangla misheard (as with
+ * `heardLanguage`). Counted as English, one misheard note switched listening to English, and from
+ * then on Bangla came back as random English offline, and Whisper's Hindi was no longer corrected.
+ */
 export function languageOf(text: string): SpeechLang | null {
-  const bn = text.match(BENGALI)?.length ?? 0;
+  const bn = (text.match(BENGALI)?.length ?? 0) + (text.match(DEVANAGARI)?.length ?? 0);
   const en = text.match(LATIN)?.length ?? 0;
   if (bn + en < 4) return null;
   return bn >= en ? 'bn-BD' : 'en-US';
@@ -23,7 +29,6 @@ export function heardLanguage(detected: string | null | undefined): SpeechLang |
   return null;
 }
 
-const DEVANAGARI = /[\u0900-\u097F]/g;
 
 /** Written in Devanagari (Hindi script) more than Bangla: a misheard Bangla note. */
 export function looksLikeHindi(text: string): boolean {
