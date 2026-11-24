@@ -91,7 +91,8 @@ class MnemoReliabilityModule : Module() {
     }
 
     Function("geofenceTrace") {
-      return@Function appContextOrNull?.let { GeofenceOutcomes.readTrace(it) } ?: emptyList()
+      val ctx = appContextOrNull ?: return@Function emptyList<Map<String, Any?>>()
+      return@Function GeofenceOutcomes.readTrace(ctx)
     }
 
     Function("buzz") { pattern: List<Double> ->
