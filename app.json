@@ -152,7 +152,8 @@
           "enableOpenCLAndHexagon": false,
           "enableEntitlements": false
         }
-      ]
+      ],
+      "./plugins/with-slim-llama"
     ],
     "experiments": {
       "typedRoutes": true
