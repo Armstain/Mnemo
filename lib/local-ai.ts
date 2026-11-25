@@ -19,10 +19,10 @@ let context: Promise<LlamaContext> | null = null;
 let closeTimer: ReturnType<typeof setTimeout> | null = null;
 let queue: Promise<unknown> = Promise.resolve();
 
-/** True when notes should be read by the on-device model: offline, turned on, and the model is on the phone. */
+/** True when the on-device model may read notes: turned on, and the model is on the phone. */
 export function localAiEnabled(): boolean {
   const prefs = getPreferences();
-  return Platform.OS === 'android' && prefs.aiMode !== 'gemini' && prefs.localModel === true && localModelReady();
+  return Platform.OS === 'android' && prefs.localModel === true && localModelReady();
 }
 
 async function open(): Promise<LlamaContext> {

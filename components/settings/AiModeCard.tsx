@@ -94,9 +94,9 @@ export function AiModeCard({ children }: { children?: React.ReactNode }) {
         })}
       </Surface>
 
-      {mode === 'offline' ? <LocalModelCard /> : null}
       {mode === 'gemini' ? <MeaningSearchRow /> : null}
       {mode === 'gemini' ? children : null}
+      <LocalModelCard />
     </View>
   );
 }

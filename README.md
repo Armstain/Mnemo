@@ -72,8 +72,8 @@ standing in a shop. Mnemo optimises for two moments:
   from other apps; a shared link is categorised from its page, no note needed.
 - 📴 **Works without AI** — the phone reads times, amounts, lists, links and a
   best-guess category on its own.
-- 🧠 **Optional on-device model (Android)** — offline, turn on *Name notes on the
-  phone* and a small model (Qwen3.5-0.8B, a one-time ~533 MB download, size- and
+- 🧠 **Optional on-device model (Android)** — turn on *Name notes on the
+  phone* (offline, or as a fallback when Gemini can't answer) and a small model (Qwen3.5-0.8B, a one-time ~533 MB download, size- and
   SHA-256-checked) gives notes short titles and tags a few seconds after they're
   saved. It only fills gaps the phone's reader leaves; your words are never
   rewritten and nothing leaves the phone.

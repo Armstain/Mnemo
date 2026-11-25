@@ -35,7 +35,7 @@ export interface Preferences {
    */
   meaningSearch?: boolean;
   /**
-   * Offline, a small model on the phone names and tags notes the phone's own reader has read
+   * A small model on the phone names and tags notes offline, and while Gemini can't answer
    * (lib/local-ai.ts). Off until turned on: it needs a one-time model download (Settings → How Mnemo thinks).
    */
   localModel?: boolean;

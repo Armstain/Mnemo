@@ -845,6 +845,7 @@ export async function resolvePendingEntry(entry: PendingEntry, store: CaptureSto
     done?.('ok', 'done');
     return false;
   } catch (e) {
+    if (!(e instanceof AiOffError)) polishLater(entry.id, store);
     const why = String((e as Error)?.message ?? e).replace(/\s+/g, ' ').slice(0, 120);
     if (e instanceof AiOffError) {
       done?.('warn', 'Gemini is off: waits');

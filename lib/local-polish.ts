@@ -7,7 +7,7 @@ import { MAX_TAGS, understand } from '@/lib/understand';
 import type { Entry, MnemoItem } from '@/types/mnemo';
 import type { CaptureStore } from '@/types/store';
 
-// Offline with the on-device model on: a note is saved and read by the phone's own reader at once,
+// With the on-device model on, offline (or while Gemini can't answer): a note is saved and read by the phone's own reader at once,
 // exactly as without it, and then the model names and tags it a few seconds later. The note is
 // never waiting on the model and never changed by it: only its thread's title (when the reader's
 // was cut off or generic and nobody has renamed it), kind, category (when unset) and tags.
@@ -43,6 +43,7 @@ export function polishLater(entryId: string, store: Store): void {
 }
 
 let running = false;
+const polished = new Set<string>();
 
 /** Reads every queued note. Called after a save and by the background sweep (components/PendingProcessor). */
 export async function polishWaiting(store: Store): Promise<void> {
@@ -72,9 +73,11 @@ function mergeTags(have: string[], add: string[]): string[] {
 
 async function polishOne(entryId: string, store: Store): Promise<void> {
   const entry = store.snapshot().entries.find((e) => e.id === entryId);
-  if (!entry || entry.pending) return;
+  if (!entry) return;
+  const geminiLater = !!entry.pending;
   const words = textOf(entry);
-  if (words.length < 3) return;
+  if (words.length < 3 || polished.has(`${entryId}:${words}`)) return;
+  polished.add(`${entryId}:${words}`);
   const topic = noteTopic(entryId);
   const local = await readNoteLocally(words, topic);
   if (!local) return;
@@ -93,9 +96,9 @@ async function polishOne(entryId: string, store: Store): Promise<void> {
   // Only a thread this note started, and only while it still has the name the phone gave it.
   const untouchedTitle = !thread.pinned?.title && (thread.title === rule.title.slice(0, 80) || !rule.title);
   if (ownThread && merged.title && untouchedTitle) updates.title = merged.title.slice(0, 80);
-  if (ownThread && merged.kind && !thread.pinned?.kind) updates.kind = merged.kind;
+  if (ownThread && !geminiLater && merged.kind && !thread.pinned?.kind) updates.kind = merged.kind;
   const category = ideaCategory(merged.category, updates.kind ?? thread.kind);
-  if (ownThread && thread.category === 'general' && category && category !== 'general') updates.category = category;
+  if (ownThread && !geminiLater && thread.category === 'general' && category && category !== 'general') updates.category = category;
   const tags = mergeTags(thread.tags, merged.tags);
   if (tags.length !== thread.tags.length) updates.tags = tags;
 

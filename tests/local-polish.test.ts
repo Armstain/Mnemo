@@ -31,9 +31,9 @@ interface T {
   pinned?: { title?: boolean; kind?: boolean };
 }
 
-function makeStore(threads: T[], entries: { id: string; threadId: string; text: string }[]) {
+function makeStore(threads: T[], entries: { id: string; threadId: string; text: string; pending?: boolean }[]) {
   const items = new Map(threads.map((t) => [t.id, { ...t }]));
-  const es = entries.map((e) => ({ ...e, pending: false, transcript: e.text, blocks: [{ kind: 'text', markdown: e.text }] }));
+  const es = entries.map((e) => ({ pending: false, ...e, transcript: e.text, blocks: [{ kind: 'text', markdown: e.text }] }));
   return {
     snapshot: () => ({ entries: es, items: [...items.values()] }),
     getThread: (id: string) => items.get(id),
@@ -59,8 +59,8 @@ async function polish(store: Parameters<typeof polishLater>[1], id: string) {
 
 describe('the on-device model naming a saved note', () => {
   it('renames a thread the note started, and tags it', async () => {
-    const store = makeStore([{ id: 't1', title: SINK_TITLE, category: 'errands', kind: 'task', tags: [] }], [{ id: 'e1', threadId: 't1', text: SINK }]);
-    await polish(store, 'e1');
+    const store = makeStore([{ id: 't1', title: SINK_TITLE, category: 'errands', kind: 'task', tags: [] }], [{ id: 'e1b', threadId: 't1', text: SINK }]);
+    await polish(store, 'e1b');
     expect(store.getThread('t1')).toMatchObject({ title: 'Kitchen sink leak', category: 'errands', kind: 'task', tags: ['plumber', 'sink'] });
   });
 
@@ -71,11 +71,11 @@ describe('the on-device model naming a saved note', () => {
         { id: 't2', title: SINK_TITLE, category: 'general', tags: [], pinned: { title: true } },
       ],
       [
-        { id: 'e1', threadId: 't1', text: SINK },
+        { id: 'e1c', threadId: 't1', text: SINK },
         { id: 'e2', threadId: 't2', text: SINK },
       ],
     );
-    await polish(store, 'e1');
+    await polish(store, 'e1c');
     await polish(store, 'e2');
     expect(store.getThread('t1')?.title).toBe('Sink!!');
     expect(store.getThread('t2')?.title).toBe(SINK_TITLE);
@@ -86,26 +86,35 @@ describe('the on-device model naming a saved note', () => {
       [{ id: 't1', title: 'House', category: 'general', tags: ['home'] }],
       [
         { id: 'e0', threadId: 't1', text: 'paint the hall' },
-        { id: 'e1', threadId: 't1', text: SINK },
+        { id: 'e1d', threadId: 't1', text: SINK },
       ],
     );
-    await polish(store, 'e1');
+    await polish(store, 'e1d');
     expect(store.getThread('t1')).toMatchObject({ title: 'House', category: 'general', tags: ['home', 'plumber', 'sink'] });
     expect(store.getThread('t1')?.kind).toBeUndefined();
   });
 
   it('a model that fails leaves the note as the phone read it, and moves on', async () => {
     answer = null;
-    const store = makeStore([{ id: 't1', title: SINK_TITLE, category: 'errands', tags: [] }], [{ id: 'e1', threadId: 't1', text: SINK }]);
-    await polish(store, 'e1');
+    const store = makeStore([{ id: 't1', title: SINK_TITLE, category: 'errands', tags: [] }], [{ id: 'e1e', threadId: 't1', text: SINK }]);
+    await polish(store, 'e1e');
     expect(store.getThread('t1')?.title).toBe(SINK_TITLE);
     expect(JSON.parse(disk.get('mnemo-local-waiting') ?? '[]')).toEqual([]);
   });
 
   it('does nothing when the model is off', async () => {
     enabled = false;
-    const store = makeStore([{ id: 't1', title: SINK_TITLE, category: 'errands', tags: [] }], [{ id: 'e1', threadId: 't1', text: SINK }]);
-    await polish(store, 'e1');
+    const store = makeStore([{ id: 't1', title: SINK_TITLE, category: 'errands', tags: [] }], [{ id: 'e1f', threadId: 't1', text: SINK }]);
+    await polish(store, 'e1f');
     expect(asked).toEqual([]);
+  });
+
+  it('while Gemini is still to come, only names and tags it, once', async () => {
+    const store = makeStore([{ id: 't1', title: SINK_TITLE, category: 'general', tags: [] }], [{ id: 'e9', threadId: 't1', text: SINK, pending: true }]);
+    await polish(store, 'e9');
+    await polish(store, 'e9');
+    expect(store.getThread('t1')).toMatchObject({ title: 'Kitchen sink leak', category: 'general', tags: ['plumber', 'sink'] });
+    expect(store.getThread('t1')?.kind).toBeUndefined();
+    expect(asked).toHaveLength(1);
   });
 });

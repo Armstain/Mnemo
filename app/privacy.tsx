@@ -32,7 +32,7 @@ const PRIVACY_FACTS = [
   },
   {
     title: 'On-device model',
-    body: "Off unless you turn it on (Offline → Name notes on the phone). Then the model file is downloaded once, from Hugging Face, which sees the download like any website. After that it runs on the phone: your notes are never sent anywhere to be named.",
+    body: "Off unless you turn it on (How Mnemo thinks → Name notes on the phone). Then the model file is downloaded once, from Hugging Face, which sees the download like any website. After that it runs on the phone: your notes are never sent anywhere to be named.",
   },
   {
     title: 'Links',

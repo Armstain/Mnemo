@@ -37,7 +37,7 @@ function startDownload() {
 
 /** Settings → How Mnemo thinks → Offline: a small model on the phone that names and tags notes. Android only. */
 export function LocalModelCard() {
-  const { localModel } = usePreferences();
+  const { localModel, aiMode } = usePreferences();
   const state = useLocalModelState();
   useEffect(() => {
     refreshLocalModel();
@@ -62,8 +62,9 @@ export function LocalModelCard() {
         <View className="flex-1">
           <Text className="font-sans-semi text-sm text-fg">Name notes on the phone</Text>
           <Text className="font-sans text-sm text-fg-secondary leading-relaxed mt-1">
-            A small AI model gives notes short titles and tags, a few seconds after you save them. Slower and simpler
-            than Smart, and nothing leaves your phone.
+            {aiMode === 'gemini'
+              ? "When Gemini can't answer (no connection, daily limit), a small AI model on the phone names and tags typed notes until it can."
+              : 'A small AI model gives notes short titles and tags, a few seconds after you save them. Slower and simpler than Smart, and nothing leaves your phone.'}
           </Text>
         </View>
         <ToggleSwitch value={on} onValueChange={onToggle} label="Name notes on the phone" />
