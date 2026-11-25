@@ -124,7 +124,7 @@ export function LocalModelCard() {
           <Text className="font-sans text-sm text-fg-secondary flex-1">
             {state.kind === 'downloading'
               ? `Downloading… ${percent(state.done, state.total)} of ${SIZE}`
-              : `Checking the file… ${percent(state.done, state.total)}`}
+              : 'Checking the file…'}
           </Text>
           {state.kind === 'downloading' ? (
             <Button variant="ghost" size="sm" onPress={cancelLocalModelDownload}>

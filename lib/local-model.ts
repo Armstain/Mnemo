@@ -1,30 +1,29 @@
-import { sha256 } from '@noble/hashes/sha2.js';
 import { Directory, DownloadTask, File, Paths } from 'expo-file-system';
 import { getPreferences } from '@/lib/preferences';
 import { trace } from '@/lib/trace';
 import { createValueStore } from '@/lib/value-store';
 
 // The on-device model file: downloaded only when the person asks (Settings → How Mnemo thinks),
-// into the app's own storage, and kept only if its size and SHA-256 are exactly these. Nothing
+// into the app's own storage, and kept only if its size and MD5 are exactly these. Nothing
 // else is sent anywhere: the download is a plain GET of a public file.
 
 export type LocalModelSize = 'small' | 'better';
 
-export const LOCAL_MODELS: Record<LocalModelSize, { label: string; name: string; url: string; bytes: number; sha256: string }> = {
+export const LOCAL_MODELS: Record<LocalModelSize, { label: string; name: string; url: string; bytes: number; md5: string }> = {
   /** Qwen3.5-0.8B (Apache 2.0), Q4_K_M quantisation by Unsloth. */
   small: {
     label: 'Qwen3.5-0.8B',
     name: 'Qwen3.5-0.8B-Q4_K_M.gguf',
     url: 'https://huggingface.co/unsloth/Qwen3.5-0.8B-GGUF/resolve/main/Qwen3.5-0.8B-Q4_K_M.gguf',
     bytes: 532_517_120,
-    sha256: 'bd258782e35f7f458f8aced1adc053e6e92e89bc735ba3be89d38a06121dc517',
+    md5: '54e125d56fa41fe6eed66034f9fd4fa5',
   },
   better: {
     label: 'Qwen3.5-2B',
     name: 'Qwen3.5-2B-Q4_K_M.gguf',
     url: 'https://huggingface.co/unsloth/Qwen3.5-2B-GGUF/resolve/main/Qwen3.5-2B-Q4_K_M.gguf',
     bytes: 1_280_835_840,
-    sha256: 'aaf42c8b7c3cab2bf3d69c355048d4a0ee9973d48f16c731c0520ee914699223',
+    md5: '6899b2510c7b0c480730d48c3117bd32',
   },
 };
 
@@ -33,14 +32,13 @@ export const currentLocalModel = () => LOCAL_MODELS[getPreferences().localModelS
 export type LocalModelState =
   | { kind: 'missing' }
   | { kind: 'downloading'; done: number; total: number }
-  | { kind: 'checking'; done: number; total: number }
+  | { kind: 'checking' }
   | { kind: 'ready' }
   | { kind: 'failed'; message: string };
 
 const FOLDER = 'models';
 /** Room left over after the model, so the phone isn't filled to the last byte. */
 const SPARE_BYTES = 300 * 1024 * 1024;
-const HASH_CHUNK = 4 * 1024 * 1024;
 
 const state = createValueStore<LocalModelState>({ kind: 'missing' });
 export const useLocalModelState = (): LocalModelState => state.useValue();
@@ -80,26 +78,6 @@ export const localModelReady = (): boolean => refreshLocalModel().kind === 'read
 
 let task: DownloadTask | null = null;
 
-async function hashOf(file: File, total: number): Promise<string> {
-  const hash = sha256.create();
-  const handle = file.open();
-  try {
-    let done = 0;
-    for (;;) {
-      const bytes = handle.readBytes(HASH_CHUNK);
-      if (bytes.length === 0) break;
-      hash.update(bytes);
-      done += bytes.length;
-      state.set({ kind: 'checking', done, total });
-      // Lets the screen draw between chunks: hashing half a gigabyte takes a while.
-      await new Promise((resolve) => setTimeout(resolve, 0));
-    }
-  } finally {
-    handle.close();
-  }
-  return [...hash.digest()].map((b) => b.toString(16).padStart(2, '0')).join('');
-}
-
 /** Downloads and checks the model. Resolves when it is ready or has failed (the state says which). */
 export async function downloadLocalModel(): Promise<void> {
   if (task || state.get().kind === 'downloading' || state.get().kind === 'checking') return;
@@ -121,8 +99,10 @@ export async function downloadLocalModel(): Promise<void> {
     if (!got) throw new Error('The download stopped.');
     const file = partFile();
     if (file.size !== model.bytes) throw new Error(`The file arrived the wrong size (${file.size} bytes).`);
-    const digest = await hashOf(file, model.bytes);
-    if (digest !== model.sha256) throw new Error("The file arrived damaged (its checksum didn't match).");
+    state.set({ kind: 'checking' });
+    const { getInfoAsync } = await import('expo-file-system/legacy');
+    const info = await getInfoAsync(file.uri, { md5: true });
+    if (!info.exists || info.md5 !== model.md5) throw new Error("The file arrived damaged (its checksum didn't match).");
     const final = modelFile();
     if (final.exists) final.delete();
     await file.move(final);

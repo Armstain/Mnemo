@@ -75,7 +75,7 @@ standing in a shop. Mnemo optimises for two moments:
 - 🧠 **Optional on-device model (Android)** — turn on *Name notes on the
   phone* (offline, or as a fallback when Gemini can't answer) and a small model
   (Qwen3.5-0.8B, 533 MB, or the better Qwen3.5-2B, 1.3 GB; a one-time download,
-  size- and SHA-256-checked) gives notes short titles and tags a few seconds after they're
+  size- and checksum-checked) gives notes short titles and tags a few seconds after they're
   saved. It only fills gaps the phone's reader leaves; your words are never
   rewritten and nothing leaves the phone.
 - 🔒 **Encrypted backups** — passphrase-protected, photos included, nothing uploaded
