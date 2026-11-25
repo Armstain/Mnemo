@@ -1,5 +1,6 @@
 import { sha256 } from '@noble/hashes/sha2.js';
 import { Directory, DownloadTask, File, Paths } from 'expo-file-system';
+import { getPreferences } from '@/lib/preferences';
 import { trace } from '@/lib/trace';
 import { createValueStore } from '@/lib/value-store';
 
@@ -7,13 +8,27 @@ import { createValueStore } from '@/lib/value-store';
 // into the app's own storage, and kept only if its size and SHA-256 are exactly these. Nothing
 // else is sent anywhere: the download is a plain GET of a public file.
 
-export const LOCAL_MODEL = {
+export type LocalModelSize = 'small' | 'better';
+
+export const LOCAL_MODELS: Record<LocalModelSize, { label: string; name: string; url: string; bytes: number; sha256: string }> = {
   /** Qwen3.5-0.8B (Apache 2.0), Q4_K_M quantisation by Unsloth. */
-  name: 'Qwen3.5-0.8B-Q4_K_M.gguf',
-  url: 'https://huggingface.co/unsloth/Qwen3.5-0.8B-GGUF/resolve/main/Qwen3.5-0.8B-Q4_K_M.gguf',
-  bytes: 532_517_120,
-  sha256: 'bd258782e35f7f458f8aced1adc053e6e92e89bc735ba3be89d38a06121dc517',
-} as const;
+  small: {
+    label: 'Qwen3.5-0.8B',
+    name: 'Qwen3.5-0.8B-Q4_K_M.gguf',
+    url: 'https://huggingface.co/unsloth/Qwen3.5-0.8B-GGUF/resolve/main/Qwen3.5-0.8B-Q4_K_M.gguf',
+    bytes: 532_517_120,
+    sha256: 'bd258782e35f7f458f8aced1adc053e6e92e89bc735ba3be89d38a06121dc517',
+  },
+  better: {
+    label: 'Qwen3.5-2B',
+    name: 'Qwen3.5-2B-Q4_K_M.gguf',
+    url: 'https://huggingface.co/unsloth/Qwen3.5-2B-GGUF/resolve/main/Qwen3.5-2B-Q4_K_M.gguf',
+    bytes: 1_280_835_840,
+    sha256: 'aaf42c8b7c3cab2bf3d69c355048d4a0ee9973d48f16c731c0520ee914699223',
+  },
+};
+
+export const currentLocalModel = () => LOCAL_MODELS[getPreferences().localModelSize ?? 'small'];
 
 export type LocalModelState =
   | { kind: 'missing' }
@@ -38,8 +53,8 @@ function folder(): Directory {
   return dir;
 }
 
-const modelFile = (): File => new File(folder(), LOCAL_MODEL.name);
-const partFile = (): File => new File(folder(), `${LOCAL_MODEL.name}.part`);
+const modelFile = (): File => new File(folder(), currentLocalModel().name);
+const partFile = (): File => new File(folder(), `${currentLocalModel().name}.part`);
 
 /** The path the engine opens (no file:// scheme). */
 export function localModelPath(): string {
@@ -47,13 +62,14 @@ export function localModelPath(): string {
 }
 
 /** Reads what is on the phone. Only a file of the exact size counts; it was hash-checked when it arrived. */
-export function refreshLocalModel(): LocalModelState {
+export function refreshLocalModel(fresh = false): LocalModelState {
   const current = state.get();
   if (current.kind === 'downloading' || current.kind === 'checking') return current;
+  const { bytes } = currentLocalModel();
   try {
     const file = modelFile();
-    const next: LocalModelState = file.exists && file.size === LOCAL_MODEL.bytes ? { kind: 'ready' } : { kind: 'missing' };
-    if (current.kind !== 'failed' || next.kind === 'ready') state.set(next);
+    const next: LocalModelState = file.exists && file.size === bytes ? { kind: 'ready' } : { kind: 'missing' };
+    if (fresh || current.kind !== 'failed' || next.kind === 'ready') state.set(next);
   } catch {
     state.set({ kind: 'missing' });
   }
@@ -64,7 +80,7 @@ export const localModelReady = (): boolean => refreshLocalModel().kind === 'read
 
 let task: DownloadTask | null = null;
 
-async function hashOf(file: File): Promise<string> {
+async function hashOf(file: File, total: number): Promise<string> {
   const hash = sha256.create();
   const handle = file.open();
   try {
@@ -74,7 +90,7 @@ async function hashOf(file: File): Promise<string> {
       if (bytes.length === 0) break;
       hash.update(bytes);
       done += bytes.length;
-      state.set({ kind: 'checking', done, total: LOCAL_MODEL.bytes });
+      state.set({ kind: 'checking', done, total });
       // Lets the screen draw between chunks: hashing half a gigabyte takes a while.
       await new Promise((resolve) => setTimeout(resolve, 0));
     }
@@ -88,27 +104,29 @@ async function hashOf(file: File): Promise<string> {
 export async function downloadLocalModel(): Promise<void> {
   if (task || state.get().kind === 'downloading' || state.get().kind === 'checking') return;
   if (refreshLocalModel().kind === 'ready') return;
+  const model = currentLocalModel();
   try {
-    if (Paths.availableDiskSpace < LOCAL_MODEL.bytes + SPARE_BYTES) {
-      state.set({ kind: 'failed', message: `Needs ${Math.ceil((LOCAL_MODEL.bytes + SPARE_BYTES) / 1e6)} MB free on the phone.` });
+    if (Paths.availableDiskSpace < model.bytes + SPARE_BYTES) {
+      state.set({ kind: 'failed', message: `Needs ${Math.ceil((model.bytes + SPARE_BYTES) / 1e6)} MB free on the phone.` });
       return;
     }
     const part = partFile();
     if (part.exists) part.delete();
-    state.set({ kind: 'downloading', done: 0, total: LOCAL_MODEL.bytes });
+    state.set({ kind: 'downloading', done: 0, total: model.bytes });
     trace('local-ai', 'model download started');
-    task = new DownloadTask(LOCAL_MODEL.url, part, {
-      onProgress: ({ bytesWritten }) => state.set({ kind: 'downloading', done: bytesWritten, total: LOCAL_MODEL.bytes }),
+    task = new DownloadTask(model.url, part, {
+      onProgress: ({ bytesWritten }) => state.set({ kind: 'downloading', done: bytesWritten, total: model.bytes }),
     });
     const got = await task.downloadAsync();
     if (!got) throw new Error('The download stopped.');
     const file = partFile();
-    if (file.size !== LOCAL_MODEL.bytes) throw new Error(`The file arrived the wrong size (${file.size} bytes).`);
-    const digest = await hashOf(file);
-    if (digest !== LOCAL_MODEL.sha256) throw new Error("The file arrived damaged (its checksum didn't match).");
+    if (file.size !== model.bytes) throw new Error(`The file arrived the wrong size (${file.size} bytes).`);
+    const digest = await hashOf(file, model.bytes);
+    if (digest !== model.sha256) throw new Error("The file arrived damaged (its checksum didn't match).");
     const final = modelFile();
     if (final.exists) final.delete();
     await file.move(final);
+    for (const other of folder().list()) if (other instanceof File && other.name !== model.name) other.delete();
     state.set({ kind: 'ready' });
     trace('local-ai', 'model downloaded and checked', 'ok');
   } catch (e) {

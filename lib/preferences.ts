@@ -39,6 +39,7 @@ export interface Preferences {
    * (lib/local-ai.ts). Off until turned on: it needs a one-time model download (Settings → How Mnemo thinks).
    */
   localModel?: boolean;
+  localModelSize?: 'small' | 'better';
   /** Place reminders (Settings → Location). Off until turned on: nothing is watched or asked for. */
   places?: boolean;
   /** Vibration feedback on taps and results (Settings → Appearance). On unless turned off. */
