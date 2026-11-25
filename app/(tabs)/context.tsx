@@ -56,7 +56,7 @@ import { matchEntries } from '@/lib/find';
 import { quietDays as quietFor } from '@/lib/review';
 import { openStepsOf } from '@/lib/wrapup';
 import { afterReminder, formatReminder, nextOccurrence, quickTimes, rescheduled } from '@/lib/when';
-import { occurrenceOf, placeLabel, repeatsAtPlace } from '@/lib/places';
+import { repeatsAtPlace } from '@/lib/places';
 import { usePlaces } from '@/lib/place-store';
 import { useCompleteThread, useStepDone } from '@/hooks/use-complete-thread';
 import { finishModel, isReminder, restates } from '@/lib/done';
@@ -86,7 +86,6 @@ export default function ThreadScreen() {
     focusThreadId,
     setFocusThread,
     fileEntry,
-    completePlaceOccurrence,
     snapshot,
   } = store;
   const { showUndoToast, showToast } = useUndoToast();
@@ -245,9 +244,6 @@ export default function ThreadScreen() {
   const model = finishModel(thread, entries);
   const recurring = model === 'occurrence';
   const placeRepeats = recurring && repeatsAtPlace(thread);
-  const occurrence = placeRepeats ? occurrenceOf(thread.place!) : null;
-  const doneToday = occurrence?.state === 'done';
-  const rangToday = occurrence !== null && occurrence.state !== 'none' && occurrence.at !== undefined;
 
   const finishThread = () => {
     if (hasHistory) router.push(wrapupHref(thread.id));
@@ -256,14 +252,6 @@ export default function ThreadScreen() {
 
   const handleDone = () => {
     if (!recurring) return finishThread();
-    if (placeRepeats) {
-      const undo = completePlaceOccurrence(thread.id);
-      if (!undo) return;
-      haptic.success();
-      const where = placeLabel(thread.place!, savedPlaces.find((p) => p.id === thread.place!.placeId));
-      showUndoToast(`${rangToday ? 'Done' : 'Done for today'}. ${where}, it reminds you again.`, undo);
-      return;
-    }
     // A repeating time reminder: nothing about it changes (its time, its repeat, the step it
     // reminds of all stay for the next one), so this only confirms when that is.
     haptic.success();
@@ -670,17 +658,12 @@ export default function ThreadScreen() {
                   </Button>
                 )}
                 {thread.status !== 'completed' ? (
-                  // The primary action: full height (44), filled, the completion feedback is its own.
-                  <Button
-                    variant={doneToday ? 'tonal' : 'primary'}
-                    icon="check"
-                    className="flex-1"
-                    haptic={false}
-                    disabled={doneToday}
-                    onPress={handleDone}
-                  >
-                    {recurring && !rangToday ? 'Done for today' : 'Done'}
-                  </Button>
+                  placeRepeats ? null : (
+                    // The primary action: full height (44), filled, the completion feedback is its own.
+                    <Button variant="primary" icon="check" className="flex-1" haptic={false} onPress={handleDone}>
+                      Done
+                    </Button>
+                  )
                 ) : hasHistory ? (
                   <Button variant="quiet" icon="share" className="flex-1" onPress={() => router.push(wrapupHref(thread.id))}>
                     Summary card

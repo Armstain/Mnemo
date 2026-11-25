@@ -113,9 +113,8 @@ export function PlaceReminderLabel({ thread }: { thread: MnemoItem }) {
   if (!on || !r || !isArmed(thread)) return null;
   const shaky = warnings.length > 0;
   const tone = shaky ? colors.accentWarm : colors.accent;
-  // A repeating one: today's ring, so it's plain that Done finished today and not the reminder.
   const today = r.repeat ? occurrenceOf(r) : null;
-  const todayText = today?.state === 'done' ? (today.at !== undefined ? 'Done this time' : 'Done for today') : today?.state === 'due' ? `Went off ${formatReminder(today.at).toLowerCase()}` : null;
+  const todayText = today && today.state !== 'none' && today.at !== undefined ? `Went off ${formatReminder(today.at).toLowerCase()}` : null;
   return (
     <View className="mt-2 gap-1.5">
       <View className="flex-row items-center" style={{ gap: 6 }}>
