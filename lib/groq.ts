@@ -1,5 +1,4 @@
 import { getActiveGroqApiKey } from '@/lib/api-key';
-import { looksLikeHindi } from '@/lib/language';
 import { base64ToBytes } from '@/lib/pcm';
 import type { Audio } from '@/lib/voice-audio';
 
@@ -44,15 +43,9 @@ export function multipartBody(
   return { body, contentType: `multipart/form-data; boundary=${boundary}` };
 }
 
-/**
- * Whisper reads its prompt as text that came just before: a line of Bangla with English mixed in
- * steers a short clip away from guessing English or Hindi, and keeps English words in English.
- */
-export const BANGLA_HINT = 'আজকে অফিসে meeting আছে, তারপর বাজারে যেতে হবে।';
-
-async function once(audio: Audio, language?: string, prompt?: string): Promise<string> {
+async function once(audio: Audio, language?: string): Promise<string> {
   const { body, contentType } = multipartBody(
-    { model: MODEL, response_format: 'json', ...(language ? { language } : {}), ...(prompt ? { prompt } : {}) },
+    { model: MODEL, response_format: 'json', ...(language ? { language } : {}) },
     audio,
   );
   const controller = new AbortController();
@@ -81,21 +74,12 @@ async function once(audio: Audio, language?: string, prompt?: string): Promise<s
   return typeof data.text === 'string' ? data.text.trim() : '';
 }
 
-/**
- * Writes out recordings in order, as one note. '' when nothing was said.
- * `banglaSpeaker`: the person listens in Bangla, so Devanagari coming back
- * is Bangla misheard as Hindi. For anyone else it may be real Hindi, which
- * is left as written.
- */
-export async function transcribeAudio(audio: Audio[], { banglaSpeaker = false } = {}): Promise<string> {
+/** Writes out recordings in order, as one note. '' when nothing was said. */
+export async function transcribeAudio(audio: Audio[], { language }: { language?: string } = {}): Promise<string> {
   if (!hasGroq()) throw new Error('No Groq key');
   const parts: string[] = [];
   for (const a of audio) {
-    const hint = banglaSpeaker ? BANGLA_HINT : undefined;
-    let text = await once(a, undefined, hint);
-    // Whisper guesses the language from the first seconds and sometimes
-    // takes Bangla for Hindi: asked again, as Bangla, for a Bangla speaker.
-    if (banglaSpeaker && looksLikeHindi(text)) text = await once(a, 'bn', hint);
+    const text = await once(a, language);
     if (text) parts.push(text);
   }
   return parts.join(' ').trim();

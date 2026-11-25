@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { BANGLA_HINT, multipartBody, transcribeAudio } from '@/lib/groq';
+import { multipartBody, transcribeAudio } from '@/lib/groq';
 
 vi.mock('@/lib/api-key', () => ({ getActiveGroqApiKey: () => 'groq-key' }));
 
@@ -43,24 +43,16 @@ describe('sending a recording to Groq', () => {
     expect(fetchMock).toHaveBeenCalledOnce();
   });
 
-  it('Devanagari is asked again as Bangla only for a Bangla speaker; for anyone else it stays as written', async () => {
-    const languages = () => [] as (string | null)[];
-    const seen = languages();
-    const prompts = languages();
+  it('a Bangla speaker is written out as Bangla from the start; anyone else, as Whisper hears it', async () => {
+    const seen: (string | null)[] = [];
     vi.stubGlobal('fetch', vi.fn(async (_url: string, init: RequestInit) => {
       const form = await parse(init.body as ArrayBuffer, (init.headers as Record<string, string>)['Content-Type']);
       seen.push(form.get('language') as string | null);
-      prompts.push(form.get('prompt') as string | null);
-      return new Response(JSON.stringify({ text: form.get('language') ? 'কাল বাজারে যাব' : 'कल बाजार जाना है' }), { status: 200 });
+      return new Response(JSON.stringify({ text: 'কাল বাজারে যাব' }), { status: 200 });
     }));
-    expect(await transcribeAudio([recording], { banglaSpeaker: true })).toBe('কাল বাজারে যাব');
-    expect(seen).toEqual([null, 'bn']);
-    expect(prompts).toEqual([BANGLA_HINT, BANGLA_HINT]);
-    prompts.length = 0;
-    seen.length = 0;
-    expect(await transcribeAudio([recording])).toBe('कल बाजार जाना है');
-    expect(seen).toEqual([null]);
-    expect(prompts).toEqual([null]);
+    expect(await transcribeAudio([recording], { language: 'bn' })).toBe('কাল বাজারে যাব');
+    await transcribeAudio([recording]);
+    expect(seen).toEqual(['bn', null]);
   });
 
   it("keeps Groq's reason when it says no", async () => {

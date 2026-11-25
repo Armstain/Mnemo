@@ -29,9 +29,3 @@ export function heardLanguage(detected: string | null | undefined): SpeechLang |
   return null;
 }
 
-
-/** Written in Devanagari (Hindi script) more than Bangla: a misheard Bangla note. */
-export function looksLikeHindi(text: string): boolean {
-  const deva = text.match(DEVANAGARI)?.length ?? 0;
-  return deva > 3 && deva > (text.match(BENGALI)?.length ?? 0);
-}

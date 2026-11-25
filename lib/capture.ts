@@ -475,7 +475,7 @@ async function structure(entry: PendingEntry, store: CaptureStore): Promise<void
       // Fall back to Groq Whisper if a key exists; otherwise retried later with the recording.
       const whisper = hasGroq() ? begin(topic, 'Whisper (Groq) writing it out') : null;
       const words = hasGroq()
-        ? await transcribeAudio(sound, { banglaSpeaker: getPreferences().speechLang === 'bn-BD' }).catch((groqError) => {
+        ? await transcribeAudio(sound, { language: getPreferences().speechLang === 'bn-BD' ? 'bn' : undefined }).catch((groqError) => {
             // Surfaces in the Settings problem report.
             logError('groq', groqError);
             whisper?.('error', String((groqError as Error)?.message ?? groqError).slice(0, 100));
