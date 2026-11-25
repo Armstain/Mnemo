@@ -92,7 +92,7 @@ export async function loadPreferences(hasKey: boolean): Promise<Preferences> {
   try {
     loaded = { ...DEFAULTS, ...(await readSavedPreferences()) };
     loaded.name = cleanName(typeof loaded.name === 'string' ? loaded.name : '');
-    loaded.meaningSearch = false;
+    loaded.meaningSearch = true;
     if (loaded.aiMode === 'unset' && hasKey) loaded.aiMode = 'gemini';
   } catch {
     loaded = { ...DEFAULTS, aiMode: hasKey ? 'gemini' : 'unset' };
