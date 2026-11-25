@@ -59,7 +59,7 @@ import { afterReminder, formatReminder, nextOccurrence, quickTimes, rescheduled 
 import { occurrenceOf, placeLabel, repeatsAtPlace } from '@/lib/places';
 import { usePlaces } from '@/lib/place-store';
 import { useCompleteThread, useStepDone } from '@/hooks/use-complete-thread';
-import { finishModel } from '@/lib/done';
+import { finishModel, isReminder, restates } from '@/lib/done';
 import { confirmAction } from '@/utils/confirm';
 import { numbersToShow, summarizeMeasures, worthSummarizing, type MetricSummary } from '@/lib/measures';
 import { useCategories, useStatusConfig } from '@/hooks/use-categories';
@@ -276,6 +276,9 @@ export default function ThreadScreen() {
   const showDue = !!thread.dueDate && isOpenStatus(thread.status);
   const missed = showDue && !thread.repeat && thread.dueDate! < Date.now();
   const waiting = (thread.laterSteps ?? []).filter((l) => !thread.repeat || l.at > Date.now());
+  const asReminder = isReminder(thread, model);
+  const leftOff = asReminder ? undefined : thread.whereLeftOff;
+  const step = thread.nextStep && !(asReminder && (missed || restates(thread.nextStep, thread.title))) ? thread.nextStep : undefined;
 
   const handleReminderDismiss = () => {
     haptic.select();
@@ -593,25 +596,25 @@ export default function ThreadScreen() {
 
           {!isEditing && (
             <>
-              {thread.whereLeftOff || thread.nextStep ? (
+              {leftOff || step ? (
                 <MotiView {...enter.rise(1)} className="px-6 mt-6 gap-4">
-                  {thread.whereLeftOff ? (
+                  {leftOff ? (
                     <View className="pl-4" style={{ borderLeftWidth: 2, borderLeftColor: category.color }}>
                       <Eyebrow className="mb-1.5">Where you left off</Eyebrow>
                       <Text className="font-quote text-heading leading-relaxed" style={{ color: colors.fgSecondary }}>
-                        “{thread.whereLeftOff}”
+                        “{leftOff}”
                       </Text>
                     </View>
                   ) : null}
-                  {thread.nextStep ? (
+                  {step ? (
                     <View className="flex-row items-center rounded-md p-4" style={{ backgroundColor: colors.accentSoft }}>
                       <View className="w-9 h-9 rounded-full items-center justify-center" style={{ backgroundColor: colors.accent }}>
                         <Icon name="arrowRight" size={16} stroke={2.2} color={colors.accentInk} />
                       </View>
                       <View className="flex-1 ml-3">
-                        <Eyebrow tone={colors.accent} className="mb-0.5">Next step</Eyebrow>
+                        <Eyebrow tone={colors.accent} className="mb-0.5">{asReminder ? 'Remember to' : 'Next step'}</Eyebrow>
                         <Text className="font-sans-medium text-body leading-snug" style={{ color: colors.fg }}>
-                          {thread.nextStep}
+                          {step}
                         </Text>
                       </View>
                       {/* One thing to do is finished by Done; a repeating one's step stays for next time. */}
@@ -625,7 +628,7 @@ export default function ThreadScreen() {
                 </MotiView>
               ) : null}
 
-              {!isEditing && quietDays !== null ? (
+              {!isEditing && !asReminder && quietDays !== null ? (
                 <MotiView {...enter.fade(1)} className="mx-6 mt-5 rounded-lg p-4" style={surface}>
                   <Text className="font-sans-semi text-body" style={{ color: colors.fg }}>
                     Nothing new for {quietDays} days
@@ -638,7 +641,7 @@ export default function ThreadScreen() {
               ) : null}
 
               <MotiView {...enter.fade(1)} className="px-6 mt-5 flex-row gap-2">
-                {thread.status === 'active' ? (
+                {thread.status === 'active' && asReminder ? null : thread.status === 'active' ? (
                   <Button
                     variant="quiet"
                     icon={rebrief.state === 'idle' ? 'volume' : 'x'}

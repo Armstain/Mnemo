@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { celebrate, completionFeedback, doneSummary, finishModel, isRealTask, onCelebrate } from '@/lib/done';
+import { celebrate, completionFeedback, doneSummary, finishModel, isRealTask, isReminder, onCelebrate, restates } from '@/lib/done';
 
 const DAY = 24 * 60 * 60 * 1000;
 const text = { kind: 'text', markdown: 'x' } as const;
@@ -90,5 +90,21 @@ describe('what Done does on a thread (finishModel)', () => {
     expect(finishModel(t({ place: { placeId: 'o', on: 'arrive', setAt: 1, repeat: 'weekdays' } }), [{}])).toBe('occurrence');
     // A finished one has no occurrences left.
     expect(finishModel(t({ dueDate: 1, repeat: 'daily', status: 'completed' }), [{}])).toBe('single');
+  });
+});
+
+describe('a thread that is a reminder', () => {
+  const place = { placeId: 'p', on: 'arrive', setAt: 1 } as never;
+  it('has a time or an armed place, and one thing to do', () => {
+    expect(isReminder({ status: 'active', place }, 'single')).toBe(true);
+    expect(isReminder({ status: 'active', dueDate: 1 }, 'occurrence')).toBe(true);
+    expect(isReminder({ status: 'active' }, 'single')).toBe(false);
+    expect(isReminder({ status: 'active', dueDate: 1 }, 'steps')).toBe(false);
+    expect(isReminder({ status: 'completed', dueDate: 1 }, 'single')).toBe(false);
+  });
+  it('a step that only repeats the title is not shown twice', () => {
+    expect(restates('Buy protein', 'Buy protein at the gym')).toBe(true);
+    expect(restates('Bring the charger', 'Gym')).toBe(false);
+    expect(restates('ওষুধ কিনতে হবে', 'আম্মুর ওষুধ কিনতে হবে')).toBe(true);
   });
 });

@@ -1,7 +1,7 @@
 import { isOpenStatus, type Entry, type MnemoItem } from '@/types/mnemo';
 import { createEmitter } from '@/lib/emitter';
 import { kindOf } from '@/lib/kind';
-import { repeatsAtPlace } from '@/lib/places';
+import { isArmed, repeatsAtPlace } from '@/lib/places';
 import { DAY_MS } from '@/utils/time';
 
 // Finishing something gets a moment (components/CelebrationHost), but only
@@ -98,4 +98,16 @@ export function finishModel(
       .map((s) => s.trim().toLowerCase()),
   );
   return openSteps.size > 1 ? 'steps' : 'single';
+}
+
+export function isReminder(thread: Pick<MnemoItem, 'place' | 'status' | 'dueDate'>, model: FinishModel): boolean {
+  return model !== 'steps' && isOpenStatus(thread.status) && (isArmed(thread) || !!thread.dueDate);
+}
+
+const wordsOf = (s: string) => s.toLowerCase().match(/[\p{L}\p{M}\p{N}]+/gu) ?? [];
+
+export function restates(step: string, title: string): boolean {
+  const said = new Set(wordsOf(title));
+  const words = wordsOf(step).filter((w) => w.length > 2);
+  return words.length > 0 && words.every((w) => said.has(w));
 }
