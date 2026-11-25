@@ -89,7 +89,28 @@ export default function ModalScreen() {
             <Text className="text-display font-display text-fg ml-1">Settings</Text>
           </MotiView>
 
-          <SettingsSection title="Appearance" step={0}>
+          <SettingsSection title="How Mnemo thinks" step={0}>
+            <AiModeCard>
+              <ApiKeyConfigCard />
+              <ApiKeyConfigCard provider={GROQ} />
+            </AiModeCard>
+          </SettingsSection>
+
+          <SettingsSection title="Reminders" step={1}>
+            {Platform.OS !== 'web' ? <NudgeSettingsCard /> : null}
+            {Platform.OS !== 'web' ? <AppointmentsCard /> : null}
+            <LocationCard />
+            {Platform.OS !== 'web' ? (
+              <LinkRow className={ROW} icon="alert" title="Check that reminders arrive" onPress={() => router.push(remindersCheckHref)} />
+            ) : null}
+          </SettingsSection>
+
+          <SettingsSection title="Backup" step={2}>
+            <AutoBackupCard />
+            <BackupCard />
+          </SettingsSection>
+
+          <SettingsSection title="Appearance" step={2}>
             <Surface tone="soft" className="rounded-lg p-2 flex-row gap-1">
               {THEME_OPTIONS.map(({ key, label, icon: Icon }) => {
                 const selected = preference === key;
@@ -119,40 +140,9 @@ export default function ModalScreen() {
             <HapticsRow />
           </SettingsSection>
 
-          {Platform.OS !== 'web' && (
-            <SettingsSection title="Nudges" step={1}>
-              <NudgeSettingsCard />
-            </SettingsSection>
-          )}
-
-          {Platform.OS !== 'web' && (
-            <SettingsSection title="Appointments" step={1}>
-              <AppointmentsCard />
-            </SettingsSection>
-          )}
-
-          <SettingsSection title="Location" step={1}>
-            <LocationCard />
-          </SettingsSection>
-
-          <SettingsSection title="How Mnemo thinks" step={1}>
-            <AiModeCard>
-              <ApiKeyConfigCard />
-              <ApiKeyConfigCard provider={GROQ} />
-            </AiModeCard>
-          </SettingsSection>
-
-          <SettingsSection title="Backup" step={2}>
-            <AutoBackupCard />
-            <BackupCard />
-          </SettingsSection>
-
           <SettingsSection title="Help and feedback" step={2}>
             {debugTools ? <LinkRow className={ROW} icon="alert" title="Live debug" onPress={() => router.push(debugHref)} /> : null}
             <LinkRow className={ROW} icon="sparkles" title="How Mnemo works" onPress={() => router.push(helpHref)} />
-            {Platform.OS !== 'web' ? (
-              <LinkRow className={ROW} icon="alert" title="Check that reminders arrive" onPress={() => router.push(remindersCheckHref)} />
-            ) : null}
             <LinkRow className={ROW} icon="arrowUpRight" title="Report a bug" onPress={() => openIssue('bug', 'Bug: ')} />
             <LinkRow className={ROW} icon="star" title="Suggest a feature" onPress={() => openIssue('enhancement', 'Idea: ')} />
             <LinkRow className={ROW} icon="copy" title={report.reportTitle} silent chevron={false} onPress={report.copyReport} />
