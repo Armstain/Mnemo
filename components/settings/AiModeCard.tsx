@@ -5,7 +5,6 @@ import { haptic } from '@/lib/haptics';
 
 import { Surface } from '@/components/ui/Card';
 import { Icon, type IconName } from '@/components/ui/Icon';
-import { ToggleRow } from '@/components/ui/ToggleRow';
 import { LocalModelCard } from '@/components/settings/LocalModelCard';
 import { useThemeColors } from '@/hooks/use-theme';
 import { getActiveApiKey } from '@/lib/api-key';
@@ -25,24 +24,6 @@ const MODES: { value: Exclude<AiMode, 'unset'>; icon: IconName; title: string; b
     body: 'Nothing leaves your phone. It still picks out dates, amounts and next steps.',
   },
 ];
-
-/** Off by default: each note is sent once, to be written up; on, a second time to be found by meaning. */
-function MeaningSearchRow() {
-  const { meaningSearch } = usePreferences();
-  return (
-    <ToggleRow
-      title="Search by meaning"
-      body="Uses about twice the free quota."
-      className="p-5"
-      align="items-start"
-      value={meaningSearch === true}
-      onValueChange={(on) => {
-        haptic.toggle(on);
-        setPreferences({ meaningSearch: on });
-      }}
-    />
-  );
-}
 
 /** Settings → How Mnemo thinks: AI or offline. */
 export function AiModeCard({ children }: { children?: React.ReactNode }) {
@@ -94,7 +75,6 @@ export function AiModeCard({ children }: { children?: React.ReactNode }) {
         })}
       </Surface>
 
-      {mode === 'gemini' ? <MeaningSearchRow /> : null}
       {mode === 'gemini' ? children : null}
       <LocalModelCard />
     </View>

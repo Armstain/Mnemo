@@ -18,7 +18,7 @@ import { useSafeBottom } from '@/components/ui/Screen';
 import { SettingsSection } from '@/components/settings/SettingsSection';
 import { AutoBackupCard, BackupCard } from '@/components/settings/BackupCard';
 import { AiModeCard } from '@/components/settings/AiModeCard';
-import { debugHref, helpHref, onboardingHref, privacyHref, remindersCheckHref } from '@/lib/routes';
+import { debugHref, helpHref, privacyHref, remindersCheckHref } from '@/lib/routes';
 import { useThemeColors, useThemeName, useThemePreference, type ThemePreference } from '@/hooks/use-theme';
 import { NudgeSettingsCard } from '@/components/settings/NudgeSettingsCard';
 import { AppointmentsCard } from '@/components/settings/AppointmentsCard';
@@ -144,9 +144,7 @@ export default function ModalScreen() {
             {debugTools ? <LinkRow className={ROW} icon="alert" title="Live debug" onPress={() => router.push(debugHref)} /> : null}
             <LinkRow className={ROW} icon="sparkles" title="How Mnemo works" onPress={() => router.push(helpHref)} />
             <LinkRow className={ROW} icon="arrowUpRight" title="Report a bug" onPress={() => openIssue('bug', 'Bug: ')} />
-            <LinkRow className={ROW} icon="star" title="Suggest a feature" onPress={() => openIssue('enhancement', 'Idea: ')} />
             <LinkRow className={ROW} icon="copy" title={report.reportTitle} silent chevron={false} onPress={report.copyReport} />
-            <LinkRow className={ROW} icon="trash" title={report.clearTitle} silent chevron={false} onPress={report.clearLog} />
           </SettingsSection>
 
           <SettingsSection title="About" step={2} last>
@@ -164,17 +162,7 @@ export default function ModalScreen() {
               <Text className="font-sans-semi text-sm text-fg">Mnemo v{Constants.expoConfig?.version ?? '1.0.0'}</Text>
               <Text className="font-sans text-sm text-fg-tertiary mt-0.5">Resume your life.</Text>
             </Pressable>
-            <LinkRow className={ROW} icon="arrowUpRight" title="Source code" onPress={() => Linking.openURL(REPO)} />
             <LinkRow className={ROW} icon="pin" title="Privacy and your data" onPress={() => router.push(privacyHref)} />
-            <LinkRow
-              className={ROW}
-              icon="repeat"
-              title="Go through setup again"
-              onPress={() => {
-                router.dismissAll();
-                router.replace(onboardingHref);
-              }}
-            />
           </SettingsSection>
         </ScrollView>
 
