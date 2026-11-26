@@ -4,18 +4,26 @@ All notable changes to Mnemo, newest first. Versions match `app.json`. Everythin
 
 ## [Unreleased]
 
+## [2.0.5] - 2026-11-26
+
 ### Added
+- **Notes named on the phone (optional).** Settings → How Mnemo thinks → Name notes on the phone downloads a small on-device model: Qwen3.5-0.8B (533 MB, faster) or Qwen3.5-2B (1.3 GB, better names, categories and Bangla titles). Offline, it gives a note's thread a short title and tags a few seconds after it's saved. With Gemini on, it stands in when Gemini can't answer (no connection, daily limit, busy), and Gemini rewrites the note once it can. It never rewrites the note itself. Only one model is kept on the phone.
 - **Live debug (hidden).** Tap the version in Settings → About seven times. It shows notes waiting for Gemini (with why, and Send all now), Android's answer about places, where the phone is against each watched place ("would ring now"), and the place, voice and error logs as they're written, newest first. Hide it again from the screen itself.
 - **Live debug shows what's happening behind the scenes, as it happens.** Each note's steps: saved, queued, which Gemini model was asked and how long it took (tokens in and out), what came back (title, what it heard, kind, next step, the thread match), where it was filed, a reminder set; failures with the next try's time. The mic and the phone's recognizer too: on, each phrase heard, pauses, errors, language switches. A **floating overlay** puts the current step, with a running clock, over every screen; tap it for the last few. Kept in memory only, never in the problem report.
-- **Routines on Home.** A repeating place reminder ("every weekday when I get to the office") is listed under **At places** with where and when it next rings, instead of as a thread going cold. On a day it rang and isn't done, it's the top card with "Rang 10:02 at Office" and a **Done for today** button; once done, it says so and when it's next.
-- **The problem report explains a missed place reminder.** It lists each place reminder as Mnemo sees it (inside or outside, since when, last rang) and the last 30 place events: what Android sent, when the places were set, what opening the app caught, and why a crossing didn't ring (already counted inside, back within the hour, not one of its days, done today). Short ids only, no titles or coordinates. Times are local.
-
+- **Routines on Home.** A repeating place reminder ("every weekday when I get to the office") is listed under **At places** with where and when it next rings, instead of as a thread going cold. Once it rings it stays there, quietly, with when it went off; it rings once a day either way.
+- **The problem report explains a missed place reminder.** It lists each place reminder as Mnemo sees it (inside or outside, since when, last rang) and the last 30 place events: what Android sent, when the places were set, what opening the app caught, and why a crossing didn't ring (already counted inside, back within the hour, not one of its days, done today). Short ids only, no titles or coordinates. Times are local. It also lists what Android's side heard and did, even when Mnemo never woke up, which tells "Android never said" apart from "Mnemo heard it and didn't ring".
 - **The problem report explains voice notes too:** how notes are taken (recorded for Gemini, or heard by the phone), and for the last 30: how long, how many words, the recognizer's own errors, a recording the phone cut short, and how each was written out. Counts and codes only, never the words.
 
 ### Changed
+- **Settings, reorganised.** How Mnemo thinks comes first; nudges, appointments, place reminders and the reminder check sit together under Reminders; then Backup, Appearance, Help and feedback, About. Suggest a feature, Clear log, Source code and Go through setup again are gone.
+- **Search by meaning is off.** It sent every note to Google a second time. It may come back, made on the phone, if that costs no noticeable speed or battery.
+- **A reminder reads as a reminder.** A thread with a time or place reminder and one thing to do drops Where you left off, Listen back and the quiet-days prompt, and its step shows as Remember to.
 - **A quieter Home.** At most one notice sits above the Resume card at a time: a Gemini problem first, then checking reminders, a place reminder at risk, then backups. The "notes written by Flash-Lite" notice and the Browse chips are gone; the Library tab already browses by kind.
 
 ### Fixed
+- **Voice notes are no longer written out in the wrong language when Gemini is busy.** A busy Gemini now keeps the recording and tries again; Whisper steps in only after about a minute and a half, or when Gemini can't do it at all, and is told the language up front, so Bangla isn't guessed as English or Hindi.
+- **Bangla heard in Hindi script no longer switches listening to English.**
+- **The app no longer lags while a downloaded model is checked:** the check runs in native code, in the background.
 - **Voice notes heard by the phone no longer stop listening during pauses.** Every few seconds of silence ended a session, and four in a row stopped listening for good while the screen still said "Listening…". Pauses now just restart; only real errors count, and if listening does stop, the screen says so.
 - **A voice note whose recording couldn't be read** no longer ends up as a blank note: it says so, and it's in the problem report.
 - **A thread stuck on "Being read…".** A note finished without being written out (its recording unreadable) left its thread saying "Being read…" for good. Such threads are now released, and any already stuck are cleared on the next open.
